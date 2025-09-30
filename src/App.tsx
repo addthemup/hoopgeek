@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import League from './pages/League'
 import Draft from './pages/Draft'
+import NBAPlayers from './components/NBAPlayers'
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="players" element={<NBAPlayers />} />
           <Route path="league/:id" element={<League />} />
           <Route path="draft/:id" element={<Draft />} />
         </Route>

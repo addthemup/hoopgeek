@@ -29,10 +29,19 @@ export default function Layout() {
           justifyContent: 'space-between'
         }}
       >
-        <Typography level="h3">
+        <Typography level="h3" sx={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
           🏀 HoopGeek
         </Typography>
         <Stack direction="row" spacing={2}>
+          {user && (
+            <Button 
+              variant="plain" 
+              onClick={() => navigate('/players')}
+              sx={{ color: 'inherit' }}
+            >
+              Players
+            </Button>
+          )}
           {user ? (
             <>
               <Typography level="body-sm" sx={{ color: 'inherit' }}>
