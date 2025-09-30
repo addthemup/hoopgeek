@@ -1,12 +1,17 @@
-import { Outlet } from 'react-router-dom'
+import { Outlet, useNavigate } from 'react-router-dom'
 import { Box, Sheet, Typography, Button, Stack } from '@mui/joy'
 import { useAuth } from '../hooks/useAuth'
 
 export default function Layout() {
   const { user, signOut } = useAuth()
+  const navigate = useNavigate()
 
   const handleSignOut = async () => {
     await signOut()
+  }
+
+  const handleSignIn = () => {
+    navigate('/login')
   }
 
   return (
@@ -38,7 +43,10 @@ export default function Layout() {
               </Button>
             </>
           ) : (
-            <Button variant="solid" href="/login">
+            <Button 
+              variant="solid" 
+              onClick={handleSignIn}
+            >
               Sign In
             </Button>
           )}
