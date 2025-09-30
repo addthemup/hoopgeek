@@ -1,7 +1,7 @@
+import { useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { Box, Typography, Button, Stack, Card, CardContent, Grid, Chip } from '@mui/joy'
 import { useDraftStore } from '../stores/draftStore'
-import { useEffect } from 'react'
 
 export default function Draft() {
   const { id } = useParams<{ id: string }>()
