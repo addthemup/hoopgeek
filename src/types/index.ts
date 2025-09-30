@@ -16,7 +16,18 @@ export interface League {
   draft_status: 'scheduled' | 'in_progress' | 'completed'
   created_at: string
   updated_at: string
+  // Additional fields for display
+  team_name?: string
+  is_commissioner?: boolean
+  joined_at?: string
+  scoring_type?: string
+  lineup_frequency?: string
+  salary_cap_enabled?: boolean
+  salary_cap_amount?: number
 }
+
+// Re-export league settings types
+export * from './leagueSettings'
 
 export interface LeagueMember {
   id: string
@@ -28,11 +39,35 @@ export interface LeagueMember {
 }
 
 export interface Player {
-  id: string
+  id: number
+  nba_player_id: number
   name: string
-  position: string
-  team: string
+  first_name?: string
+  last_name?: string
+  position?: string
+  team_id?: number
+  team_name?: string
+  team_abbreviation?: string
+  jersey_number?: string
+  height?: string
+  weight?: number
+  age?: number
+  birth_date?: string
+  birth_city?: string
+  birth_state?: string
+  birth_country?: string
+  college?: string
+  draft_year?: number
+  draft_round?: number
+  draft_number?: number
   salary: number
+  is_active: boolean
+  is_rookie: boolean
+  years_pro: number
+  from_year?: number
+  to_year?: number
+  created_at: string
+  updated_at: string
   stats?: PlayerStats
 }
 

@@ -49,6 +49,7 @@ export function useCreateLeague() {
     onSuccess: () => {
       // Invalidate and refetch leagues data
       queryClient.invalidateQueries({ queryKey: ['leagues'] })
+      queryClient.invalidateQueries({ queryKey: ['userLeagues'] })
     },
   })
 }
