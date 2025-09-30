@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
+import CreateLeague from './pages/CreateLeague'
 import League from './pages/League'
 import Draft from './pages/Draft'
 import NBAPlayers from './components/NBAPlayers'
@@ -16,6 +17,7 @@ function App() {
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="create-league" element={<CreateLeague />} />
           <Route path="players" element={<NBAPlayers />} />
           <Route path="league/:id" element={<League />} />
           <Route path="draft/:id" element={<Draft />} />

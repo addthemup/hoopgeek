@@ -356,3 +356,14 @@ entrypoint = "./functions/fetch-nba-players/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/fetch-nba-players/*.html" ]
+
+[functions.create-league]
+enabled = true
+verify_jwt = true
+import_map = "./functions/create-league/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/create-league/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/create-league/*.html" ]

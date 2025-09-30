@@ -13,9 +13,9 @@ serve(async (req) => {
   }
 
   try {
-    // Initialize Supabase client
+    // Initialize Supabase client with service role key for admin operations
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_ANON_KEY')!
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
     // Mock NBA players data (in production, you'd call a Python service or use NBA API)
@@ -113,8 +113,11 @@ serve(async (req) => {
       .upsert(playersData, { onConflict: 'id' })
 
     if (error) {
-      throw error
+      console.error('Supabase error:', error)
+      throw new Error(`Database error: ${error.message}`)
     }
+
+    console.log('Successfully upserted players:', data)
 
     return new Response(
       JSON.stringify({
@@ -129,8 +132,12 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    console.error('Function error:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message || 'Unknown error occurred',
+        details: error.toString()
+      }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 500,
