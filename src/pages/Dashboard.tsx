@@ -5,6 +5,18 @@ import { useAuth } from '../hooks/useAuth'
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  
+  // Show user-specific content when available
+  if (!user) {
+    return (
+      <Box sx={{ textAlign: 'center', py: 4 }}>
+        <Typography level="h2">Please sign in to access your dashboard</Typography>
+        <Button size="lg" onClick={() => navigate('/login')} sx={{ mt: 2 }}>
+          Sign In
+        </Button>
+      </Box>
+    )
+  }
 
   // Mock data for now
   const leagues = [
