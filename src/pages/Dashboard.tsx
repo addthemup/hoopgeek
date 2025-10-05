@@ -3,12 +3,15 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useUserLeagues, useRefreshLeagues } from '../hooks/useUserLeagues'
 import { format } from 'date-fns'
+import { useState } from 'react'
+import LeagueCreationForm from '../components/LeagueCreationForm'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: leagues, isLoading, isError, error } = useUserLeagues()
   const refreshLeagues = useRefreshLeagues()
+  const [showCreateLeague, setShowCreateLeague] = useState(false)
 
   
   // Show user-specific content when available
@@ -65,7 +68,7 @@ export default function Dashboard() {
             </Button>
             <Button 
               size="lg" 
-              onClick={() => navigate('/create-league')}
+              onClick={() => setShowCreateLeague(true)}
             >
               Create League
             </Button>
@@ -139,7 +142,7 @@ export default function Dashboard() {
                           Salary Cap:
                         </Typography>
                         <Typography level="body-sm">
-                          ${(league.salary_cap_amount / 1000000).toFixed(0)}M
+                          ${((league.salary_cap_amount || 0) / 1000000).toFixed(0)}M
                         </Typography>
                       </Box>
                     )}
@@ -174,7 +177,7 @@ export default function Dashboard() {
                       Your Team: {league.team_name}
                     </Typography>
                     <Typography level="body-xs" color="neutral">
-                      Joined: {format(new Date(league.joined_at), 'MMM dd, yyyy')}
+                      Joined: {league.joined_at ? format(new Date(league.joined_at as string), 'MMM dd, yyyy') : 'Unknown'}
                     </Typography>
                   </Box>
                 </CardContent>
@@ -202,6 +205,17 @@ export default function Dashboard() {
           </Card>
         )}
       </Stack>
+
+      {/* League Creation Form */}
+      <LeagueCreationForm
+        open={showCreateLeague}
+        onClose={() => setShowCreateLeague(false)}
+        onSuccess={(leagueId) => {
+          setShowCreateLeague(false)
+          refreshLeagues.mutate() // Refresh the leagues list
+          navigate(`/league/${leagueId}`) // Navigate to the new league
+        }}
+      />
     </Box>
   )
 }

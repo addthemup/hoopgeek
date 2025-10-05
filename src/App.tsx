@@ -8,6 +8,8 @@ import CreateLeague from './pages/CreateLeague'
 import League from './pages/League'
 import Draft from './pages/Draft'
 import Players from './pages/Players'
+import MatchupDetails from './pages/MatchupDetails'
+import TeamPage from './pages/TeamPage'
 
 // Placeholder components for new routes
 const Highlights = () => (
@@ -40,7 +42,7 @@ const Community = () => (
 
 function App() {
   return (
-    <Box sx={{ minHeight: '100vh' }}>
+    <Box sx={{ minHeight: '100vh', width: '100%', margin: 0, padding: 0 }}>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
@@ -52,6 +54,8 @@ function App() {
           <Route path="create-league" element={<CreateLeague />} />
           <Route path="players" element={<Players />} />
           <Route path="league/:id" element={<League />} />
+          <Route path="league/:id/team/:teamId" element={<TeamPage />} />
+          <Route path="league/:id/matchup/:matchupId" element={<MatchupDetails />} />
           <Route path="draft/:id" element={<Draft />} />
           
           {/* New Feature Routes */}

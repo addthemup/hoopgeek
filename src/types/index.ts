@@ -83,21 +83,120 @@ export interface PlayerStats {
   three_point_percentage: number
 }
 
+export interface LeagueInvitation {
+  id: string
+  league_id: string
+  fantasy_team_id: string
+  email: string
+  invited_by: string
+  status: 'pending' | 'accepted' | 'declined' | 'expired'
+  created_at: string
+  expires_at: string
+  team_name?: string
+  message?: string
+}
+
+export interface LeagueMember {
+  id: string
+  league_id: string
+  user_id: string
+  team_name: string
+  is_commissioner: boolean
+  joined_at: string
+  user?: {
+    id: string
+    email: string
+    name?: string
+  }
+}
+
+export interface RosterSpot {
+  id: string
+  league_id: string
+  position: string
+  position_order: number
+  is_starter: boolean
+  is_bench: boolean
+  is_injured_reserve: boolean
+  created_at: string
+}
+
+export interface FantasyTeamPlayer {
+  id: string
+  fantasy_team_id: string
+  roster_spot_id: string
+  player_id?: number
+  position: string
+  is_starter: boolean
+  is_injured: boolean
+  added_at: string
+  player?: Player // Joined player data
+  roster_spot?: RosterSpot // Joined roster spot data
+}
+
+export interface FantasyTeam {
+  id: string
+  league_id: string
+  user_id?: string
+  team_name: string
+  team_abbreviation?: string
+  draft_position?: number
+  is_commissioner: boolean
+  wins: number
+  losses: number
+  ties: number
+  points_for: number
+  points_against: number
+  salary_cap_used: number
+  salary_cap_max: number
+  created_at: string
+  updated_at: string
+  user?: {
+    id: string
+    email: string
+    username?: string
+  }
+  roster?: FantasyTeamPlayer[] // Team's roster
+}
+
 export interface DraftPick {
   id: string
   league_id: string
   player_id: string
-  team_id: string
+  fantasy_team_id: string
   pick_number: number
   created_at: string
 }
 
-export interface Team {
-  id: string
-  league_id: string
-  user_id: string
-  name: string
-  players: Player[]
-  salary_cap_used: number
-  salary_cap_max: number
+export interface DraftChatMessage {
+  id: string;
+  league_id: string;
+  user_id: string;
+  fantasy_team_id: string;
+  message: string;
+  message_type: 'chat' | 'system' | 'pick_announcement' | 'trade_announcement';
+  is_commissioner_message: boolean;
+  created_at: string;
+  user?: {
+    email: string;
+  };
+  fantasy_team?: {
+    team_name: string;
+  };
+}
+
+export interface DraftLobbyParticipant {
+  id: string;
+  league_id: string;
+  user_id: string;
+  fantasy_team_id: string;
+  joined_at: string;
+  last_seen_at: string;
+  is_online: boolean;
+  user?: {
+    email: string;
+  };
+  fantasy_team?: {
+    team_name: string;
+  };
 }

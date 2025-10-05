@@ -14,8 +14,8 @@ from supabase import create_client, Client
 from typing import List, Dict, Any
 
 # Configuration
-SUPABASE_URL = "https://lsnqmdeagfzuvrypiiwi.supabase.co"
-SUPABASE_SERVICE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxzbnFtZGVhZ2Z6dXZyeXBpaXdpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1OTI1MTU5MSwiZXhwIjoyMDc0ODI3NTkxfQ.uOD1oFhjd6ISP7XJu7OtYYG_SwU7uZR74h8byY3HNPo"
+SUPABASE_URL = os.getenv('VITE_SUPABASE_URL', 'https://qbznyaimnrpibmahisue.supabase.co')
+SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 USER_UID = "fd58dfb7-ad5d-43e2-b2c4-c254e2a29211"
 
 # NBA API Configuration
@@ -31,6 +31,16 @@ NBA_HEADERS = {
 def setup_supabase() -> Client:
     """Initialize Supabase client"""
     print("🔧 Setting up Supabase client...")
+    
+    if not SUPABASE_URL:
+        raise Exception("VITE_SUPABASE_URL environment variable is not set")
+    
+    if not SUPABASE_SERVICE_KEY:
+        raise Exception("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
+    
+    print(f"   Using Supabase URL: {SUPABASE_URL}")
+    print(f"   Service key: {'*' * 20}{SUPABASE_SERVICE_KEY[-10:] if SUPABASE_SERVICE_KEY else 'None'}")
+    
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     print("✅ Supabase client initialized")
     return supabase

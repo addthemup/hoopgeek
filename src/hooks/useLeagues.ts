@@ -58,6 +58,8 @@ export function useLeague(leagueId: string) {
   return useQuery({
     queryKey: ['league', leagueId],
     queryFn: async () => {
+      console.log('useLeague: Fetching league with ID:', leagueId);
+      
       const { data, error } = await supabase
         .from('leagues')
         .select(`
@@ -73,7 +75,14 @@ export function useLeague(leagueId: string) {
         .eq('id', leagueId)
         .single()
 
-      if (error) throw error
+      console.log('useLeague: Supabase response:', { data, error });
+
+      if (error) {
+        console.error('useLeague: Error fetching league:', error);
+        throw error;
+      }
+      
+      console.log('useLeague: Successfully fetched league:', data);
       return data as League & { league_members: LeagueMember[] }
     },
     enabled: !!leagueId,

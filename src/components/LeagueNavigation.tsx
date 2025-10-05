@@ -24,7 +24,10 @@ import {
   EmojiEvents,
   Analytics,
   Assignment,
-  People
+  People,
+  Sports,
+  Leaderboard,
+  AdminPanelSettings
 } from '@mui/icons-material'
 
 interface LeagueNavigationProps {
@@ -50,6 +53,18 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
       description: 'Your roster and lineup'
     },
     {
+      id: 'lineups',
+      label: 'Lineups',
+      icon: <Sports />,
+      description: 'NBA 2K-style rotation management'
+    },
+    {
+      id: 'trades',
+      label: 'Trades',
+      icon: <SwapHoriz />,
+      description: 'Trade machine and proposals'
+    },
+    {
       id: 'players',
       label: 'Players',
       icon: <SportsBasketball />,
@@ -68,12 +83,6 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
       description: 'Live scores and results'
     },
     {
-      id: 'trades',
-      label: 'Trades',
-      icon: <SwapHoriz />,
-      description: 'Trade proposals and history'
-    },
-    {
       id: 'draft',
       label: 'Draft',
       icon: <Assignment />,
@@ -82,7 +91,7 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
     {
       id: 'standings',
       label: 'Standings',
-      icon: <EmojiEvents />,
+      icon: <Leaderboard />,
       description: 'League standings and rankings'
     },
     {
@@ -97,18 +106,26 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
       icon: <Message />,
       description: 'League activity and messages'
     },
-    {
-      id: 'members',
-      label: 'Members',
-      icon: <People />,
-      description: 'League members and teams'
-    },
-    ...(isCommissioner ? [{
-      id: 'settings',
-      label: 'Settings',
-      icon: <Settings />,
-      description: 'League settings and management'
-    }] : [])
+            {
+              id: 'members',
+              label: 'Members',
+              icon: <People />,
+              description: 'League members and teams'
+            },
+            ...(isCommissioner ? [
+              {
+                id: 'commissioner',
+                label: 'Commissioner',
+                icon: <AdminPanelSettings />,
+                description: 'League manager tools and administration'
+              },
+              {
+                id: 'settings',
+                label: 'Settings',
+                icon: <Settings />,
+                description: 'League settings and management'
+              }
+            ] : [])
   ]
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -196,18 +213,7 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
           {/* Tab Content - TabPanels must be direct children of Tabs */}
           {tabs.map((tab, index) => (
             <TabPanel key={tab.id} value={index} sx={{ p: 0 }}>
-              <Box>
-                <Typography level="h4" sx={{ mb: 3 }}>
-                  {tab.icon}
-                  <Box component="span" sx={{ ml: 1 }}>
-                    {tab.label}
-                  </Box>
-                </Typography>
-                <Typography level="body-md" color="neutral" sx={{ mb: 3 }}>
-                  {tab.description}
-                </Typography>
-                {children(tab.id)}
-              </Box>
+              {children(tab.id)}
             </TabPanel>
           ))}
         </Tabs>
