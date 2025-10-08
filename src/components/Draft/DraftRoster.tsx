@@ -171,11 +171,24 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
                       
                       <Avatar 
                         size="md" 
+                        src={!isEmpty && player?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
                         sx={{ 
                           bgcolor: isEmpty ? 'neutral.300' : 'primary.500',
                           width: 48,
                           height: 48,
-                          mb: 1
+                          mb: 1,
+                          '& img': {
+                            objectFit: 'cover'
+                          }
+                        }}
+                        onError={(e) => {
+                          // Fallback to initials if image fails to load
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.textContent = isEmpty ? '?' : player?.name?.charAt(0) || '?';
+                          }
                         }}
                       >
                         {isEmpty ? '?' : player?.name?.charAt(0)}

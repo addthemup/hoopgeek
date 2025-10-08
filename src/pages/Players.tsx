@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import {
   Box,
   Typography,
@@ -19,19 +19,23 @@ import {
   Switch,
   Input,
   IconButton,
-  Tooltip,
   Snackbar,
   FormControl,
   FormLabel,
+  Table,
+  Divider,
+  LinearProgress,
 } from '@mui/joy';
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { usePlayersPaginated } from '../hooks/useNBAData';
-import { useTeams } from '../hooks/useTeams';
+// import { useTeams } from '../hooks/useTeams';
 import { useAddPlayerToRoster } from '../hooks/useRosterManagement';
+import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
+import { usePlayerUpcomingGames } from '../hooks/usePlayerUpcomingGames';
 import { Player as DatabasePlayer } from '../types';
-import PlayerDetail from '../components/PlayerDetail';
-import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear } from '@mui/icons-material';
+import PlayerActionButtons from '../components/PlayerActionButtons';
+import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday } from '@mui/icons-material';
 
 interface Player {
   id: string;
@@ -54,16 +58,178 @@ interface Player {
   lastGame: number;
   isRostered: boolean;
   isWatched: boolean;
+  nba_player_id: number;
 }
 
 interface PlayersProps {
   leagueId: string;
 }
 
+// Memoized PlayersTable component to prevent unnecessary re-renders
+const PlayersTable = memo(({ 
+  players, 
+  playersLoading, 
+  playersError, 
+  onPlayerClick, 
+  onAddToRoster,
+  paginatedData,
+  addPlayerMutation
+}: {
+  players: Player[];
+  playersLoading: boolean;
+  playersError: Error | null;
+  onPlayerClick: (player: Player) => void;
+  onAddToRoster: (playerId: string, playerName: string) => void;
+  paginatedData: any;
+  addPlayerMutation: any;
+}) => {
+  if (playersLoading) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+            <LinearProgress sx={{ width: '100%' }} />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (playersError) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Alert color="danger">
+            <Typography>Error loading players: {playersError.message}</Typography>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Box sx={{ overflowX: 'auto' }}>
+          <Table hoverRow>
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Position</th>
+                <th>Team</th>
+                <th>Status</th>
+                <th>Current PTS</th>
+                <th>Current REB</th>
+                <th>Current AST</th>
+                <th>Salary</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {players.map((player) => (
+                <tr key={player.id} style={{ cursor: 'pointer' }} onClick={() => onPlayerClick(player)}>
+                  <td>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                      <Avatar 
+                        size="sm" 
+                        src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                        sx={{ 
+                          bgcolor: 'primary.500',
+                          '& img': {
+                            objectFit: 'cover'
+                          }
+                        }}
+                        onError={(e) => {
+                          // Fallback to initials if image fails to load
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const parent = target.parentElement;
+                          if (parent) {
+                            parent.textContent = player.name.split(' ').map((n: string) => n[0]).join('');
+                          }
+                        }}
+                      >
+                        {player.name.split(' ').map((n: string) => n[0]).join('')}
+                      </Avatar>
+                      <Box>
+                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                          {player.name}
+                        </Typography>
+                        <Typography level="body-xs" color="neutral">
+                          #{paginatedData?.players.find((p: any) => p.id.toString() === player.id)?.jersey_number || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </Stack>
+                  </td>
+                  <td>
+                    <Chip size="sm" color="primary" variant="soft">
+                      {player.position}
+                    </Chip>
+                  </td>
+                  <td>
+                    <Typography level="body-sm">{player.team}</Typography>
+                  </td>
+                  <td>
+                    <Chip 
+                      size="sm" 
+                      color={player.status === 'Active' ? 'success' : 'neutral'} 
+                      variant="soft"
+                    >
+                      {player.status}
+                    </Chip>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                      {player.score}
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                      N/A
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                      N/A
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography level="body-sm">
+                      {paginatedData?.players.find((p: any) => p.id.toString() === player.id)?.salary 
+                        ? `$${((paginatedData.players.find((p: any) => p.id.toString() === player.id)?.salary || 0) / 1000000).toFixed(1)}M`
+                        : 'N/A'
+                      }
+                    </Typography>
+                  </td>
+                  <td>
+                    <Button
+                      size="sm"
+                      variant="outlined"
+                      startDecorator={<Add />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddToRoster(player.id, player.name);
+                      }}
+                      loading={addPlayerMutation.isPending}
+                    >
+                      Add
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+});
+
+
 export default function Players({ leagueId }: PlayersProps) {
   const { user } = useAuth();
   const { data: league, isLoading: leagueLoading, error: leagueError } = useLeague(leagueId);
-  const { data: teams } = useTeams(leagueId || '');
+  // const { data: teams } = useTeams(leagueId || '');
   const addPlayerMutation = useAddPlayerToRoster();
   
   const [activeTab, setActiveTab] = useState(0);
@@ -107,90 +273,37 @@ export default function Players({ leagueId }: PlayersProps) {
   });
 
   // Transform database players to display format (memoized)
-  const transformPlayer = useMemo(() => (dbPlayer: DatabasePlayer): Player => {
-    const stats = dbPlayer.stats || {
-      points: 0,
-      rebounds: 0,
-      assists: 0,
-      steals: 0,
-      blocks: 0,
-      turnovers: 0,
-      field_goal_percentage: 0,
-      free_throw_percentage: 0,
-      three_point_percentage: 0,
-    };
-
-    // Calculate fantasy points (simple formula: PTS + REB + AST + STL + BLK - TO)
-    const fantasyPoints = stats.points + stats.rebounds + stats.assists + stats.steals + stats.blocks - stats.turnovers;
+  const players: Player[] = useMemo(() => {
+    if (!paginatedData?.players) return [];
     
-    return {
-      id: dbPlayer.id?.toString() || 'unknown',
-      name: dbPlayer.name || 'Unknown Player',
-      position: dbPlayer.position || 'N/A',
-      team: dbPlayer.team_abbreviation || dbPlayer.team_name || 'N/A',
-      avatar: `https://cdn.nba.com/headshots/nba/latest/260x190/${dbPlayer.nba_player_id || 'unknown'}.png`,
-      status: dbPlayer.is_active === true ? 'Active' : 'Inactive',
-      opponent: 'TBD', // This would come from schedule data
-      gameStatus: 'TBD', // This would come from schedule data
-      projection: Math.round((fantasyPoints * 1.1) * 10) / 10, // Simple projection
-      score: '--',
-      opponentRank: 'TBD',
-      startPercent: Math.random() * 100, // Mock data for now
-      rosterPercent: Math.random() * 100, // Mock data for now
-      rosterChange: (Math.random() - 0.5) * 10, // Mock data for now
-      positionRank: Math.floor(Math.random() * 50) + 1, // Mock data for now
-      seasonPoints: Math.round(fantasyPoints * 10) / 10,
-      average: Math.round(fantasyPoints * 10) / 10,
-      lastGame: Math.round(fantasyPoints * 10) / 10,
+    return paginatedData.players.map((player: DatabasePlayer) => ({
+      id: player.id.toString(),
+      name: player.name,
+      position: player.position || 'N/A',
+      team: player.team_abbreviation || player.team_name || 'N/A',
+      avatar: player.name.split(' ').map(n => n[0]).join(''),
+      status: player.is_active ? 'Active' : 'Inactive',
+      opponent: 'TBD',
+      gameStatus: 'Scheduled',
+      projection: 0,
+      score: 0, // Current points not available in this view
+      opponentRank: 'N/A',
+      startPercent: 0,
+      rosterPercent: 0,
+      rosterChange: 0,
+      positionRank: 0,
+      seasonPoints: 0, // Season points not available in this view
+      average: 0,
+      lastGame: 0,
       isRostered: false,
       isWatched: false,
-    };
-  }, []); // Empty dependency array since this function doesn't depend on any props/state
+      nba_player_id: player.nba_player_id, // Add this for avatar images
+    }));
+  }, [paginatedData?.players]);
 
-  const players = useMemo(() => 
-    paginatedData?.players ? paginatedData.players.map(transformPlayer) : [], 
-    [paginatedData?.players, transformPlayer]
-  );
-
-  const tabs = useMemo(() => [
-    { id: 'overview', label: 'Overview' },
-    { id: 'schedule', label: 'Schedule' },
-    { id: 'news', label: 'News' },
-    { id: 'projections', label: 'Projections' },
-    { id: 'ranks', label: 'Ranks' },
-    { id: 'recommends', label: 'Recommends' },
-  ], []);
-
-  const positions = useMemo(() => ['', 'PG', 'SG', 'SF', 'PF', 'C', 'G', 'F'], []);
-
-  // Reset to page 1 when position filter changes
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [positionFilter]);
-
-  const getStatusColor = (status: string | undefined) => {
-    if (!status) return 'neutral';
-    switch (status.toLowerCase()) {
-      case 'active': return 'success';
-      case 'questionable': return 'warning';
-      case 'doubtful': return 'danger';
-      case 'out': return 'danger';
-      default: return 'neutral';
-    }
-  };
-
-  const getRosterChangeColor = (change: number) => {
-    if (change > 0) return 'success';
-    if (change < 0) return 'danger';
-    return 'neutral';
-  };
-
-  const handleAddPlayer = async (player: Player) => {
-    // Find the user's team in this league
-    const userTeam = teams?.find(team => team.user_id === user?.id);
-    
-    if (!userTeam) {
-      setSnackbarMessage('You don\'t have a team in this league yet');
+  const handleAddPlayer = async (playerId: string, playerName: string) => {
+    if (!user) {
+      setSnackbarMessage('Please sign in to add players');
       setSnackbarColor('danger');
       setSnackbarOpen(true);
       return;
@@ -198,22 +311,18 @@ export default function Players({ leagueId }: PlayersProps) {
 
     try {
       await addPlayerMutation.mutateAsync({
-        playerId: parseInt(player.id),
-        fantasyTeamId: userTeam.id,
+        playerId: parseInt(playerId),
+        fantasyTeamId: 'temp-team-id', // This should be the user's team ID
       });
-      
-      setSnackbarMessage(`Successfully added ${player.name} to your roster!`);
+      setSnackbarMessage(`Added ${playerName} to your roster!`);
       setSnackbarColor('success');
       setSnackbarOpen(true);
-    } catch (error: any) {
-      setSnackbarMessage(error.message || 'Failed to add player to roster');
+    } catch (error) {
+      console.error('Error adding player:', error);
+      setSnackbarMessage(`Failed to add ${playerName}. Please try again.`);
       setSnackbarColor('danger');
       setSnackbarOpen(true);
     }
-  };
-
-  const handleWatchPlayer = (player: Player) => {
-    console.log('Watching player:', player.name);
   };
 
   const handlePageChange = (newPage: number) => {
@@ -245,10 +354,11 @@ export default function Players({ leagueId }: PlayersProps) {
   // Show player detail if a player is selected
   if (selectedPlayer) {
     return (
-      <PlayerDetail
+      <EnhancedPlayerDetail
         playerId={selectedPlayer.id}
         playerName={selectedPlayer.name}
         onBack={handleBackToPlayers}
+        leagueId={leagueId}
       />
     );
   }
@@ -260,453 +370,1144 @@ export default function Players({ leagueId }: PlayersProps) {
         <Typography level="h2" component="h1" sx={{ fontWeight: 'bold' }}>
           Players
         </Typography>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Switch
-            checked={compareMode}
-            onChange={(event) => setCompareMode(event.target.checked)}
-            startDecorator="Compare Players"
-            size="sm"
-          />
-          <Select
-            value={statsFilter}
-            onChange={(event, newValue) => setStatsFilter(newValue || 'currSeason')}
-            sx={{ minWidth: 150 }}
+        <Stack direction="row" spacing={2}>
+          <Button
+            variant="outlined"
+            startDecorator={<FilterList />}
+            onClick={() => setActiveTab(1)}
           >
-            <Option value="currSeason">2025 season</Option>
-            <Option value="lastSeason">2024 season</Option>
-            <Option value="projections">2025 Projections</Option>
-          </Select>
-        </Box>
+            Filters
+          </Button>
+          <Button
+            variant="outlined"
+            startDecorator={<Flag />}
+            onClick={() => setCompareMode(!compareMode)}
+            color={compareMode ? 'primary' : 'neutral'}
+          >
+            Compare Mode
+          </Button>
+        </Stack>
       </Box>
 
       {/* Tabs */}
-      <Box sx={{ borderBottom: '1px solid', borderColor: 'divider', mb: 3 }}>
-        <Tabs
-          value={activeTab}
-          onChange={(event, newValue) => setActiveTab(newValue as number)}
-        >
-          <TabList>
-            {tabs.map((tab, index) => (
-              <Tab key={tab.id} value={index}>
-                {tab.label}
-              </Tab>
-            ))}
-          </TabList>
-        </Tabs>
-      </Box>
+      <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue as number)} sx={{ mb: 3 }}>
+        <TabList>
+          <Tab>All Players</Tab>
+          <Tab>Filters & Search</Tab>
+          <Tab>Career Stats</Tab>
+          <Tab>2024-25 Game Logs</Tab>
+          <Tab>Contract Data</Tab>
+        </TabList>
 
-      {/* Filters */}
-      <Card variant="outlined" sx={{ mb: 3 }}>
-        <CardContent>
-          <Stack spacing={2}>
-            <Input
-              placeholder="Search players..."
-              value={searchTerm}
-              onChange={(event) => setSearchTerm(event.target.value)}
-              startDecorator={<Search />}
-              size="sm"
-            />
-            
-            <Stack direction="row" spacing={1}>
-              <Select
-                placeholder="Position"
-                value={positionFilter}
-                onChange={(_, value) => {
-                  setPositionFilter(value as string);
-                  setCurrentPage(1);
-                }}
-                size="sm"
-                sx={{ flex: 1 }}
-              >
-                <Option value="">All Positions</Option>
-                <Option value="PG">Point Guard</Option>
-                <Option value="SG">Shooting Guard</Option>
-                <Option value="SF">Small Forward</Option>
-                <Option value="PF">Power Forward</Option>
-                <Option value="C">Center</Option>
-                <Option value="G">Guard</Option>
-                <Option value="F">Forward</Option>
-              </Select>
-              
-              <Select
-                placeholder="Team"
-                value={teamFilter}
-                onChange={(_, value) => {
-                  setTeamFilter(value as string);
-                  setCurrentPage(1);
-                }}
-                size="sm"
-                sx={{ flex: 1 }}
-              >
-                <Option value="">All Teams</Option>
-                <Option value="ATL">Hawks</Option>
-                <Option value="BKN">Nets</Option>
-                <Option value="BOS">Celtics</Option>
-                <Option value="CHA">Hornets</Option>
-                <Option value="CHI">Bulls</Option>
-                <Option value="CLE">Cavaliers</Option>
-                <Option value="DAL">Mavericks</Option>
-                <Option value="DEN">Nuggets</Option>
-                <Option value="DET">Pistons</Option>
-                <Option value="GSW">Warriors</Option>
-                <Option value="HOU">Rockets</Option>
-                <Option value="IND">Pacers</Option>
-                <Option value="LAC">Clippers</Option>
-                <Option value="LAL">Lakers</Option>
-                <Option value="MEM">Grizzlies</Option>
-                <Option value="MIA">Heat</Option>
-                <Option value="MIL">Bucks</Option>
-                <Option value="MIN">Timberwolves</Option>
-                <Option value="NOP">Pelicans</Option>
-                <Option value="NYK">Knicks</Option>
-                <Option value="OKC">Thunder</Option>
-                <Option value="ORL">Magic</Option>
-                <Option value="PHI">76ers</Option>
-                <Option value="PHX">Suns</Option>
-                <Option value="POR">Trail Blazers</Option>
-                <Option value="SAC">Kings</Option>
-                <Option value="SAS">Spurs</Option>
-                <Option value="TOR">Raptors</Option>
-                <Option value="UTA">Jazz</Option>
-                <Option value="WAS">Wizards</Option>
-              </Select>
-              
-              <Button
-                size="sm"
-                variant="outlined"
-                startDecorator={<Clear />}
-                onClick={clearFilters}
-                sx={{ minWidth: 'auto' }}
-              >
-                Clear
-              </Button>
-            </Stack>
-            
-            {/* Show Inactive Players Toggle */}
-            <FormControl orientation="horizontal" sx={{ justifyContent: 'space-between' }}>
-              <FormLabel>Show inactive players</FormLabel>
-              <Switch
-                checked={showInactive}
-                onChange={(event) => {
-                  setShowInactive(event.target.checked);
-                  setCurrentPage(1);
-                }}
-                size="sm"
-              />
-            </FormControl>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      {/* Players Table */}
-      <Card variant="outlined">
-        <CardContent sx={{ p: 0 }}>
-          <Box sx={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ borderBottom: '2px solid var(--joy-palette-divider)' }}>
-                  <th colSpan={1} style={{ textAlign: 'center', padding: '12px', backgroundColor: 'var(--joy-palette-background-surface)', fontWeight: 'bold' }}>
-                    Players
-                  </th>
-                  <th colSpan={1} style={{ textAlign: 'center', padding: '12px', backgroundColor: 'var(--joy-palette-background-surface)', fontWeight: 'bold' }}>
-                    Actions
-                  </th>
-                  <th colSpan={8} style={{ textAlign: 'center', padding: '12px', backgroundColor: 'var(--joy-palette-background-surface)', fontWeight: 'bold' }}>
-                    NBA Week 5
-                  </th>
-                  <th colSpan={4} style={{ textAlign: 'center', padding: '12px', backgroundColor: 'var(--joy-palette-background-surface)', fontWeight: 'bold' }}>
-                    2025 season
-                  </th>
-                </tr>
-                <tr style={{ borderBottom: '1px solid var(--joy-palette-divider)' }}>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Player</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Action</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Opp</th>
-                  <th style={{ textAlign: 'left', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>STATUS</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Proj</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Score</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>OPRK</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>%ST</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>%ROST</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>+/-</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>PRK</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>FPTS</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Avg</th>
-                  <th style={{ textAlign: 'center', padding: '8px', fontSize: '0.875rem', fontWeight: 'bold' }}>Last</th>
-                </tr>
-              </thead>
-              <tbody>
-                {players && players.length > 0 ? (
-                  players.map((player, index) => (
-                  <tr 
-                    key={player.id}
-                    style={{ 
-                      borderBottom: '1px solid var(--joy-palette-divider)',
-                      backgroundColor: index % 2 === 0 ? 'transparent' : 'var(--joy-palette-background-surface)',
-                      cursor: 'pointer'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'var(--joy-palette-primary-50)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = index % 2 === 0 ? 'transparent' : 'var(--joy-palette-background-surface)';
-                    }}
+        {/* All Players Tab */}
+        <TabPanel value={0}>
+          {/* Search and Quick Filters */}
+          <Card variant="outlined" sx={{ mb: 3 }}>
+            <CardContent>
+              <Grid container spacing={2} alignItems="center">
+                <Grid xs={12} md={4}>
+                  <FormControl>
+                    <FormLabel>Search Players</FormLabel>
+                    <Input
+                      placeholder="Search by name..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      startDecorator={<Search />}
+                      endDecorator={
+                        searchTerm && (
+                          <IconButton
+                            size="sm"
+                            variant="plain"
+                            onClick={() => setSearchTerm('')}
+                          >
+                            <Clear />
+                          </IconButton>
+                        )
+                      }
+                    />
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={2}>
+                  <FormControl>
+                    <FormLabel>Position</FormLabel>
+                    <Select
+                      value={positionFilter}
+                      onChange={(_, value) => setPositionFilter(value || '')}
+                      placeholder="All"
+                    >
+                      <Option value="">All Positions</Option>
+                      <Option value="PG">Point Guard</Option>
+                      <Option value="SG">Shooting Guard</Option>
+                      <Option value="SF">Small Forward</Option>
+                      <Option value="PF">Power Forward</Option>
+                      <Option value="C">Center</Option>
+                      <Option value="G">Guard</Option>
+                      <Option value="F">Forward</Option>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={2}>
+                  <FormControl>
+                    <FormLabel>Team</FormLabel>
+                    <Select
+                      value={teamFilter}
+                      onChange={(_, value) => setTeamFilter(value || '')}
+                      placeholder="All"
+                    >
+                      <Option value="">All Teams</Option>
+                      <Option value="ATL">Atlanta Hawks</Option>
+                      <Option value="BOS">Boston Celtics</Option>
+                      <Option value="BKN">Brooklyn Nets</Option>
+                      <Option value="CHA">Charlotte Hornets</Option>
+                      <Option value="CHI">Chicago Bulls</Option>
+                      <Option value="CLE">Cleveland Cavaliers</Option>
+                      <Option value="DAL">Dallas Mavericks</Option>
+                      <Option value="DEN">Denver Nuggets</Option>
+                      <Option value="DET">Detroit Pistons</Option>
+                      <Option value="GSW">Golden State Warriors</Option>
+                      <Option value="HOU">Houston Rockets</Option>
+                      <Option value="IND">Indiana Pacers</Option>
+                      <Option value="LAC">LA Clippers</Option>
+                      <Option value="LAL">Los Angeles Lakers</Option>
+                      <Option value="MEM">Memphis Grizzlies</Option>
+                      <Option value="MIA">Miami Heat</Option>
+                      <Option value="MIL">Milwaukee Bucks</Option>
+                      <Option value="MIN">Minnesota Timberwolves</Option>
+                      <Option value="NOP">New Orleans Pelicans</Option>
+                      <Option value="NYK">New York Knicks</Option>
+                      <Option value="OKC">Oklahoma City Thunder</Option>
+                      <Option value="ORL">Orlando Magic</Option>
+                      <Option value="PHI">Philadelphia 76ers</Option>
+                      <Option value="PHX">Phoenix Suns</Option>
+                      <Option value="POR">Portland Trail Blazers</Option>
+                      <Option value="SAC">Sacramento Kings</Option>
+                      <Option value="SAS">San Antonio Spurs</Option>
+                      <Option value="TOR">Toronto Raptors</Option>
+                      <Option value="UTA">Utah Jazz</Option>
+                      <Option value="WAS">Washington Wizards</Option>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={2}>
+                  <FormControl>
+                    <FormLabel>Status</FormLabel>
+                    <FormControl orientation="horizontal" sx={{ gap: 1 }}>
+                      <Switch
+                        checked={showInactive}
+                        onChange={(e) => setShowInactive(e.target.checked)}
+                      />
+                      <FormLabel>Show Inactive</FormLabel>
+                    </FormControl>
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={2}>
+                  <Button
+                    variant="outlined"
+                    onClick={clearFilters}
+                    startDecorator={<Clear />}
+                    sx={{ mt: 2 }}
                   >
-                    {/* Player Column */}
-                    <td style={{ padding: '12px', width: '230px' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar 
-                          src={player.avatar} 
-                          alt={player.name}
-                          size="lg"
-                          sx={{ width: 48, height: 48 }}
-                        />
-                        <Box>
-                          <Typography 
-                            level="body-sm" 
-                            sx={{ 
-                              fontWeight: 'bold',
-                              cursor: 'pointer',
-                              '&:hover': {
-                                color: 'primary.500',
-                                textDecoration: 'underline'
-                              }
-                            }}
-                            onClick={() => handlePlayerClick(player)}
-                          >
-                            {player.name}
-                          </Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                            {player.team} • {player.position}
-                          </Typography>
-                        </Box>
-                      </Box>
-                    </td>
+                    Clear
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
 
-                    {/* Action Column */}
-                    <td style={{ padding: '8px', width: '100px', textAlign: 'center' }}>
-                      <Stack direction="row" spacing={1} justifyContent="center">
-                        <Tooltip title="Add Player">
-                          <IconButton
-                            size="sm"
-                            color="primary"
-                            variant="solid"
-                            onClick={() => handleAddPlayer(player)}
-                          >
-                            <Add />
-                          </IconButton>
-                        </Tooltip>
-                        <Tooltip title="Watch Player">
-                          <IconButton
-                            size="sm"
-                            variant="outlined"
-                            color={player.isWatched ? 'primary' : 'neutral'}
-                            onClick={() => handleWatchPlayer(player)}
-                          >
-                            <Flag />
-                          </IconButton>
-                        </Tooltip>
-                      </Stack>
-                    </td>
+          {/* Players Table */}
+          <PlayersTable
+            players={players}
+            playersLoading={playersLoading}
+            playersError={playersError}
+            onPlayerClick={handlePlayerClick}
+            onAddToRoster={handleAddPlayer}
+            paginatedData={paginatedData}
+            addPlayerMutation={addPlayerMutation}
+          />
 
-                    {/* Opponent Column */}
-                    <td style={{ padding: '8px', width: '60px', textAlign: 'center' }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                        {player.opponent}
-                      </Typography>
-                    </td>
-
-                    {/* Game Status Column */}
-                    <td style={{ padding: '8px', textAlign: 'left' }}>
-                      <Typography level="body-sm">
-                        {player.gameStatus}
-                      </Typography>
-                    </td>
-
-                    {/* Projection Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                        {player.projection}
-                      </Typography>
-                    </td>
-
-                    {/* Score Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.score}
-                      </Typography>
-                    </td>
-
-                    {/* Opponent Rank Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.opponentRank}
-                      </Typography>
-                    </td>
-
-                    {/* Start Percent Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.startPercent}%
-                      </Typography>
-                    </td>
-
-                    {/* Roster Percent Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.rosterPercent}%
-                      </Typography>
-                    </td>
-
-                    {/* Roster Change Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography 
-                        level="body-sm" 
-                        sx={{ 
-                          color: getRosterChangeColor(player.rosterChange) === 'success' ? 'success.500' : 
-                                getRosterChangeColor(player.rosterChange) === 'danger' ? 'danger.500' : 'text.primary',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        {player.rosterChange > 0 ? '+' : ''}{player.rosterChange}%
-                      </Typography>
-                    </td>
-
-                    {/* Position Rank Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                        {player.positionRank}
-                      </Typography>
-                    </td>
-
-                    {/* Season Points Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                        {player.seasonPoints}
-                      </Typography>
-                    </td>
-
-                    {/* Average Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.average}
-                      </Typography>
-                    </td>
-
-                    {/* Last Game Column */}
-                    <td style={{ padding: '8px', textAlign: 'center' }}>
-                      <Typography level="body-sm">
-                        {player.lastGame}
-                      </Typography>
-                    </td>
-                  </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={14} style={{ textAlign: 'center', padding: '40px' }}>
-                      <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-                        No players found matching your criteria.
-                      </Typography>
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* Pagination Controls */}
-      {paginatedData && (
-        <Card variant="outlined" sx={{ mt: 2 }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                Showing {((paginatedData.currentPage - 1) * pageSize) + 1} to {Math.min(paginatedData.currentPage * pageSize, paginatedData.totalCount)} of {paginatedData.totalCount} players
+          {/* Pagination */}
+          {paginatedData && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+              <Typography level="body-sm" color="neutral">
+                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, paginatedData.totalCount)} of {paginatedData.totalCount} players
               </Typography>
-              
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Stack direction="row" spacing={1}>
                 <Button
                   variant="outlined"
                   size="sm"
                   startDecorator={<NavigateBefore />}
                   onClick={() => handlePageChange(currentPage - 1)}
-                  disabled={!paginatedData.hasPreviousPage}
+                  disabled={currentPage === 1}
                 >
                   Previous
                 </Button>
-                
-                <Box sx={{ display: 'flex', gap: 0.5 }}>
-                  {/* Show page numbers */}
-                  {Array.from({ length: Math.min(5, paginatedData.totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (paginatedData.totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= paginatedData.totalPages - 2) {
-                      pageNum = paginatedData.totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={pageNum === currentPage ? "solid" : "outlined"}
-                        size="sm"
-                        onClick={() => handlePageChange(pageNum)}
-                        sx={{ minWidth: '40px' }}
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                </Box>
-                
                 <Button
                   variant="outlined"
                   size="sm"
                   endDecorator={<NavigateNext />}
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={!paginatedData.hasNextPage}
+                  disabled={currentPage >= Math.ceil(paginatedData.totalCount / pageSize)}
                 >
                   Next
                 </Button>
-              </Box>
+              </Stack>
             </Box>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </TabPanel>
 
-      {/* Tab Content */}
-      <Box sx={{ mt: 3 }}>
-        {tabs.map((tab, index) => (
-          <TabPanel key={tab.id} value={index}>
-            <Card variant="outlined">
-              <CardContent>
-                <Typography level="h4" sx={{ mb: 2 }}>
-                  {tab.label}
+        {/* Filters Tab */}
+        <TabPanel value={1}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography level="h4" sx={{ mb: 3 }}>
+                Advanced Filters
+              </Typography>
+              <Grid container spacing={3}>
+                <Grid xs={12} md={6}>
+                  <FormControl>
+                    <FormLabel>Stats Timeframe</FormLabel>
+                    <Select
+                      value={statsFilter}
+                      onChange={(_, value) => setStatsFilter(value || 'currSeason')}
+                    >
+                      <Option value="currSeason">Current Season</Option>
+                      <Option value="last7">Last 7 Games</Option>
+                      <Option value="last15">Last 15 Games</Option>
+                      <Option value="last30">Last 30 Games</Option>
+                      <Option value="career">Career</Option>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={6}>
+                  <FormControl>
+                    <FormLabel>Sort By</FormLabel>
+                    <Select defaultValue="name">
+                      <Option value="name">Name</Option>
+                      <Option value="points">Points</Option>
+                      <Option value="rebounds">Rebounds</Option>
+                      <Option value="assists">Assists</Option>
+                      <Option value="fantasy">Fantasy Points</Option>
+                      <Option value="salary">Salary</Option>
+                    </Select>
+                  </FormControl>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+        </TabPanel>
+
+        {/* Career Stats Tab */}
+        <TabPanel value={2}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography level="h4" sx={{ mb: 3 }}>
+                Career Statistics Overview
+              </Typography>
+              <Alert color="primary">
+                <Typography>
+                  Click on any player in the "All Players" tab to view their comprehensive career statistics, 
+                  season breakdown, and recent game logs.
                 </Typography>
-                <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-                  {tab.label} content coming soon. This will show detailed {tab.label.toLowerCase()} information for players.
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabPanel>
+
+        {/* 2024-25 Game Logs Tab */}
+        <TabPanel value={3}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography level="h4" sx={{ mb: 3 }}>
+                2024-25 Game Logs
+              </Typography>
+              <Alert color="primary">
+                <Typography>
+                  Click on any player in the "All Players" tab to view their detailed 2024-25 game logs 
+                  with comprehensive statistics including rankings and advanced metrics.
                 </Typography>
-              </CardContent>
-            </Card>
-          </TabPanel>
-        ))}
-      </Box>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabPanel>
+
+        {/* Contract Data Tab */}
+        <TabPanel value={4}>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography level="h4" sx={{ mb: 3 }}>
+                Contract Data
+              </Typography>
+              <Alert color="primary">
+                <Typography>
+                  Click on any player in the "All Players" tab to view their contract information including 
+                  years remaining and future salary breakdown.
+                </Typography>
+              </Alert>
+            </CardContent>
+          </Card>
+        </TabPanel>
+      </Tabs>
 
       {/* Snackbar for notifications */}
       <Snackbar
         open={snackbarOpen}
-        onClose={() => setSnackbarOpen(false)}
         color={snackbarColor}
-        autoHideDuration={4000}
+        autoHideDuration={3000}
+        onClose={() => setSnackbarOpen(false)}
       >
         {snackbarMessage}
       </Snackbar>
     </Box>
+  );
+}
+
+// Enhanced Player Detail Component
+function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { playerId: string; playerName: string; onBack: () => void; leagueId?: string }) {
+  const [activeTab, setActiveTab] = useState(0);
+  const [gameLogsPage, setGameLogsPage] = useState(1);
+  const [gameLogsPageSize] = useState(20);
+  
+  const { 
+    data: playerData, 
+    isLoading: loading, 
+    error 
+  } = usePlayerComprehensive(playerId, gameLogsPage, gameLogsPageSize);
+
+  if (loading) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2 }}>
+            Back to Players
+          </Button>
+          <LinearProgress sx={{ flex: 1 }} />
+        </Box>
+        <Typography>Loading player data...</Typography>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2 }}>
+            Back to Players
+          </Button>
+        </Box>
+        <Alert color="danger">
+          <Typography>Error loading player data: {error.message}</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  if (!playerData) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2 }}>
+            Back to Players
+          </Button>
+        </Box>
+        <Alert color="warning">
+          <Typography>No player data found</Typography>
+        </Alert>
+      </Box>
+    );
+  }
+
+  const formatNumber = (num: number | undefined) => {
+    if (num === undefined || num === null) return 'N/A';
+    return num.toLocaleString();
+  };
+
+  const formatPercentage = (num: number | undefined) => {
+    if (num === undefined || num === null) return 'N/A';
+    return `${(num * 100).toFixed(1)}%`;
+  };
+
+  const formatSalary = (salary: number | undefined) => {
+    if (salary === undefined || salary === null) return 'N/A';
+    return `$${(salary / 1000000).toFixed(1)}M`;
+  };
+
+  const formatHeight = (height: string | undefined) => {
+    if (!height || height === 'N/A') return 'N/A';
+    
+    // If height is already in feet-inches format, return as-is
+    if (height.includes('-')) return height;
+    
+    // Convert inches to feet-inches format
+    const totalInches = parseInt(height);
+    if (isNaN(totalInches)) return height;
+    
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    
+    return `${feet}'${inches}"`;
+  };
+
+  return (
+    <Box sx={{ p: 3 }}>
+      <Grid container spacing={3}>
+        {/* Player Info Card */}
+        <Grid xs={12} md={4}>
+          <Card variant="outlined" sx={{ height: 'fit-content', position: 'relative' }}>
+            <CardContent>
+              {/* Action Buttons positioned in top right corner of card */}
+              <Box sx={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                zIndex: 2
+              }}>
+                <PlayerActionButtons
+                  playerId={parseInt(playerId)}
+                  playerName={playerName}
+                  leagueId={leagueId}
+                />
+              </Box>
+              
+              <Stack spacing={2} alignItems="center" sx={{ textAlign: 'center' }}>
+                {/* Back Button */}
+                <Button 
+                  variant="outlined" 
+                  startDecorator={<ArrowBack />} 
+                  onClick={onBack} 
+                  size="sm"
+                  sx={{ alignSelf: 'flex-start', mb: 1 }}
+                >
+                  Back
+                </Button>
+                
+                <Avatar
+                  size="lg"
+                  src={`https://cdn.nba.com/headshots/nba/latest/260x190/${playerData.player.nba_player_id}.png`}
+                  sx={{ 
+                    width: 120, 
+                    height: 120,
+                    bgcolor: 'primary.500',
+                    fontSize: '2rem',
+                    '& img': {
+                      objectFit: 'cover'
+                    }
+                  }}
+                  onError={(e) => {
+                    // Fallback to initials if image fails to load
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.textContent = playerData.player.name.split(' ').map((n: string) => n[0]).join('');
+                    }
+                  }}
+                >
+                  {playerData.player.name.split(' ').map((n: string) => n[0]).join('')}
+                </Avatar>
+                
+                <Box>
+                  <Typography level="h4" sx={{ fontWeight: 'bold', mb: 1 }}>
+                    {playerData.player.name}
+                  </Typography>
+                  <Typography level="body-md" color="neutral" sx={{ mb: 2 }}>
+                    #{playerData.player.jersey_number || 'N/A'} • {playerData.player.position || 'N/A'} • {playerData.player.team_name || 'N/A'}
+                  </Typography>
+                  
+                  <Chip 
+                    color="primary" 
+                    variant="soft"
+                    size="lg"
+                    sx={{ mb: 2 }}
+                  >
+                    {playerData.player.position || 'N/A'}
+                  </Chip>
+                </Box>
+
+                <Divider sx={{ width: '100%' }} />
+
+                <Stack spacing={1} sx={{ width: '100%' }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Height</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{formatHeight(playerData.player.height)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Weight</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.weight ? `${playerData.player.weight} lbs` : 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Age</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.age || 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Experience</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.years_pro ? `${playerData.player.years_pro} years` : 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">College</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.college || 'N/A'}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Draft</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {playerData.player.draft_year ? `${playerData.player.draft_year} • Round ${playerData.player.draft_round} • Pick ${playerData.player.draft_number}` : 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Birth Place</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {playerData.player.birth_city && playerData.player.birth_state ? `${playerData.player.birth_city}, ${playerData.player.birth_state}` : playerData.player.birth_country || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Salary</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {formatSalary(playerData.player.salary_2025_26)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Status</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {playerData.player.is_active ? 'Active' : 'Inactive'}
+                      {playerData.player.is_rookie && ' • Rookie'}
+                    </Typography>
+                  </Box>
+                  {playerData.player.team_city && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Team City</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.team_city}</Typography>
+                    </Box>
+                  )}
+                  {playerData.player.roster_status && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Roster Status</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.roster_status}</Typography>
+                    </Box>
+                  )}
+                  {playerData.player.country && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Country</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{playerData.player.country}</Typography>
+                    </Box>
+                  )}
+                </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Stats Cards */}
+        <Grid xs={12} md={8}>
+          <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue as number)}>
+            <TabList>
+              <Tab>Career Stats</Tab>
+              <Tab>Season Breakdown</Tab>
+              <Tab>2024-25 Game Logs</Tab>
+              <Tab>Contract Data</Tab>
+              <Tab>Upcoming Games</Tab>
+            </TabList>
+
+            <TabPanel value={0}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+                    Career Statistics
+                  </Typography>
+                  
+                  {playerData.careerStats ? (
+                    <>
+                      <Grid container spacing={2}>
+                        <Grid xs={6} sm={3}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                              {formatNumber(playerData.careerStats.pts)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Career Points</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={3}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                              {formatNumber(playerData.careerStats.reb)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Career Rebounds</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={3}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                              {formatNumber(playerData.careerStats.ast)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Career Assists</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={3}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'danger.500' }}>
+                              {formatNumber(playerData.careerStats.fantasy_pts)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Career Fantasy Pts</Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+
+                      <Divider sx={{ my: 3 }} />
+
+                      <Grid container spacing={2}>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatNumber(playerData.careerStats.gp)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Games Played</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatNumber(playerData.careerStats.stl)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Steals</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatNumber(playerData.careerStats.blk)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Blocks</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatPercentage(playerData.careerStats.fg_pct)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">FG%</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatPercentage(playerData.careerStats.fg3_pct)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">3P%</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatPercentage(playerData.careerStats.ft_pct)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">FT%</Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+                    </>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No career statistics available</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabPanel>
+
+            <TabPanel value={1}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+                    Season Breakdown
+                  </Typography>
+                  
+                  {playerData.seasonBreakdown && playerData.seasonBreakdown.length > 0 ? (
+                    <Box sx={{ overflowX: 'auto' }}>
+                      <Table hoverRow size="sm">
+                        <thead>
+                          <tr>
+                            <th>Season</th>
+                            <th>Team</th>
+                            <th>Age</th>
+                            <th>GP</th>
+                            <th>PTS</th>
+                            <th>REB</th>
+                            <th>AST</th>
+                            <th>FG%</th>
+                            <th>3P%</th>
+                            <th>FT%</th>
+                            <th>Fantasy</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {playerData.seasonBreakdown.map((season, index) => (
+                            <tr key={index}>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                  {season.season_id}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.team_abbreviation}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.player_age}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.gp}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                                  {season.pts}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                                  {season.reb}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                  {season.ast}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.fg_pct)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.fg3_pct)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.ft_pct)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.500' }}>
+                                  {season.fantasy_pts}
+                                </Typography>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </Box>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No season breakdown available</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabPanel>
+
+            <TabPanel value={2}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+                    2024-25 Game Logs
+                  </Typography>
+                  
+                  {playerData.recentGameLogs && playerData.recentGameLogs.length > 0 ? (
+                    <>
+                      <Box sx={{ overflowX: 'auto' }}>
+                        <Table hoverRow size="sm">
+                          <thead>
+                            <tr>
+                              <th>Date</th>
+                              <th>Matchup</th>
+                              <th>Result</th>
+                              <th>Min</th>
+                              <th>PTS</th>
+                              <th>REB</th>
+                              <th>AST</th>
+                              <th>STL</th>
+                              <th>BLK</th>
+                              <th>FG%</th>
+                              <th>3P%</th>
+                              <th>FT%</th>
+                              <th>Fantasy</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {playerData.recentGameLogs.map((game, index) => (
+                              <tr key={index}>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {new Date(game.game_date).toLocaleDateString()}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {game.matchup}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Chip size="sm" color={game.wl === 'W' ? 'success' : 'danger'} variant="soft">
+                                    {game.wl}
+                                  </Chip>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {game.min || 'N/A'}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                                    {game.pts || 0}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                                    {game.reb || 0}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                    {game.ast || 0}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {game.stl || 0}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {game.blk || 0}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {formatPercentage(game.fg_pct)}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {formatPercentage(game.fg3_pct)}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm">
+                                    {formatPercentage(game.ft_pct)}
+                                  </Typography>
+                                </td>
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.500' }}>
+                                    {game.nba_fantasy_pts || 0}
+                                  </Typography>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </Table>
+                      </Box>
+
+                      {/* Game Logs Pagination */}
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
+                        <Typography level="body-sm" color="neutral">
+                          Showing {((gameLogsPage - 1) * gameLogsPageSize) + 1} to {Math.min(gameLogsPage * gameLogsPageSize, playerData.gameLogsPagination.total)} of {playerData.gameLogsPagination.total} games
+                        </Typography>
+                        <Stack direction="row" spacing={1}>
+                          <Button
+                            variant="outlined"
+                            size="sm"
+                            startDecorator={<NavigateBefore />}
+                            onClick={() => setGameLogsPage(gameLogsPage - 1)}
+                            disabled={gameLogsPage === 1}
+                          >
+                            Previous
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            size="sm"
+                            endDecorator={<NavigateNext />}
+                            onClick={() => setGameLogsPage(gameLogsPage + 1)}
+                            disabled={gameLogsPage >= playerData.gameLogsPagination.totalPages}
+                          >
+                            Next
+                          </Button>
+                        </Stack>
+                      </Box>
+                    </>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No 2024-25 game logs available</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabPanel>
+
+            <TabPanel value={3}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+                    Contract Data
+                  </Typography>
+                  
+                  {playerData.player ? (
+                    <>
+                      <Grid container spacing={2}>
+                        <Grid xs={12} sm={6}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                              {playerData.player.contract_years_remaining || 0}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Years Remaining</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={12} sm={6}>
+                          <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                            <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                              ${playerData.player.salary_2025_26 ? (playerData.player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Current Salary (2025-26)</Typography>
+                          </Box>
+                        </Grid>
+                      </Grid>
+
+                      <Divider sx={{ my: 3 }} />
+
+                      <Typography level="h3" sx={{ mb: 2, fontWeight: 'bold' }}>
+                        Future Salary Breakdown
+                      </Typography>
+                      
+                      <Grid container spacing={2}>
+                        {playerData.player.salary_2026_27 && (
+                          <Grid xs={6} sm={3}>
+                            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                              <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                ${(playerData.player.salary_2026_27 / 1000000).toFixed(1)}M
+                              </Typography>
+                              <Typography level="body-sm" color="neutral">2026-27</Typography>
+                            </Box>
+                          </Grid>
+                        )}
+                        {playerData.player.salary_2027_28 && (
+                          <Grid xs={6} sm={3}>
+                            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                              <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                ${(playerData.player.salary_2027_28 / 1000000).toFixed(1)}M
+                              </Typography>
+                              <Typography level="body-sm" color="neutral">2027-28</Typography>
+                            </Box>
+                          </Grid>
+                        )}
+                        {playerData.player.salary_2028_29 && (
+                          <Grid xs={6} sm={3}>
+                            <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
+                              <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                ${(playerData.player.salary_2028_29 / 1000000).toFixed(1)}M
+                              </Typography>
+                              <Typography level="body-sm" color="neutral">2028-29</Typography>
+                            </Box>
+                          </Grid>
+                        )}
+                      </Grid>
+
+                      {(!playerData.player.salary_2026_27 && 
+                        !playerData.player.salary_2027_28 && !playerData.player.salary_2028_29) && (
+                        <Alert color="warning" sx={{ mt: 2 }}>
+                          <Typography>
+                            No future contract data available for this player.
+                          </Typography>
+                        </Alert>
+                      )}
+                    </>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No contract data available for this player.</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabPanel>
+
+            <TabPanel value={4}>
+              <UpcomingGamesTab playerId={playerId} />
+            </TabPanel>
+          </Tabs>
+        </Grid>
+      </Grid>
+    </Box>
+  );
+}
+
+// Upcoming Games Tab Component
+function UpcomingGamesTab({ playerId }: { playerId: string }) {
+  const { data: upcomingGames, isLoading, error } = usePlayerUpcomingGames(playerId);
+
+  if (isLoading) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <CalendarToday color="primary" />
+            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+              Upcoming Games
+            </Typography>
+          </Box>
+          <LinearProgress />
+          <Typography sx={{ mt: 2 }}>Loading upcoming games...</Typography>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <CalendarToday color="primary" />
+            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+              Upcoming Games
+            </Typography>
+          </Box>
+          <Alert color="danger">
+            <Typography>Error loading upcoming games: {error.message}</Typography>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!upcomingGames || upcomingGames.length === 0) {
+    return (
+      <Card variant="outlined">
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <CalendarToday color="primary" />
+            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+              Upcoming Games
+            </Typography>
+          </Box>
+          <Alert color="neutral">
+            <Typography>No upcoming games found for this player's team.</Typography>
+          </Alert>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const formatGameDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    });
+  };
+
+  const formatGameTime = (timeString?: string) => {
+    if (!timeString) return 'TBD';
+    const time = new Date(`2000-01-01T${timeString}`);
+    return time.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+  };
+
+  return (
+    <Card variant="outlined">
+      <CardContent>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+          <CalendarToday color="primary" />
+          <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+            Upcoming Games - 2025-26 Season
+          </Typography>
+        </Box>
+
+        <Table hoverRow>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Matchup</th>
+              <th>Location</th>
+              <th>Fantasy Week</th>
+            </tr>
+          </thead>
+          <tbody>
+            {upcomingGames.map((game) => (
+              <tr
+                key={game.id}
+                style={{
+                  borderLeft: game.is_week_start ? '4px solid #000' : 'none',
+                  borderRight: game.is_week_end ? '4px solid #000' : 'none',
+                  backgroundColor: game.is_week_start || game.is_week_end ? '#f5f5f5' : 'transparent'
+                }}
+              >
+                <td>
+                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                    {formatGameDate(game.game_date)}
+                  </Typography>
+                  {(game.is_week_start || game.is_week_end) && (
+                    <Chip
+                      size="sm"
+                      color="primary"
+                      variant="solid"
+                      sx={{ mt: 0.5, fontSize: '0.7rem' }}
+                    >
+                      {game.is_week_start ? 'Week Start' : 'Week End'}
+                    </Chip>
+                  )}
+                </td>
+                <td>
+                  <Typography level="body-sm">
+                    {formatGameTime(game.game_time_est)}
+                  </Typography>
+                </td>
+                <td>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {game.away_team_tricode}
+                    </Typography>
+                    <Typography level="body-sm" color="neutral">
+                      @
+                    </Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {game.home_team_tricode}
+                    </Typography>
+                  </Box>
+                </td>
+                <td>
+                  <Typography level="body-sm">
+                    {game.arena_name && game.arena_city 
+                      ? `${game.arena_city}` 
+                      : 'TBD'
+                    }
+                  </Typography>
+                </td>
+                <td>
+                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                    {game.fantasy_week_name || 'TBD'}
+                  </Typography>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+
+        <Alert color="neutral" sx={{ mt: 2 }}>
+          <Typography level="body-sm">
+            <strong>Note:</strong> Games with bold black borders mark the start and end of fantasy weeks. 
+            This helps you plan your lineup changes for optimal scoring periods.
+          </Typography>
+        </Alert>
+      </CardContent>
+    </Card>
   );
 }

@@ -4,9 +4,12 @@ import {
   Typography,
   Card,
   CardContent,
+  CardOverflow,
+  CardActions,
   Avatar,
   Chip,
   Button,
+  ButtonGroup,
   Stack,
   IconButton,
   Alert,
@@ -17,9 +20,6 @@ import {
 import {
   ChevronLeft,
   ChevronRight,
-  Star,
-  TrendingUp,
-  TrendingDown,
   Add,
 } from '@mui/icons-material';
 import { usePlayersPaginated } from '../../hooks/useNBAData';
@@ -30,23 +30,106 @@ interface DraftBestAvailableProps {
 }
 
 export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps) {
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [currentPage, setCurrentPage] = useState(0);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [cardsPerPage, setCardsPerPage] = useState(1);
 
   // Check if draft is complete
   const { data: nextPick } = useNextPick(leagueId);
   const isDraftComplete = nextPick === null;
 
-  // Get top available players (mock data for now)
-  const { data: playersData, isLoading, error } = usePlayersPaginated(1, 20, {
+  // Get all available players for global sorting
+  const { data: playersData, isLoading, error } = usePlayersPaginated(1, 1000, {
     search: '',
     position: '',
     team: '',
     leagueId: isDraftComplete ? undefined : leagueId, // Don't fetch players if draft is complete
   });
 
-  const bestAvailablePlayers = playersData?.players || [];
+  // Calculate projected fantasy points for a player (same logic as DraftPlayers)
+  const calculateProjectedFantasyPoints = (player: any) => {
+    const projections = (player as any).espn_player_projections?.[0];
+    if (!projections) return 0;
+
+    const {
+      proj_2026_gp = 0,      // Games played
+      proj_2026_pts = 0,     // Points per game
+      proj_2026_reb = 0,     // Rebounds per game
+      proj_2026_ast = 0,     // Assists per game
+      proj_2026_stl = 0,     // Steals per game
+      proj_2026_blk = 0,     // Blocks per game
+      proj_2026_to = 0,      // Turnovers per game
+      proj_2026_3pm = 0      // 3-pointers made per game
+    } = projections;
+
+    // Calculate total stats for the season
+    const totalPts = proj_2026_pts * proj_2026_gp;
+    const totalReb = proj_2026_reb * proj_2026_gp;
+    const totalAst = proj_2026_ast * proj_2026_gp;
+    const totalStl = proj_2026_stl * proj_2026_gp;
+    const totalBlk = proj_2026_blk * proj_2026_gp;
+    const totalTo = proj_2026_to * proj_2026_gp;
+    const total3pm = proj_2026_3pm * proj_2026_gp;
+
+    // Calculate field goals made (approximate from FG% and points)
+    const total2ptFg = Math.max(0, (totalPts - (total3pm * 3)) / 2);
+    const totalFg = total2ptFg + total3pm;
+
+    // Calculate free throws made (approximate from FT% and points)
+    const totalFt = Math.max(0, (totalPts - (totalFg * 2) - (total3pm * 1)) / 1);
+
+    // Apply fantasy scoring formula
+    const fantasyPoints = 
+      (total3pm * 3) +           // 3-pt FG = 3pts
+      (total2ptFg * 2) +         // 2-pt FG = 2pts  
+      (totalFt * 1) +            // FT = 1pt
+      (totalReb * 1.2) +         // Rebound = 1.2pts
+      (totalAst * 1.5) +         // Assist = 1.5pts
+      (totalBlk * 3) +           // Block = 3pts
+      (totalStl * 3) +           // Steal = 3pts
+      (totalTo * -1);            // Turnover = -1pt
+
+    return Math.round(fantasyPoints);
+  };
+
+  // Sort players by projected fantasy points in descending order
+  const bestAvailablePlayers = playersData?.players ? [...playersData.players].sort((a, b) => {
+    const aFantasy = calculateProjectedFantasyPoints(a);
+    const bFantasy = calculateProjectedFantasyPoints(b);
+    return bFantasy - aFantasy; // Descending order
+  }) : [];
+
+  // Calculate cards per page based on screen size
+  useEffect(() => {
+    const calculateCardsPerPage = () => {
+      const width = window.innerWidth;
+      if (width < 600) {
+        return 1; // Mobile: 1 card
+      } else if (width < 900) {
+        return 2; // Small tablet: 2 cards
+      } else if (width < 1200) {
+        return 3; // Medium laptop: 3 cards
+      } else {
+        return 4; // Large screen: 4 cards
+      }
+    };
+
+    setCardsPerPage(calculateCardsPerPage());
+
+    const handleResize = () => {
+      setCardsPerPage(calculateCardsPerPage());
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Calculate pagination
+  const totalPages = Math.ceil(bestAvailablePlayers.length / cardsPerPage);
+  const startIndex = currentPage * cardsPerPage;
+  const endIndex = startIndex + cardsPerPage;
+  const currentPlayers = bestAvailablePlayers.slice(startIndex, endIndex);
 
   const getPositionColor = (position: string) => {
     switch (position) {
@@ -81,12 +164,12 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
     setSnackbarOpen(true);
   };
 
-  const nextPlayer = () => {
-    setCurrentIndex((prev) => (prev + 1) % bestAvailablePlayers.length);
+  const nextPage = () => {
+    setCurrentPage((prev) => (prev + 1) % totalPages);
   };
 
-  const prevPlayer = () => {
-    setCurrentIndex((prev) => (prev - 1 + bestAvailablePlayers.length) % bestAvailablePlayers.length);
+  const prevPage = () => {
+    setCurrentPage((prev) => (prev - 1 + totalPages) % totalPages);
   };
 
   // Show draft complete message if draft is finished
@@ -125,7 +208,6 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
     );
   }
 
-  const currentPlayer = bestAvailablePlayers[currentIndex];
 
   return (
     <Box>
@@ -136,164 +218,129 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
             🏆 Best Available
           </Typography>
           <Typography level="body-sm" color="neutral">
-            Player {currentIndex + 1} of {bestAvailablePlayers.length}
+            Showing {startIndex + 1}-{Math.min(endIndex, bestAvailablePlayers.length)} of {bestAvailablePlayers.length} players
           </Typography>
         </CardContent>
       </Card>
 
-      {/* Player Card Carousel */}
-      <Card 
-        variant="outlined" 
+      {/* Player Cards Grid */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        {currentPlayers.map((player, index) => (
+          <Grid 
+            key={player.id} 
+            xs={12} 
+            sm={6} 
+            md={4} 
+            lg={3}
         sx={{ 
-          mb: 2,
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-          color: 'white',
-          minHeight: '400px',
           display: 'flex',
-          flexDirection: 'column'
+              justifyContent: 'center'
         }}
       >
-        <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', p: 3 }}>
-          {/* Player Header */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+            <Card sx={{ width: 320, maxWidth: '100%', boxShadow: 'lg' }}>
+              <CardContent sx={{ alignItems: 'center', textAlign: 'center' }}>
             <Avatar 
-              size="lg" 
+                  src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
               sx={{ 
-                bgcolor: 'rgba(255,255,255,0.2)',
-                width: 80,
-                height: 80,
-                fontSize: '2rem'
-              }}
-            >
-              {currentPlayer.name?.charAt(0)}
+                    '--Avatar-size': '4rem',
+                    bgcolor: 'primary.500',
+                    fontSize: '1.5rem',
+                    '& img': {
+                      objectFit: 'cover'
+                    }
+                  }}
+                  onError={(e) => {
+                    // Fallback to initials if image fails to load
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = 'none';
+                    const parent = target.parentElement;
+                    if (parent) {
+                      parent.textContent = player.name.split(' ').map((n: string) => n[0]).join('');
+                    }
+                  }}
+                >
+                  {player.name?.charAt(0)}
             </Avatar>
-            <Box sx={{ flex: 1 }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                {currentPlayer.name}
-              </Typography>
-              <Stack direction="row" spacing={1} alignItems="center">
                 <Chip 
                   size="sm" 
-                  color={getPositionColor(currentPlayer.position)} 
                   variant="soft"
-                  sx={{ bgcolor: 'rgba(255,255,255,0.2)' }}
+                  color={getPositionColor(player.position)}
+                  sx={{
+                    mt: -1,
+                    mb: 1,
+                    border: '3px solid',
+                    borderColor: 'background.surface',
+                  }}
                 >
-                  {currentPlayer.position}
+                  {player.position}
                 </Chip>
-                <Typography level="body-sm" sx={{ opacity: 0.9 }}>
-                  {currentPlayer.team_abbreviation || currentPlayer.team_name}
+                <Typography level="title-lg">{player.name}</Typography>
+                <Typography level="body-sm" sx={{ maxWidth: '24ch', mb: 1 }}>
+                  {player.team_abbreviation || player.team_name}
+                  {player.jersey_number && ` • #${player.jersey_number}`}
                 </Typography>
-                {currentPlayer.jersey_number && (
-                  <Typography level="body-sm" sx={{ opacity: 0.9 }}>
-                    #{currentPlayer.jersey_number}
+                
+                {/* Fantasy Points Display */}
+                <Box sx={{ mb: 2 }}>
+                  <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                    {calculateProjectedFantasyPoints(player).toLocaleString()}
                   </Typography>
-                )}
-              </Stack>
-            </Box>
-          </Box>
+                  <Typography level="body-sm" color="neutral">
+                    Projected Fantasy Points
+                  </Typography>
+                </Box>
 
-          {/* Player Stats */}
-          <Box sx={{ flex: 1, mb: 3 }}>
-            <Typography level="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
-              Season Stats
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid xs={6}>
-                <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                    24.5
+                {/* Salary Display */}
+                <Box sx={{ mb: 2 }}>
+                  <Typography level="h4" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                    {player.salary_2025_26 
+                      ? `$${(player.salary_2025_26 / 1000000).toFixed(1)}M`
+                      : 'N/A'
+                    }
                   </Typography>
-                  <Typography level="body-sm" sx={{ opacity: 0.8 }}>
-                    Points
+                  <Typography level="body-sm" color="neutral">
+                    2025-26 Salary
                   </Typography>
                 </Box>
-              </Grid>
-              <Grid xs={6}>
-                <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                    8.2
-                  </Typography>
-                  <Typography level="body-sm" sx={{ opacity: 0.8 }}>
-                    Rebounds
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid xs={6}>
-                <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                    6.8
-                  </Typography>
-                  <Typography level="body-sm" sx={{ opacity: 0.8 }}>
-                    Assists
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid xs={6}>
-                <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                    1.2
-                  </Typography>
-                  <Typography level="body-sm" sx={{ opacity: 0.8 }}>
-                    Steals
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </Box>
-
-          {/* Draft Button */}
+              </CardContent>
+              <CardOverflow sx={{ bgcolor: 'background.level1' }}>
+                <CardActions buttonFlex="1">
+                  <ButtonGroup variant="outlined" sx={{ bgcolor: 'background.surface' }}>
           <Button
-            size="lg"
-            variant="solid"
+                      startDecorator={<Add />}
+                      onClick={() => handleDraftPlayer(player)}
             color="success"
-            startDecorator={<Add />}
-            onClick={() => handleDraftPlayer(currentPlayer)}
-            sx={{ 
-              fontWeight: 'bold',
-              fontSize: '1.1rem',
-              py: 1.5
-            }}
-          >
-            Draft {currentPlayer.name}
+                    >
+                      Draft Player
           </Button>
-        </CardContent>
+                  </ButtonGroup>
+                </CardActions>
+              </CardOverflow>
       </Card>
+          </Grid>
+        ))}
+      </Grid>
 
       {/* Navigation */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <IconButton
           variant="outlined"
-          onClick={prevPlayer}
-          disabled={bestAvailablePlayers.length <= 1}
+          onClick={prevPage}
+          disabled={totalPages <= 1}
         >
           <ChevronLeft />
         </IconButton>
         
         <Stack direction="row" spacing={1}>
-          {bestAvailablePlayers.slice(0, 5).map((_, index) => (
-            <Box
-              key={index}
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: '50%',
-                bgcolor: index === currentIndex ? 'primary.500' : 'neutral.300',
-                cursor: 'pointer'
-              }}
-              onClick={() => setCurrentIndex(index)}
-            />
-          ))}
-          {bestAvailablePlayers.length > 5 && (
-            <Typography level="body-xs" sx={{ alignSelf: 'center', ml: 1 }}>
-              +{bestAvailablePlayers.length - 5}
+          <Typography level="body-sm" sx={{ alignSelf: 'center', px: 2 }}>
+            Page {currentPage + 1} of {totalPages}
             </Typography>
-          )}
         </Stack>
         
         <IconButton
           variant="outlined"
-          onClick={nextPlayer}
-          disabled={bestAvailablePlayers.length <= 1}
+          onClick={nextPage}
+          disabled={totalPages <= 1}
         >
           <ChevronRight />
         </IconButton>

@@ -43,16 +43,32 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify(nbaData),
+      JSON.stringify({ ...nbaData, source: 'nba' }),
       { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        headers: { 
+          ...corsHeaders, 
+          'Content-Type': 'application/json',
+          // Avoid CDN/browser caching stale scoreboard
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        } 
       }
     )
 
   } catch (error) {
     console.error('Error in live-scoreboard function:', error)
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    })
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ 
+        error: 'Internal server error',
+        details: error.message,
+        timestamp: new Date().toISOString()
+      }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -62,31 +78,28 @@ serve(async (req) => {
 })
 
 async function fetchNBAScoreboard(gameDate?: string, dayOffset: number = 0) {
-  // For now, return mock data immediately since NBA API is having issues
-  // TODO: Fix NBA API integration later
-  console.log('Using mock NBA data for now - NBA API integration pending')
-  return getMockScoreboardData(gameDate)
-  
-  /* NBA API code - commented out until we fix the timeout issues
   try {
-    // Build NBA API URL
-    const baseUrl = 'https://stats.nba.com/stats/scoreboardv2'
-    const params = new URLSearchParams({
-      'DayOffset': dayOffset.toString(),
-      'LeagueID': '00',
-      'gameDate': gameDate || new Date().toISOString().split('T')[0]
+    // Use NBA Live API which is more reliable
+    const baseUrl = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json'
+    
+    console.log('🏀 NBA Live API Request:', {
+      gameDate,
+      dayOffset,
+      url: baseUrl
     })
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-    const response = await fetch(`${baseUrl}?${params}`, {
+    const response = await fetch(baseUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
         'Accept-Language': 'en-US,en;q=0.9',
-        'Referer': 'https://stats.nba.com/',
-        'Origin': 'https://stats.nba.com'
+        'Referer': 'https://www.nba.com/',
+        'Origin': 'https://www.nba.com',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
       },
       signal: controller.signal
     })
@@ -94,175 +107,126 @@ async function fetchNBAScoreboard(gameDate?: string, dayOffset: number = 0) {
     clearTimeout(timeoutId);
 
     if (!response.ok) {
-      throw new Error(`NBA API responded with status: ${response.status}`)
+      throw new Error(`NBA Live API responded with status: ${response.status}`)
     }
 
     const data = await response.json()
     
-    // Transform NBA API response to our format
-    return transformScoreboardData(data, gameDate)
+    console.log('🏀 NBA Live API Response:', {
+      status: response.status,
+      hasData: !!data,
+      gamesCount: data?.scoreboard?.games?.length || 0,
+      gameDate: data?.scoreboard?.gameDate
+    })
+    
+    // Transform NBA Live API response to our format
+    const transformedData = transformLiveScoreboardData(data, gameDate)
+    console.log('🏀 Transformed Data:', {
+      gamesCount: transformedData.games.length,
+      gameDate: transformedData.gameDate,
+      firstGame: transformedData.games[0] ? {
+        gameId: transformedData.games[0].gameId,
+        homeTeam: transformedData.games[0].homeTeam.name,
+        awayTeam: transformedData.games[0].awayTeam.name,
+        status: transformedData.games[0].gameStatusText
+      } : null
+    })
+    
+    return transformedData
 
   } catch (error) {
-    console.error('Error fetching NBA data:', error)
-    // Return mock data as fallback
-    return getMockScoreboardData(gameDate)
+    console.error('❌ Error fetching NBA data:', error)
+    // Surface the error up so caller can handle it; do NOT return mock
+    throw error
   }
-  */
 }
 
-function transformScoreboardData(apiData: any, gameDate?: string) {
+// NBA API requires MM/DD/YYYY. If no date is provided, default to current date in ET.
+function formatNBAApiDate(isoDate?: string): string {
   try {
-    const { resultSets } = apiData
-    
-    // Find the GameHeader result set
-    const gameHeaderIndex = resultSets.findIndex((rs: any) => rs.name === 'GameHeader')
-    const lineScoreIndex = resultSets.findIndex((rs: any) => rs.name === 'LineScore')
-    
-    if (gameHeaderIndex === -1 || lineScoreIndex === -1) {
-      throw new Error('Required data sets not found')
+    if (isoDate) {
+      // Handle formats like YYYY-MM-DD
+      const parts = isoDate.split('-')
+      if (parts.length === 3) {
+        const [y, m, d] = parts
+        return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`
+      }
     }
 
-    const gameHeaders = resultSets[gameHeaderIndex].rowSet
-    const lineScores = resultSets[lineScoreIndex].rowSet
+    // Default: today's date in America/New_York (NBA uses ET)
+    const nowET = new Date(
+      new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })
+    )
+    const month = nowET.getMonth() + 1
+    const day = nowET.getDate()
+    const year = nowET.getFullYear()
+    return `${month}/${day}/${year}`
+  } catch (_) {
+    // Fallback to UTC today if any error
+    const now = new Date()
+    const month = now.getUTCMonth() + 1
+    const day = now.getUTCDate()
+    const year = now.getUTCFullYear()
+    return `${month}/${day}/${year}`
+  }
+}
 
-    const games = gameHeaders.map((game: any[]) => {
-      const gameId = game[2] // GAME_ID
-      const gameDate = game[0] // GAME_DATE_EST
-      const gameStatus = game[3] // GAME_STATUS_ID
-      const gameStatusText = game[4] // GAME_STATUS_TEXT
-      const homeTeamId = game[6] // HOME_TEAM_ID
-      const awayTeamId = game[7] // VISITOR_TEAM_ID
-      const arena = game[16] // ARENA_NAME
-      const nationalTV = game[11] // NATL_TV_BROADCASTER_ABBREVIATION
+function transformLiveScoreboardData(apiData: any, gameDate?: string) {
+  try {
+    const { scoreboard } = apiData
+    
+    if (!scoreboard || !scoreboard.games) {
+      throw new Error('No games data found in scoreboard')
+    }
 
-      // Find team data in line scores
-      const homeTeamData = lineScores.find((ls: any[]) => ls[3] === homeTeamId)
-      const awayTeamData = lineScores.find((ls: any[]) => ls[3] === awayTeamId)
-
-      if (!homeTeamData || !awayTeamData) {
-        return null
-      }
+    const games = scoreboard.games.map((game: any) => {
+      const { gameId, gameTimeUTC, gameStatus, gameStatusText, homeTeam, awayTeam, arena } = game
 
       return {
         gameId: gameId.toString(),
-        gameDate,
-        gameStatus,
-        gameStatusText,
+        gameDate: gameTimeUTC ? gameTimeUTC.split('T')[0] : new Date().toISOString().split('T')[0],
+        gameStatus: gameStatus || 1,
+        gameStatusText: gameStatusText || 'Scheduled',
         homeTeam: {
-          id: homeTeamId,
-          abbreviation: homeTeamData[4], // TEAM_ABBREVIATION
-          city: homeTeamData[5], // TEAM_CITY_NAME
-          name: homeTeamData[6], // TEAM_NAME
-          wins: parseInt(homeTeamData[7]?.split('-')[0] || '0'),
-          losses: parseInt(homeTeamData[7]?.split('-')[1] || '0'),
-          points: homeTeamData[23] || 0, // PTS
-          quarters: [
-            homeTeamData[8] || 0,  // PTS_QTR1
-            homeTeamData[9] || 0,  // PTS_QTR2
-            homeTeamData[10] || 0, // PTS_QTR3
-            homeTeamData[11] || 0  // PTS_QTR4
-          ]
+          id: homeTeam.teamId,
+          abbreviation: homeTeam.teamTricode,
+          city: homeTeam.teamCity,
+          name: homeTeam.teamName,
+          wins: homeTeam.wins || 0,
+          losses: homeTeam.losses || 0,
+          points: homeTeam.score || 0,
+          quarters: homeTeam.periods ? homeTeam.periods.map((p: any) => p.score || 0) : [0, 0, 0, 0]
         },
         awayTeam: {
-          id: awayTeamId,
-          abbreviation: awayTeamData[4],
-          city: awayTeamData[5],
-          name: awayTeamData[6],
-          wins: parseInt(awayTeamData[7]?.split('-')[0] || '0'),
-          losses: parseInt(awayTeamData[7]?.split('-')[1] || '0'),
-          points: awayTeamData[23] || 0,
-          quarters: [
-            awayTeamData[8] || 0,
-            awayTeamData[9] || 0,
-            awayTeamData[10] || 0,
-            awayTeamData[11] || 0
-          ]
+          id: awayTeam.teamId,
+          abbreviation: awayTeam.teamTricode,
+          city: awayTeam.teamCity,
+          name: awayTeam.teamName,
+          wins: awayTeam.wins || 0,
+          losses: awayTeam.losses || 0,
+          points: awayTeam.score || 0,
+          quarters: awayTeam.periods ? awayTeam.periods.map((p: any) => p.score || 0) : [0, 0, 0, 0]
         },
-        arena: arena || 'Unknown Arena',
-        nationalTV: nationalTV || null
+        arena: arena?.arenaName || 'Unknown Arena',
+        nationalTV: null // NBA Live API doesn't provide this
       }
-    }).filter(Boolean)
+    })
 
     return {
       games,
       eastStandings: [],
       westStandings: [],
       lastUpdated: new Date().toISOString(),
-      gameDate: gameHeaders[0]?.[0] || new Date().toISOString().split('T')[0]
+      gameDate: scoreboard.gameDate || new Date().toISOString().split('T')[0]
     }
 
   } catch (error) {
-    console.error('Error transforming scoreboard data:', error)
+    console.error('Error transforming live scoreboard data:', error)
     throw error
   }
 }
 
-function getMockScoreboardData(gameDate?: string) {
-  return {
-    games: [
-      {
-        gameId: "0022500001",
-        gameDate: gameDate || new Date().toISOString().split('T')[0],
-        gameStatus: 1,
-        gameStatusText: "5:30 AM ET",
-        homeTeam: {
-          id: 1610612740,
-          abbreviation: "NOP",
-          city: "New Orleans",
-          name: "Pelicans",
-          wins: 0,
-          losses: 0,
-          points: 0,
-          quarters: []
-        },
-        awayTeam: {
-          id: 15016,
-          abbreviation: "MEL",
-          city: "Melbourne",
-          name: "United",
-          wins: 0,
-          losses: 0,
-          points: 0,
-          quarters: []
-        },
-        arena: "Smoothie King Center",
-        nationalTV: null
-      },
-      {
-        gameId: "0022500002",
-        gameDate: gameDate || new Date().toISOString().split('T')[0],
-        gameStatus: 1,
-        gameStatusText: "10:00 PM ET",
-        homeTeam: {
-          id: 1610612747,
-          abbreviation: "LAL",
-          city: "Los Angeles",
-          name: "Lakers",
-          wins: 0,
-          losses: 0,
-          points: 0,
-          quarters: []
-        },
-        awayTeam: {
-          id: 1610612756,
-          abbreviation: "PHX",
-          city: "Phoenix",
-          name: "Suns",
-          wins: 0,
-          losses: 0,
-          points: 0,
-          quarters: []
-        },
-        arena: "Crypto.com Arena",
-        nationalTV: null
-      }
-    ],
-    eastStandings: [],
-    westStandings: [],
-    lastUpdated: new Date().toISOString(),
-    gameDate: gameDate || new Date().toISOString().split('T')[0]
-  }
-}
+// Note: No mock fallback. Fail fast so clients can handle errors explicitly.
 
 async function cacheScoreboardData(supabase: any, data: any) {
   try {

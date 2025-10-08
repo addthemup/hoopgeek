@@ -1,6 +1,7 @@
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import React from 'react'
-import { Box, Typography, Button, Stack, Card, CardContent, Chip, Grid, Alert } from '@mui/joy'
+import { Box, Typography, Button, Stack, Card, CardContent, Chip, Grid, Alert, IconButton } from '@mui/joy'
+import { ArrowBack } from '@mui/icons-material'
 import LeagueNavigation from '../components/LeagueNavigation'
 import LeagueSettingsManager from '../components/LeagueSettings'
 import LeagueHome from './LeagueHome'
@@ -16,13 +17,25 @@ import DraftComponent from '../components/Draft/DraftComponent'
 import { useAuth } from '../hooks/useAuth'
 import { useLeague } from '../hooks/useLeagues'
 import { useUpdateLeagueSettings } from '../hooks/useUpdateLeagueSettings'
+import { useTeams } from '../hooks/useTeams'
 
 export default function League() {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: league, isLoading, error } = useLeague(id || '')
+  const { data: teams } = useTeams(id || '')
   const updateLeagueSettings = useUpdateLeagueSettings()
+  
+  // State for showing team details within the league tab
+  const [selectedTeamId, setSelectedTeamId] = React.useState<string | undefined>(undefined)
+  
+  // Find user's team
+  const userTeam = teams?.find(team => team.user_id === user?.id)
+  
+  // Check if selected team is the user's team
+  const isUserTeam = selectedTeamId && userTeam && selectedTeamId === userTeam.id
   
   // Debug logging
   console.log('League component debug:', {
@@ -31,7 +44,10 @@ export default function League() {
     leagueId: id,
     league,
     isLoading,
-    error
+    error,
+    selectedTeamId,
+    userTeam,
+    isUserTeam
   });
 
   if (isLoading) {
@@ -173,40 +189,82 @@ export default function League() {
     />
   )
 
+
+  // Component to show team details with back button
+  const TeamDetailsView = ({ teamId, onBack }: { teamId: string, onBack: () => void }) => {
+    const selectedTeam = teams?.find(t => t.id === teamId)
+    
+    if (!selectedTeam) {
+      return (
+        <Alert color="warning">
+          <Typography>Team not found.</Typography>
+        </Alert>
+      )
+    }
+
+    return (
+      <Box>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
+          <IconButton onClick={onBack} variant="outlined">
+            <ArrowBack />
+          </IconButton>
+          <Typography level="h3">{selectedTeam.team_name}</Typography>
+        </Stack>
+        <TeamRoster leagueId={id || ''} teamId={teamId} />
+      </Box>
+    )
+  }
+
   const renderTabContent = (tabId: string) => {
     console.log('League: Rendering tab content for:', tabId);
+    
+    // If we have a selected team and we're on the home tab, show team details
+    if (selectedTeamId && tabId === 'home') {
+      return <TeamDetailsView teamId={selectedTeamId} onBack={() => setSelectedTeamId(undefined)} />
+    }
     
     switch (tabId) {
       case 'home':
         console.log('League: Rendering LeagueHome component with leagueId:', id);
-        return <LeagueHome leagueId={id || ''} />
+        return <LeagueHome leagueId={id || ''} onTeamClick={setSelectedTeamId} />
       case 'my-team':
-        console.log('League: Rendering TeamRoster component with leagueId:', id);
-        return <TeamRoster />
-            case 'lineups':
-              console.log('League: Rendering Lineups component with leagueId:', id);
-              return <Lineups leagueId={id || ''} />
-            case 'trades':
-              console.log('League: Rendering Trades component with leagueId:', id);
-              return <Trades leagueId={id || ''} />
-            case 'standings':
-              console.log('League: Rendering Standings component with leagueId:', id);
-              return <Standings leagueId={id || ''} />
-            case 'players':
-              console.log('League: Rendering Players component with leagueId:', id);
-              return <Players leagueId={id || ''} />
-            case 'commissioner':
-              console.log('League: Rendering CommissionerTools component with leagueId:', id);
-              return <CommissionerTools leagueId={id || ''} />
-            case 'scoreboard':
-              console.log('League: Rendering LeagueScoreboard component with leagueId:', id);
-              return <LeagueScoreboard leagueId={id || ''} />
-            case 'matchups':
-              console.log('League: Rendering LeagueScoreboard component with leagueId:', id);
-              return <LeagueScoreboard leagueId={id || ''} />
-            case 'draft':
-              console.log('League: Rendering DraftComponent with leagueId:', id);
-              return <DraftComponent />
+        // Only show my-team tab if user has a team
+        if (userTeam) {
+          console.log('League: Rendering TeamRoster component for user team:', userTeam.id);
+          return <TeamRoster leagueId={id || ''} teamId={userTeam.id} />
+        } else {
+          return (
+            <Alert color="info">
+              <Typography level="body-md">
+                You don't have a team in this league yet.
+              </Typography>
+            </Alert>
+          )
+        }
+      case 'lineups':
+        console.log('League: Rendering Lineups component with leagueId:', id);
+        return <Lineups leagueId={id || ''} />
+      case 'trades':
+        console.log('League: Rendering Trades component with leagueId:', id);
+        return <Trades leagueId={id || ''} />
+      case 'standings':
+        console.log('League: Rendering Standings component with leagueId:', id);
+        return <Standings leagueId={id || ''} />
+      case 'players':
+        console.log('League: Rendering Players component with leagueId:', id);
+        return <Players leagueId={id || ''} />
+      case 'commissioner':
+        console.log('League: Rendering CommissionerTools component with leagueId:', id);
+        return <CommissionerTools leagueId={id || ''} />
+      case 'scoreboard':
+        console.log('League: Rendering LeagueScoreboard component with leagueId:', id);
+        return <LeagueScoreboard leagueId={id || ''} />
+      case 'matchups':
+        console.log('League: Rendering LeagueScoreboard component with leagueId:', id);
+        return <LeagueScoreboard leagueId={id || ''} />
+      case 'draft':
+        console.log('League: Rendering DraftComponent with leagueId:', id);
+        return <DraftComponent />
       case 'settings':
         console.log('League: Rendering settings');
         return renderSettings()
@@ -235,6 +293,7 @@ export default function League() {
       <LeagueNavigation 
         leagueId={league.id} 
         isCommissioner={isCommissioner}
+        userHasTeam={!!userTeam}
       >
         {(activeTab) => renderTabContent(activeTab)}
       </LeagueNavigation>

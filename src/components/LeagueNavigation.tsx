@@ -34,9 +34,10 @@ interface LeagueNavigationProps {
   leagueId: string
   isCommissioner: boolean
   children: (activeTab: string) => React.ReactNode
+  userHasTeam?: boolean
 }
 
-export default function LeagueNavigation({ leagueId, isCommissioner, children }: LeagueNavigationProps) {
+export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false }: LeagueNavigationProps) {
   const [activeTab, setActiveTab] = useState(0)
 
   const tabs = [
@@ -46,12 +47,12 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
       icon: <Home />,
       description: 'League overview and standings'
     },
-    {
+    ...(userHasTeam ? [{
       id: 'my-team',
       label: 'My Team',
       icon: <Group />,
       description: 'Your roster and lineup'
-    },
+    }] : []),
     {
       id: 'lineups',
       label: 'Lineups',
@@ -114,16 +115,16 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children }:
             },
             ...(isCommissioner ? [
               {
+                id: 'settings',
+                label: 'Rules',
+                icon: <Settings />,
+                description: 'League settings and management'
+              },
+              {
                 id: 'commissioner',
                 label: 'Commissioner',
                 icon: <AdminPanelSettings />,
                 description: 'League manager tools and administration'
-              },
-              {
-                id: 'settings',
-                label: 'Settings',
-                icon: <Settings />,
-                description: 'League settings and management'
               }
             ] : [])
   ]

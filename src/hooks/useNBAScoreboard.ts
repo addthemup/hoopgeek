@@ -43,19 +43,43 @@ export function useNBAScoreboard(gameDate?: string) {
     queryKey: ['nba-scoreboard', gameDate],
     queryFn: async (): Promise<NBAScoreboardData> => {
       try {
-        // Call Supabase Edge Function
-        const { data, error } = await supabase.functions.invoke('live-scoreboard', {
-          body: {
-            gameDate,
-            dayOffset: 0
+        // Call Supabase Edge Function with query parameters
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        const url = new URL(`${supabaseUrl}/functions/v1/live-scoreboard`);
+        if (gameDate) {
+          url.searchParams.set('gameDate', gameDate);
+        }
+        url.searchParams.set('dayOffset', '0');
+        
+        // Get the current session for authentication
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await fetch(url.toString(), {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token || supabaseAnonKey}`,
+            'Content-Type': 'application/json'
           }
         });
-
-        if (error) {
-          console.error('Error calling NBA scoreboard function:', error);
-          throw error;
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
-
+        
+        const data = await response.json();
+        console.log('🏀 Frontend received scoreboard data:', {
+          gamesCount: data.games?.length || 0,
+          gameDate: data.gameDate,
+          lastUpdated: data.lastUpdated,
+          source: data.source,
+          firstGame: data.games?.[0] ? {
+            gameId: data.games[0].gameId,
+            homeTeam: data.games[0].homeTeam.name,
+            awayTeam: data.games[0].awayTeam.name,
+            status: data.games[0].gameStatusText
+          } : null
+        });
         return data;
       } catch (error) {
         console.error('Error fetching NBA scoreboard:', error);

@@ -7,6 +7,22 @@ export default function NBAPlayers() {
   const syncPlayers = useSyncPlayers()
   const importPlayers = useImportNBAPlayers()
 
+  const formatHeight = (height: string | undefined) => {
+    if (!height || height === 'N/A') return 'N/A';
+    
+    // If height is already in feet-inches format, return as-is
+    if (height.includes('-')) return height;
+    
+    // Convert inches to feet-inches format
+    const totalInches = parseInt(height);
+    if (isNaN(totalInches)) return height;
+    
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    
+    return `${feet}'${inches}"`;
+  };
+
   if (isLoading) {
     return (
       <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -96,7 +112,7 @@ export default function NBAPlayers() {
                     <Stack spacing={1}>
                       {player.height && (
                         <Typography level="body-sm" color="neutral">
-                          Height: {player.height}
+                          Height: {formatHeight(player.height)}
                         </Typography>
                       )}
                       {player.weight && (

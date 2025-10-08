@@ -20,6 +20,7 @@ import {
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLeague } from '../hooks/useLeagues';
 import { useAuth } from '../hooks/useAuth';
+import { useNBAScoreboard } from '../hooks/useNBAScoreboard';
 import SportsBasketballIcon from '@mui/icons-material/SportsBasketball';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
@@ -174,6 +175,7 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { data: league, isLoading, error } = useLeague(leagueId);
+  const { data: nbaScoreboard, isLoading: nbaLoading, error: nbaError } = useNBAScoreboard();
 
   const [selectedWeek, setSelectedWeek] = React.useState('6');
 
@@ -499,6 +501,100 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
               </Button>
             </Stack>
           </Stack>
+        </CardContent>
+      </Card>
+
+      {/* NBA Scoreboard Section */}
+      <Card variant="outlined" sx={{ mt: 3 }}>
+        <CardContent>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+              🏀 NBA Games Today
+            </Typography>
+            {nbaScoreboard && (
+              <Typography level="body-xs" color="neutral">
+                Last updated: {new Date(nbaScoreboard.lastUpdated).toLocaleTimeString()}
+              </Typography>
+            )}
+          </Stack>
+          
+          {nbaLoading ? (
+            <Box sx={{ textAlign: 'center', py: 2 }}>
+              <LinearProgress />
+              <Typography level="body-sm" sx={{ mt: 1 }}>
+                Loading NBA games...
+              </Typography>
+            </Box>
+          ) : nbaError ? (
+            <Alert color="warning">
+              <Typography level="body-sm">
+                Unable to load NBA games. {nbaError.message}
+              </Typography>
+            </Alert>
+          ) : nbaScoreboard && nbaScoreboard.games.length > 0 ? (
+            <Stack spacing={2}>
+              {nbaScoreboard.games.map((game) => (
+                <Sheet key={game.gameId} variant="outlined" sx={{ p: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography level="body-xs" color="neutral">
+                      {game.gameStatus === 1 ? 'Scheduled' : 
+                       game.gameStatus === 2 ? 'Live' : 'Final'}
+                    </Typography>
+                    <Typography level="body-xs" color="neutral">
+                      {game.gameStatusText}
+                    </Typography>
+                  </Stack>
+                  <Grid container spacing={1} alignItems="center">
+                    <Grid xs={5}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Avatar sx={{ width: 24, height: 24, bgcolor: 'primary.500', fontSize: '0.7rem' }}>
+                          {game.awayTeam.abbreviation}
+                        </Avatar>
+                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                          {game.awayTeam.name}
+                        </Typography>
+                      </Stack>
+                    </Grid>
+                    <Grid xs={2} sx={{ textAlign: 'center' }}>
+                      <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                        {game.awayTeam.points}
+                      </Typography>
+                    </Grid>
+                    <Grid xs={5}>
+                      <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                          {game.homeTeam.name}
+                        </Typography>
+                        <Avatar sx={{ width: 24, height: 24, bgcolor: 'secondary.500', fontSize: '0.7rem' }}>
+                          {game.homeTeam.abbreviation}
+                        </Avatar>
+                      </Stack>
+                    </Grid>
+                  </Grid>
+                  <Grid container spacing={1} sx={{ mt: 0.5 }}>
+                    <Grid xs={5}></Grid>
+                    <Grid xs={2} sx={{ textAlign: 'center' }}>
+                      <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                        {game.homeTeam.points}
+                      </Typography>
+                    </Grid>
+                    <Grid xs={5}></Grid>
+                  </Grid>
+                  {game.arena && game.arena !== 'Unknown Arena' && (
+                    <Typography level="body-xs" color="neutral" sx={{ mt: 1, textAlign: 'center' }}>
+                      {game.arena}
+                    </Typography>
+                  )}
+                </Sheet>
+              ))}
+            </Stack>
+          ) : (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography level="body-md" color="neutral">
+                No NBA games scheduled for today.
+              </Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
     </Box>

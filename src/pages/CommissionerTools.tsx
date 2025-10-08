@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -8,9 +9,7 @@ import {
   Stack,
   Button,
   Alert,
-  Divider,
 } from '@mui/joy';
-import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import {
   People,
@@ -34,7 +33,7 @@ interface CommissionerToolsProps {
 }
 
 export default function CommissionerTools({ leagueId }: CommissionerToolsProps) {
-  const { user } = useAuth();
+  const navigate = useNavigate();
   const { data: league, isLoading, error } = useLeague(leagueId);
   const [activeView, setActiveView] = useState<'tools' | 'team-invites'>('tools');
 
@@ -49,9 +48,9 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
     },
     {
       title: 'Add Team(s)',
-      description: 'Change the number of teams or scoring type of your league.',
+      description: 'Manage teams in your league - add new teams or edit existing ones.',
       icon: <People />,
-      action: () => console.log('Add teams'),
+      action: () => navigate(`/league/${leagueId}/teams`),
       color: 'primary' as const,
     },
     {
@@ -75,14 +74,14 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
       title: 'Edit Draft Settings',
       description: 'Adjust the time, type and other draft settings.',
       icon: <SportsBasketball />,
-      action: () => console.log('Edit draft settings'),
+      action: () => navigate(`/league/${leagueId}/draft-settings`),
       color: 'primary' as const,
     },
     {
       title: 'Edit Draft Order',
       description: 'Determine the order of selections in your draft.',
       icon: <Edit />,
-      action: () => console.log('Edit draft order'),
+      action: () => navigate(`/league/${leagueId}/draft-order`),
       color: 'primary' as const,
     },
   ];
@@ -106,14 +105,14 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
       title: 'Edit Teams and Divisions',
       description: 'Change team names and division configuration.',
       icon: <People />,
-      action: () => console.log('Edit teams and divisions'),
+      action: () => navigate(`/league/${leagueId}/teams-and-divisions`),
       color: 'primary' as const,
     },
     {
       title: 'Delete League',
       description: 'Permanently delete your league.',
       icon: <Delete />,
-      action: () => console.log('Delete league'),
+      action: () => navigate(`/league/${leagueId}/delete`),
       color: 'danger' as const,
     },
     {
@@ -186,7 +185,7 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
   const renderToolCard = (title: string, tools: any[]) => (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <CardContent>
-        <Typography level="h6" sx={{ mb: 2, fontWeight: 'bold' }}>
+        <Typography level="title-md" sx={{ mb: 2, fontWeight: 'bold' }}>
           {title}
         </Typography>
         <Stack spacing={1}>
@@ -350,7 +349,7 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
           {/* Coming Soon Notice */}
           <Card variant="outlined" sx={{ mt: 4, backgroundColor: 'warning.50' }}>
             <CardContent>
-              <Typography level="h6" sx={{ mb: 2, color: 'warning.700' }}>
+              <Typography level="title-md" sx={{ mb: 2, color: 'warning.700' }}>
                 🚧 Development Notice
               </Typography>
               <Typography level="body-sm" sx={{ color: 'warning.700' }}>

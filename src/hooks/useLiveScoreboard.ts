@@ -39,125 +39,41 @@ export interface LiveScoreboardData {
   lastUpdated: string;
 }
 
-// Mock live data for now - in production this would call the NBA API
-const mockLiveGames: LiveGame[] = [
-  {
-    gameId: "0022500001",
-    gameDate: "2025-10-25",
-    gameStatus: 2, // Live
-    gameStatusText: "Live",
-    homeTeam: {
-      id: 1610612747,
-      abbreviation: "LAL",
-      city: "Los Angeles",
-      name: "Lakers",
-      wins: 2,
-      losses: 1,
-      points: 98,
-      quarters: [28, 25, 22, 23]
-    },
-    awayTeam: {
-      id: 1610612744,
-      abbreviation: "GSW",
-      city: "Golden State",
-      name: "Warriors",
-      wins: 1,
-      losses: 2,
-      points: 95,
-      quarters: [24, 26, 20, 25]
-    },
-    arena: "Crypto.com Arena",
-    livePeriod: 4,
-    liveTime: "2:34",
-    nationalTV: "ESPN"
-  },
-  {
-    gameId: "0022500002",
-    gameDate: "2025-10-25",
-    gameStatus: 1, // Scheduled
-    gameStatusText: "Scheduled",
-    homeTeam: {
-      id: 1610612738,
-      abbreviation: "BOS",
-      city: "Boston",
-      name: "Celtics",
-      wins: 3,
-      losses: 0,
-      points: 0,
-      quarters: []
-    },
-    awayTeam: {
-      id: 1610612751,
-      abbreviation: "BKN",
-      city: "Brooklyn",
-      name: "Nets",
-      wins: 1,
-      losses: 2,
-      points: 0,
-      quarters: []
-    },
-    arena: "TD Garden",
-    nationalTV: "TNT"
-  },
-  {
-    gameId: "0022500003",
-    gameDate: "2025-10-25",
-    gameStatus: 3, // Final
-    gameStatusText: "Final",
-    homeTeam: {
-      id: 1610612743,
-      abbreviation: "DEN",
-      city: "Denver",
-      name: "Nuggets",
-      wins: 2,
-      losses: 1,
-      points: 112,
-      quarters: [30, 28, 26, 28]
-    },
-    awayTeam: {
-      id: 1610612762,
-      abbreviation: "UTA",
-      city: "Utah",
-      name: "Jazz",
-      wins: 0,
-      losses: 3,
-      points: 98,
-      quarters: [22, 25, 24, 27]
-    },
-    arena: "Ball Arena"
-  }
-];
-
 export function useLiveScoreboard(gameDate?: string) {
   return useQuery({
     queryKey: ['live-scoreboard', gameDate],
     queryFn: async (): Promise<LiveScoreboardData> => {
       try {
-        // Call Supabase Edge Function
-        const { data, error } = await supabase.functions.invoke('nba-api-proxy', {
-          body: {
-            endpoint: 'scoreboard',
-            gameDate,
-            dayOffset: 0
+        // Call Supabase Edge Function (live-scoreboard) with query params
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        const url = new URL(`${supabaseUrl}/functions/v1/live-scoreboard`);
+        if (gameDate) {
+          url.searchParams.set('gameDate', gameDate);
+        }
+        url.searchParams.set('dayOffset', '0');
+
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const response = await fetch(url.toString(), {
+          headers: {
+            'Authorization': `Bearer ${session?.access_token || supabaseAnonKey}`,
+            'Content-Type': 'application/json'
           }
         });
 
-        if (error) {
-          console.error('Error calling NBA API proxy:', error);
-          throw error;
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
+        const data = await response.json();
         return data;
       } catch (error) {
         console.error('Error fetching live scoreboard:', error);
         
-        // Fallback to mock data
-        const games = gameDate 
-          ? mockLiveGames.filter(game => game.gameDate === gameDate)
-          : mockLiveGames;
-        
         return {
-          games,
+          games: [],
           eastStandings: [],
           westStandings: [],
           lastUpdated: new Date().toISOString()

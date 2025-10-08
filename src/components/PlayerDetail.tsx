@@ -1,4 +1,3 @@
-import React from 'react';
 import {
   Box,
   Typography,
@@ -13,18 +12,23 @@ import {
   LinearProgress,
   Divider,
   Table,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
 } from '@mui/joy';
-import { ArrowBack, TrendingUp, TrendingDown } from '@mui/icons-material';
+import { ArrowBack } from '@mui/icons-material';
 import { usePlayerStats } from '../hooks/usePlayerStats';
+import { useState } from 'react';
 
 interface PlayerDetailProps {
   playerId: string;
-  playerName: string;
   onBack: () => void;
 }
 
-export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDetailProps) {
+export default function PlayerDetail({ playerId, onBack }: PlayerDetailProps) {
   const { data: playerStats, isLoading, error } = usePlayerStats(playerId);
+  const [activeTab, setActiveTab] = useState(0);
 
   if (isLoading) {
     return (
@@ -88,7 +92,7 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
     );
   }
 
-  const { player, seasonStats, recentGames } = playerStats;
+  const { player, careerStats, seasonBreakdown, recentGames } = playerStats;
 
   const getPositionColor = (position: string) => {
     switch (position) {
@@ -105,6 +109,37 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
       default:
         return 'neutral';
     }
+  };
+
+  const formatNumber = (num: number | undefined) => {
+    if (num === undefined || num === null) return 'N/A';
+    return num.toLocaleString();
+  };
+
+  const formatPercentage = (num: number | undefined) => {
+    if (num === undefined || num === null) return 'N/A';
+    return `${num.toFixed(1)}%`;
+  };
+
+  const formatSalary = (salary: number | undefined) => {
+    if (salary === undefined || salary === null) return 'N/A';
+    return `$${(salary / 1000000).toFixed(1)}M`;
+  };
+
+  const formatHeight = (height: string | undefined) => {
+    if (!height || height === 'N/A') return 'N/A';
+    
+    // If height is already in feet-inches format, return as-is
+    if (height.includes('-')) return height;
+    
+    // Convert inches to feet-inches format
+    const totalInches = parseInt(height);
+    if (isNaN(totalInches)) return height;
+    
+    const feet = Math.floor(totalInches / 12);
+    const inches = totalInches % 12;
+    
+    return `${feet}'${inches}"`;
   };
 
   return (
@@ -148,16 +183,16 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                     {player.name}
                   </Typography>
                   <Typography level="body-md" color="neutral" sx={{ mb: 2 }}>
-                    #{player.jersey} • {player.position} • {player.team}
+                    #{player.jersey_number || 'N/A'} • {player.position || 'N/A'} • {player.team_name || 'N/A'}
                   </Typography>
                   
                   <Chip 
-                    color={getPositionColor(player.position)} 
+                    color={getPositionColor(player.position || '')} 
                     variant="soft"
                     size="lg"
                     sx={{ mb: 2 }}
                   >
-                    {player.position}
+                    {player.position || 'N/A'}
                   </Chip>
                 </Box>
 
@@ -166,75 +201,122 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Stack spacing={1} sx={{ width: '100%' }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Height</Typography>
-                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.height}</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{formatHeight(player.height)}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Weight</Typography>
-                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.weight} lbs</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.weight ? `${player.weight} lbs` : 'N/A'}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Age</Typography>
-                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.age}</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.age || 'N/A'}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Experience</Typography>
-                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.experience} years</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.years_pro ? `${player.years_pro} years` : 'N/A'}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">College</Typography>
-                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.college}</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.college || 'N/A'}</Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Draft</Typography>
                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                      {player.draftYear} • Round {player.draftRound} • Pick {player.draftNumber}
+                      {player.draft_year ? `${player.draft_year} • Round ${player.draft_round} • Pick ${player.draft_number}` : 'N/A'}
                     </Typography>
                   </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Birth Place</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {player.birth_city && player.birth_state ? `${player.birth_city}, ${player.birth_state}` : player.birth_country || 'N/A'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Salary</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {formatSalary(player.salary)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography level="body-sm" color="neutral">Status</Typography>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {player.is_active ? 'Active' : 'Inactive'}
+                      {player.is_rookie && ' • Rookie'}
+                    </Typography>
+                  </Box>
+                  {player.team_city && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Team City</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.team_city}</Typography>
+                    </Box>
+                  )}
+                  {player.roster_status && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Roster Status</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.roster_status}</Typography>
+                    </Box>
+                  )}
+                  {player.country && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography level="body-sm" color="neutral">Country</Typography>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.country}</Typography>
+                    </Box>
+                  )}
                 </Stack>
               </Stack>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Season Stats Card */}
+        {/* Stats Cards */}
         <Grid xs={12} md={8}>
+          <Tabs value={activeTab} onChange={(_, newValue) => setActiveTab(newValue as number)}>
+            <TabList>
+              <Tab>Career Stats</Tab>
+              <Tab>Season Breakdown</Tab>
+              <Tab>Recent Games</Tab>
+            </TabList>
+
+            <TabPanel value={0}>
           <Card variant="outlined">
             <CardContent>
               <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
-                2024-25 Season Stats
+                    Career Statistics
               </Typography>
               
+                  {careerStats ? (
+                    <>
               <Grid container spacing={2}>
                 <Grid xs={6} sm={3}>
                   <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                     <Typography level="h3" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                      {seasonStats.points}
+                              {formatNumber(careerStats.pts)}
                     </Typography>
-                    <Typography level="body-sm" color="neutral">Points</Typography>
+                            <Typography level="body-sm" color="neutral">Career Points</Typography>
                   </Box>
                 </Grid>
                 <Grid xs={6} sm={3}>
                   <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                     <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
-                      {seasonStats.rebounds}
+                              {formatNumber(careerStats.reb)}
                     </Typography>
-                    <Typography level="body-sm" color="neutral">Rebounds</Typography>
+                            <Typography level="body-sm" color="neutral">Career Rebounds</Typography>
                   </Box>
                 </Grid>
                 <Grid xs={6} sm={3}>
                   <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                     <Typography level="h3" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
-                      {seasonStats.assists}
+                              {formatNumber(careerStats.ast)}
                     </Typography>
-                    <Typography level="body-sm" color="neutral">Assists</Typography>
+                            <Typography level="body-sm" color="neutral">Career Assists</Typography>
                   </Box>
                 </Grid>
                 <Grid xs={6} sm={3}>
                   <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                     <Typography level="h3" sx={{ fontWeight: 'bold', color: 'danger.500' }}>
-                      {seasonStats.fantasyPoints}
+                              {formatNumber(careerStats.fantasy_pts)}
                     </Typography>
-                    <Typography level="body-sm" color="neutral">Fantasy Pts</Typography>
+                            <Typography level="body-sm" color="neutral">Career Fantasy Pts</Typography>
                   </Box>
                 </Grid>
               </Grid>
@@ -245,7 +327,15 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Grid xs={6} sm={4}>
                   <Box sx={{ textAlign: 'center', p: 2 }}>
                     <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.steals}
+                              {formatNumber(careerStats.gp)}
+                            </Typography>
+                            <Typography level="body-sm" color="neutral">Games Played</Typography>
+                          </Box>
+                        </Grid>
+                        <Grid xs={6} sm={4}>
+                          <Box sx={{ textAlign: 'center', p: 2 }}>
+                            <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                              {formatNumber(careerStats.stl)}
                     </Typography>
                     <Typography level="body-sm" color="neutral">Steals</Typography>
                   </Box>
@@ -253,7 +343,7 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Grid xs={6} sm={4}>
                   <Box sx={{ textAlign: 'center', p: 2 }}>
                     <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.blocks}
+                              {formatNumber(careerStats.blk)}
                     </Typography>
                     <Typography level="body-sm" color="neutral">Blocks</Typography>
                   </Box>
@@ -261,15 +351,7 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Grid xs={6} sm={4}>
                   <Box sx={{ textAlign: 'center', p: 2 }}>
                     <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.turnovers}
-                    </Typography>
-                    <Typography level="body-sm" color="neutral">Turnovers</Typography>
-                  </Box>
-                </Grid>
-                <Grid xs={6} sm={4}>
-                  <Box sx={{ textAlign: 'center', p: 2 }}>
-                    <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.fieldGoalPercentage}%
+                              {formatPercentage(careerStats.fg_pct ? careerStats.fg_pct * 100 : undefined)}
                     </Typography>
                     <Typography level="body-sm" color="neutral">FG%</Typography>
                   </Box>
@@ -277,7 +359,7 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Grid xs={6} sm={4}>
                   <Box sx={{ textAlign: 'center', p: 2 }}>
                     <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.threePointPercentage}%
+                              {formatPercentage(careerStats.fg3_pct ? careerStats.fg3_pct * 100 : undefined)}
                     </Typography>
                     <Typography level="body-sm" color="neutral">3P%</Typography>
                   </Box>
@@ -285,24 +367,127 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                 <Grid xs={6} sm={4}>
                   <Box sx={{ textAlign: 'center', p: 2 }}>
                     <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                      {seasonStats.freeThrowPercentage}%
+                              {formatPercentage(careerStats.ft_pct ? careerStats.ft_pct * 100 : undefined)}
                     </Typography>
                     <Typography level="body-sm" color="neutral">FT%</Typography>
                   </Box>
                 </Grid>
               </Grid>
+                    </>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No career statistics available</Typography>
+                    </Alert>
+                  )}
             </CardContent>
           </Card>
-        </Grid>
+            </TabPanel>
 
-        {/* Recent Games Card */}
-        <Grid xs={12}>
+            <TabPanel value={1}>
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
+                    Season Breakdown
+                  </Typography>
+                  
+                  {seasonBreakdown && seasonBreakdown.length > 0 ? (
+                    <Box sx={{ overflowX: 'auto' }}>
+                      <Table hoverRow size="sm">
+                        <thead>
+                          <tr>
+                            <th>Season</th>
+                            <th>Team</th>
+                            <th>Age</th>
+                            <th>GP</th>
+                            <th>PTS</th>
+                            <th>REB</th>
+                            <th>AST</th>
+                            <th>FG%</th>
+                            <th>3P%</th>
+                            <th>FT%</th>
+                            <th>Fantasy</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {seasonBreakdown.map((season, index) => (
+                            <tr key={index}>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                  {season.season_id}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.team_abbreviation}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.player_age}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {season.gp}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                                  {season.pts}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                                  {season.reb}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                                  {season.ast}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.fg_pct ? season.fg_pct * 100 : undefined)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.fg3_pct ? season.fg3_pct * 100 : undefined)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm">
+                                  {formatPercentage(season.ft_pct ? season.ft_pct * 100 : undefined)}
+                                </Typography>
+                              </td>
+                              <td>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.500' }}>
+                                  {season.fantasy_pts}
+                                </Typography>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </Box>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No season breakdown available</Typography>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            </TabPanel>
+
+            <TabPanel value={2}>
           <Card variant="outlined">
             <CardContent>
               <Typography level="h4" sx={{ mb: 3, fontWeight: 'bold' }}>
                 Recent Games
               </Typography>
               
+                  {recentGames && recentGames.length > 0 ? (
               <Box sx={{ overflowX: 'auto' }}>
                 <Table hoverRow size="sm">
                   <thead>
@@ -325,7 +510,7 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                         </td>
                         <td>
                           <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                            vs {game.opponent}
+                                  {game.opponent}
                           </Typography>
                         </td>
                         <td>
@@ -353,8 +538,15 @@ export default function PlayerDetail({ playerId, playerName, onBack }: PlayerDet
                   </tbody>
                 </Table>
               </Box>
+                  ) : (
+                    <Alert color="warning">
+                      <Typography>No recent games available</Typography>
+                    </Alert>
+                  )}
             </CardContent>
           </Card>
+            </TabPanel>
+          </Tabs>
         </Grid>
       </Grid>
     </Box>

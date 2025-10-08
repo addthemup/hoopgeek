@@ -16,6 +16,7 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { useTeams } from '../hooks/useTeams';
+import { useDivisions } from '../hooks/useDivisions';
 import { useNavigate } from 'react-router-dom';
 import { FantasyTeam as DatabaseTeam } from '../types';
 
@@ -48,6 +49,7 @@ export default function Standings({ leagueId }: StandingsProps) {
   const { user } = useAuth();
   const { data: league, isLoading: leagueLoading, error: leagueError } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading, error: teamsError } = useTeams(leagueId);
+  const { data: divisions = [], isLoading: divisionsLoading } = useDivisions(leagueId);
   const navigate = useNavigate();
   
   const [selectedSeason, setSelectedSeason] = useState('2025');
@@ -57,6 +59,10 @@ export default function Standings({ leagueId }: StandingsProps) {
     const winPercentage = dbTeam.wins + dbTeam.losses > 0 
       ? (dbTeam.wins / (dbTeam.wins + dbTeam.losses)) * 100 
       : 0;
+    
+    // Find the division name for this team
+    const teamDivision = divisions.find(div => div.id === dbTeam.division_id);
+    const divisionName = teamDivision ? teamDivision.name : 'Unassigned';
     
     return {
       id: dbTeam.id,
@@ -68,7 +74,7 @@ export default function Standings({ leagueId }: StandingsProps) {
       ties: dbTeam.ties,
       pointsFor: dbTeam.points_for,
       pointsAgainst: dbTeam.points_against,
-      division: 'Division A', // Default division for now
+      division: divisionName,
       divisionRecord: `${dbTeam.wins}-${dbTeam.losses}`,
       homeRecord: `${Math.floor(dbTeam.wins * 0.6)}-${Math.floor(dbTeam.losses * 0.4)}`,
       awayRecord: `${Math.floor(dbTeam.wins * 0.4)}-${Math.floor(dbTeam.losses * 0.6)}`,
@@ -81,7 +87,21 @@ export default function Standings({ leagueId }: StandingsProps) {
   };
 
   const displayTeams = teams ? teams.map(transformTeam) : [];
-  const divisions = ['Division A', 'Division B']; // Simplified divisions for now
+  
+  // Get unique division names from the transformed teams, sorted by division order
+  const divisionNames = [...new Set(displayTeams.map(team => team.division))]
+    .filter(division => division !== 'Unassigned')
+    .sort((a, b) => {
+      const divA = divisions.find(d => d.name === a);
+      const divB = divisions.find(d => d.name === b);
+      return (divA?.division_order || 0) - (divB?.division_order || 0);
+    });
+  
+  // Add 'Unassigned' at the end if there are unassigned teams
+  const hasUnassigned = displayTeams.some(team => team.division === 'Unassigned');
+  if (hasUnassigned) {
+    divisionNames.push('Unassigned');
+  }
 
   // Sort teams by overall record for season stats
   const overallStandings = [...displayTeams].sort((a, b) => {
@@ -111,7 +131,7 @@ export default function Standings({ leagueId }: StandingsProps) {
     return streak.startsWith('W') ? 'success' : 'danger';
   };
 
-  if (leagueLoading || teamsLoading) return <Typography>Loading standings...</Typography>;
+  if (leagueLoading || teamsLoading || divisionsLoading) return <Typography>Loading standings...</Typography>;
   if (leagueError) return <Alert color="danger">Failed to load league data: {leagueError.message}</Alert>;
   if (teamsError) return <Alert color="danger">Failed to load teams data: {teamsError.message}</Alert>;
   if (!league) return <Alert color="warning">League not found.</Alert>;
@@ -156,11 +176,19 @@ export default function Standings({ leagueId }: StandingsProps) {
 
       {/* Division Standings */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {divisions.map((division) => (
+        {divisionNames.map((division) => (
           <Grid xs={12} md={6} lg={3} key={division}>
             <Card variant="outlined">
               <CardContent>
-                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2, textAlign: 'center' }}>
+                <Typography 
+                  level="h4" 
+                  sx={{ 
+                    fontWeight: 'bold', 
+                    mb: 2, 
+                    textAlign: 'center',
+                    color: division === 'Unassigned' ? 'neutral.600' : 'primary.600'
+                  }}
+                >
                   {division}
                 </Typography>
                 

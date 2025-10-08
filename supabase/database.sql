@@ -6,11 +6,20 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Drop all existing tables if they exist (in correct order due to foreign keys)
+DROP TABLE IF EXISTS fantasy_season_weeks CASCADE;
+DROP TABLE IF EXISTS dynasty_keepers CASCADE;
+DROP TABLE IF EXISTS dynasty_settings CASCADE;
+DROP TABLE IF EXISTS trades CASCADE;
+DROP TABLE IF EXISTS draft_chat_messages CASCADE;
+DROP TABLE IF EXISTS draft_lobby_participants CASCADE;
 DROP TABLE IF EXISTS weekly_matchups CASCADE;
+DROP TABLE IF EXISTS league_schedule_settings CASCADE;
 DROP TABLE IF EXISTS league_invitations CASCADE;
 DROP TABLE IF EXISTS draft_picks CASCADE;
 DROP TABLE IF EXISTS fantasy_team_players CASCADE;
+DROP TABLE IF EXISTS roster_spots CASCADE;
 DROP TABLE IF EXISTS fantasy_teams CASCADE;
+DROP TABLE IF EXISTS divisions CASCADE;
 DROP TABLE IF EXISTS league_members CASCADE;
 DROP TABLE IF EXISTS league_states CASCADE;
 DROP TABLE IF EXISTS league_settings CASCADE;
@@ -19,7 +28,8 @@ DROP TABLE IF EXISTS leagues CASCADE;
 DROP TABLE IF EXISTS player_game_logs CASCADE;
 DROP TABLE IF EXISTS player_season_stats CASCADE;
 DROP TABLE IF EXISTS player_career_stats CASCADE;
-DROP TABLE IF EXISTS games CASCADE;
+DROP TABLE IF EXISTS nba_games CASCADE;
+DROP TABLE IF EXISTS nba_season_weeks CASCADE;
 DROP TABLE IF EXISTS players CASCADE;
 
 -- ============================================================================
@@ -27,16 +37,20 @@ DROP TABLE IF EXISTS players CASCADE;
 -- ============================================================================
 
 -- Create players table with NBA API fields
-CREATE TABLE players (
+CREATE TABLE IF NOT EXISTS players (
   id SERIAL PRIMARY KEY,
-  nba_player_id INTEGER UNIQUE NOT NULL, -- NBA API player ID
+  nba_player_id INTEGER UNIQUE NOT NULL, -- NBA API player ID (PERSON_ID)
   name TEXT NOT NULL,
   first_name TEXT,
   last_name TEXT,
+  player_slug TEXT, -- PLAYER_SLUG from PlayerIndex
   position TEXT,
   team_id INTEGER, -- NBA API team ID
   team_name TEXT,
   team_abbreviation TEXT,
+  team_slug TEXT, -- TEAM_SLUG from PlayerIndex
+  team_city TEXT, -- TEAM_CITY from PlayerIndex
+  is_defunct BOOLEAN DEFAULT false, -- IS_DEFUNCT from PlayerIndex
   jersey_number TEXT,
   height TEXT, -- e.g., "6-8"
   weight INTEGER, -- in pounds
@@ -46,22 +60,34 @@ CREATE TABLE players (
   birth_state TEXT,
   birth_country TEXT,
   college TEXT,
+  country TEXT, -- COUNTRY from PlayerIndex
   draft_year INTEGER,
   draft_round INTEGER,
   draft_number INTEGER,
   salary BIGINT DEFAULT 0, -- Current season salary
+  -- HoopsHype salary data for next 4 years
+  salary_2025_26 BIGINT,
+  salary_2026_27 BIGINT,
+  salary_2027_28 BIGINT,
+  salary_2028_29 BIGINT,
+  contract_years_remaining INTEGER DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
   is_rookie BOOLEAN DEFAULT false,
   years_pro INTEGER DEFAULT 0,
   from_year INTEGER, -- First year in NBA
   to_year INTEGER, -- Last year in NBA (null if active)
+  roster_status TEXT, -- ROSTER_STATUS from PlayerIndex
+  current_pts DECIMAL(5,1), -- PTS from PlayerIndex (current season stats)
+  current_reb DECIMAL(5,1), -- REB from PlayerIndex (current season stats)
+  current_ast DECIMAL(5,1), -- AST from PlayerIndex (current season stats)
+  stats_timeframe TEXT, -- STATS_TIMEFRAME from PlayerIndex
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 
 -- Player Season Stats Table
-CREATE TABLE player_season_stats (
+CREATE TABLE IF NOT EXISTS player_season_stats (
     id BIGSERIAL PRIMARY KEY,
     player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     nba_player_id BIGINT NOT NULL,
@@ -117,60 +143,376 @@ CREATE TABLE player_season_stats (
     UNIQUE(player_id, season)
 );
 
--- Player Career Stats Table
-CREATE TABLE player_career_stats (
+-- Player Career Stats Tables (from NBA API PlayerCareerStats endpoint)
+
+-- Career Totals - Regular Season
+CREATE TABLE IF NOT EXISTS player_career_totals_regular_season (
     id BIGSERIAL PRIMARY KEY,
     player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     nba_player_id BIGINT NOT NULL,
-    seasons_played INTEGER,
-    total_gp INTEGER,
-    total_gs INTEGER,
-    total_min INTEGER,
-    total_fgm INTEGER,
-    total_fga INTEGER,
-    career_fg_pct DECIMAL(5,3),
-    total_fg3m INTEGER,
-    total_fg3a INTEGER,
-    career_fg3_pct DECIMAL(5,3),
-    total_ftm INTEGER,
-    total_fta INTEGER,
-    career_ft_pct DECIMAL(5,3),
-    total_oreb INTEGER,
-    total_dreb INTEGER,
-    total_reb INTEGER,
-    total_ast INTEGER,
-    total_stl INTEGER,
-    total_blk INTEGER,
-    total_tov INTEGER,
-    total_pf INTEGER,
-    total_pts INTEGER,
-    total_fantasy_pts DECIMAL(10,2),
-    -- Career averages
-    career_min_per_game DECIMAL(5,2),
-    career_fgm_per_game DECIMAL(5,2),
-    career_fga_per_game DECIMAL(5,2),
-    career_fg3m_per_game DECIMAL(5,2),
-    career_fg3a_per_game DECIMAL(5,2),
-    career_ftm_per_game DECIMAL(5,2),
-    career_fta_per_game DECIMAL(5,2),
-    career_oreb_per_game DECIMAL(5,2),
-    career_dreb_per_game DECIMAL(5,2),
-    career_reb_per_game DECIMAL(5,2),
-    career_ast_per_game DECIMAL(5,2),
-    career_stl_per_game DECIMAL(5,2),
-    career_blk_per_game DECIMAL(5,2),
-    career_tov_per_game DECIMAL(5,2),
-    career_pf_per_game DECIMAL(5,2),
-    career_pts_per_game DECIMAL(5,2),
-    career_fantasy_pts_per_game DECIMAL(6,2),
+    league_id BIGINT,
+    team_id BIGINT,
+    gp INTEGER, -- Games played
+    gs INTEGER, -- Games started
+    min_total INTEGER, -- Total minutes
+    fgm INTEGER, -- Field goals made
+    fga INTEGER, -- Field goals attempted
+    fg_pct DECIMAL(5,3), -- Field goal percentage
+    fg3m INTEGER, -- 3-pointers made
+    fg3a INTEGER, -- 3-pointers attempted
+    fg3_pct DECIMAL(5,3), -- 3-point percentage
+    ftm INTEGER, -- Free throws made
+    fta INTEGER, -- Free throws attempted
+    ft_pct DECIMAL(5,3), -- Free throw percentage
+    oreb INTEGER, -- Offensive rebounds
+    dreb INTEGER, -- Defensive rebounds
+    reb INTEGER, -- Total rebounds
+    ast INTEGER, -- Assists
+    stl INTEGER, -- Steals
+    blk INTEGER, -- Blocks
+    tov INTEGER, -- Turnovers
+    pf INTEGER, -- Personal fouls
+    pts INTEGER, -- Points
+    fantasy_pts DECIMAL(10,2), -- Calculated fantasy points
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     UNIQUE(player_id)
 );
 
+-- Career Totals - Post Season
+CREATE TABLE IF NOT EXISTS player_career_totals_post_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id)
+);
+
+-- Career Totals - All Star Season
+CREATE TABLE IF NOT EXISTS player_career_totals_all_star_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id)
+);
+
+-- Career Totals - College Season
+CREATE TABLE IF NOT EXISTS player_career_totals_college_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    league_id BIGINT,
+    organization_id BIGINT,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id)
+);
+
+-- Season Totals - Regular Season (year-by-year breakdown)
+CREATE TABLE IF NOT EXISTS player_season_totals_regular_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL, -- e.g., "2023-24"
+    league_id BIGINT,
+    team_id BIGINT,
+    team_abbreviation VARCHAR(10),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
+-- Season Totals - Post Season (year-by-year breakdown)
+CREATE TABLE IF NOT EXISTS player_season_totals_post_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    team_abbreviation VARCHAR(10),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
+-- Season Totals - All Star Season (year-by-year breakdown)
+CREATE TABLE IF NOT EXISTS player_season_totals_all_star_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    team_abbreviation VARCHAR(10),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
+-- Season Totals - College Season (year-by-year breakdown)
+CREATE TABLE IF NOT EXISTS player_season_totals_college_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL,
+    league_id BIGINT,
+    organization_id BIGINT,
+    school_name VARCHAR(100),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    min_total INTEGER,
+    fgm INTEGER,
+    fga INTEGER,
+    fg_pct DECIMAL(5,3),
+    fg3m INTEGER,
+    fg3a INTEGER,
+    fg3_pct DECIMAL(5,3),
+    ftm INTEGER,
+    fta INTEGER,
+    ft_pct DECIMAL(5,3),
+    oreb INTEGER,
+    dreb INTEGER,
+    reb INTEGER,
+    ast INTEGER,
+    stl INTEGER,
+    blk INTEGER,
+    tov INTEGER,
+    pf INTEGER,
+    pts INTEGER,
+    fantasy_pts DECIMAL(10,2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
+-- Season Rankings - Regular Season (year-by-year rankings)
+CREATE TABLE IF NOT EXISTS player_season_rankings_regular_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    team_abbreviation VARCHAR(10),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    rank_min INTEGER,
+    rank_fgm INTEGER,
+    rank_fga INTEGER,
+    rank_fg_pct INTEGER,
+    rank_fg3m INTEGER,
+    rank_fg3a INTEGER,
+    rank_fg3_pct INTEGER,
+    rank_ftm INTEGER,
+    rank_fta INTEGER,
+    rank_ft_pct INTEGER,
+    rank_oreb INTEGER,
+    rank_dreb INTEGER,
+    rank_reb INTEGER,
+    rank_ast INTEGER,
+    rank_stl INTEGER,
+    rank_blk INTEGER,
+    rank_tov INTEGER,
+    rank_pts INTEGER,
+    rank_eff INTEGER, -- Efficiency ranking
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
+-- Season Rankings - Post Season (year-by-year rankings)
+CREATE TABLE IF NOT EXISTS player_season_rankings_post_season (
+    id BIGSERIAL PRIMARY KEY,
+    player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    nba_player_id BIGINT NOT NULL,
+    season_id VARCHAR(10) NOT NULL,
+    league_id BIGINT,
+    team_id BIGINT,
+    team_abbreviation VARCHAR(10),
+    player_age INTEGER,
+    gp INTEGER,
+    gs INTEGER,
+    rank_min INTEGER,
+    rank_fgm INTEGER,
+    rank_fga INTEGER,
+    rank_fg_pct INTEGER,
+    rank_fg3m INTEGER,
+    rank_fg3a INTEGER,
+    rank_fg3_pct INTEGER,
+    rank_ftm INTEGER,
+    rank_fta INTEGER,
+    rank_ft_pct INTEGER,
+    rank_oreb INTEGER,
+    rank_dreb INTEGER,
+    rank_reb INTEGER,
+    rank_ast INTEGER,
+    rank_stl INTEGER,
+    rank_blk INTEGER,
+    rank_tov INTEGER,
+    rank_pts INTEGER,
+    rank_eff INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    
+    UNIQUE(player_id, season_id)
+);
+
 -- NBA Games Table (comprehensive NBA API data)
-CREATE TABLE nba_games (
+CREATE TABLE IF NOT EXISTS nba_games (
     id BIGSERIAL PRIMARY KEY,
     -- Basic game info
     league_id INTEGER,
@@ -246,16 +588,24 @@ CREATE TABLE nba_games (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Player Game Logs Table
-CREATE TABLE player_game_logs (
+-- Player Game Logs Table (comprehensive NBA API data)
+CREATE TABLE IF NOT EXISTS player_game_logs (
     id BIGSERIAL PRIMARY KEY,
     player_id BIGINT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
     nba_player_id BIGINT NOT NULL,
     game_id VARCHAR(50) NOT NULL REFERENCES nba_games(game_id) ON DELETE CASCADE,
+    -- Basic game info
+    season_year VARCHAR(10) NOT NULL, -- e.g., "2024-25"
+    player_name VARCHAR(100) NOT NULL,
+    team_id INTEGER,
+    team_abbreviation VARCHAR(10),
+    team_name VARCHAR(50),
     game_date DATE NOT NULL,
     matchup VARCHAR(20) NOT NULL, -- e.g., "LAL @ GSW"
     wl CHAR(1), -- W or L
+    -- Playing time
     min INTEGER, -- Minutes played
+    -- Shooting stats
     fgm INTEGER, -- Field goals made
     fga INTEGER, -- Field goals attempted
     fg_pct DECIMAL(5,3), -- Field goal percentage
@@ -265,17 +615,55 @@ CREATE TABLE player_game_logs (
     ftm INTEGER, -- Free throws made
     fta INTEGER, -- Free throws attempted
     ft_pct DECIMAL(5,3), -- Free throw percentage
+    -- Rebounding stats
     oreb INTEGER, -- Offensive rebounds
     dreb INTEGER, -- Defensive rebounds
     reb INTEGER, -- Total rebounds
+    -- Other stats
     ast INTEGER, -- Assists
+    tov INTEGER, -- Turnovers
     stl INTEGER, -- Steals
     blk INTEGER, -- Blocks
-    tov INTEGER, -- Turnovers
+    blka INTEGER, -- Blocks against
     pf INTEGER, -- Personal fouls
+    pfd INTEGER, -- Personal fouls drawn
     pts INTEGER, -- Points
     plus_minus INTEGER, -- Plus/minus
-    fantasy_pts DECIMAL(6,2), -- Fantasy points (calculated)
+    -- Fantasy and advanced stats
+    nba_fantasy_pts DECIMAL(6,2), -- NBA Fantasy points
+    dd2 INTEGER, -- Double doubles
+    td3 INTEGER, -- Triple doubles
+    -- Rankings (season-based)
+    gp_rank INTEGER,
+    w_rank INTEGER,
+    l_rank INTEGER,
+    w_pct_rank INTEGER,
+    min_rank INTEGER,
+    fgm_rank INTEGER,
+    fga_rank INTEGER,
+    fg_pct_rank INTEGER,
+    fg3m_rank INTEGER,
+    fg3a_rank INTEGER,
+    fg3_pct_rank INTEGER,
+    ftm_rank INTEGER,
+    fta_rank INTEGER,
+    ft_pct_rank INTEGER,
+    oreb_rank INTEGER,
+    dreb_rank INTEGER,
+    reb_rank INTEGER,
+    ast_rank INTEGER,
+    tov_rank INTEGER,
+    stl_rank INTEGER,
+    blk_rank INTEGER,
+    blka_rank INTEGER,
+    pf_rank INTEGER,
+    pfd_rank INTEGER,
+    pts_rank INTEGER,
+    plus_minus_rank INTEGER,
+    nba_fantasy_pts_rank INTEGER,
+    dd2_rank INTEGER,
+    td3_rank INTEGER,
+    -- Metadata
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
@@ -283,7 +671,7 @@ CREATE TABLE player_game_logs (
 );
 
 -- NBA Season Weeks Table
-CREATE TABLE nba_season_weeks (
+CREATE TABLE IF NOT EXISTS nba_season_weeks (
     id BIGSERIAL PRIMARY KEY,
     league_id INTEGER,
     season_year INTEGER NOT NULL,
@@ -301,7 +689,7 @@ CREATE TABLE nba_season_weeks (
 -- ============================================================================
 
 -- Create leagues table
-CREATE TABLE leagues (
+CREATE TABLE IF NOT EXISTS leagues (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
   description TEXT,
@@ -327,7 +715,7 @@ CREATE TABLE leagues (
 );
 
 -- Create league_settings table
-CREATE TABLE league_settings (
+CREATE TABLE IF NOT EXISTS league_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   draft_type TEXT CHECK (draft_type IN ('snake', 'linear', 'auction')) DEFAULT 'snake',
@@ -374,7 +762,7 @@ CREATE TABLE league_settings (
 );
 
 -- Create league_members table
-CREATE TABLE league_members (
+CREATE TABLE IF NOT EXISTS league_members (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -386,10 +774,24 @@ CREATE TABLE league_members (
   UNIQUE(league_id, team_name)
 );
 
--- Create fantasy_teams table (consolidated fantasy team information)
-CREATE TABLE fantasy_teams (
+-- Create divisions table
+CREATE TABLE IF NOT EXISTS divisions (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  division_order INTEGER NOT NULL, -- Order for display (1, 2, 3, etc.)
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(league_id, name),
+  UNIQUE(league_id, division_order)
+);
+
+-- Create fantasy_teams table (consolidated fantasy team information)
+CREATE TABLE IF NOT EXISTS fantasy_teams (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
+  division_id UUID REFERENCES divisions(id) ON DELETE SET NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   team_name TEXT NOT NULL,
   team_abbreviation TEXT,
@@ -408,7 +810,7 @@ CREATE TABLE fantasy_teams (
 );
 
 -- Create draft_order table
-CREATE TABLE draft_order (
+CREATE TABLE IF NOT EXISTS draft_order (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   round INTEGER NOT NULL,
@@ -423,7 +825,7 @@ CREATE TABLE draft_order (
 -- to handle existing table conflicts
 
 -- Create league_states table
-CREATE TABLE league_states (
+CREATE TABLE IF NOT EXISTS league_states (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   current_phase TEXT CHECK (current_phase IN ('setup', 'draft', 'regular_season', 'playoffs', 'completed')) DEFAULT 'setup',
@@ -435,7 +837,7 @@ CREATE TABLE league_states (
 );
 
 -- Create roster_spots table (defines available roster positions)
-CREATE TABLE roster_spots (
+CREATE TABLE IF NOT EXISTS roster_spots (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   position TEXT NOT NULL CHECK (position IN ('PG', 'SG', 'SF', 'PF', 'C', 'G', 'F', 'UTIL', 'BENCH', 'IR')),
@@ -447,7 +849,7 @@ CREATE TABLE roster_spots (
 );
 
 -- Create fantasy_team_players table (roster composition)
-CREATE TABLE fantasy_team_players (
+CREATE TABLE IF NOT EXISTS fantasy_team_players (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   fantasy_team_id UUID REFERENCES fantasy_teams(id) ON DELETE CASCADE,
   roster_spot_id UUID REFERENCES roster_spots(id) ON DELETE CASCADE,
@@ -460,7 +862,7 @@ CREATE TABLE fantasy_team_players (
 );
 
 -- Create draft_picks table
-CREATE TABLE draft_picks (
+CREATE TABLE IF NOT EXISTS draft_picks (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   player_id INTEGER REFERENCES players(id) ON DELETE CASCADE,
@@ -472,7 +874,7 @@ CREATE TABLE draft_picks (
 );
 
 -- Create league_invitations table
-CREATE TABLE league_invitations (
+CREATE TABLE IF NOT EXISTS league_invitations (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   fantasy_team_id UUID REFERENCES fantasy_teams(id) ON DELETE CASCADE,
@@ -486,7 +888,7 @@ CREATE TABLE league_invitations (
 );
 
 -- Create league_schedule_settings table (schedule configuration)
-CREATE TABLE league_schedule_settings (
+CREATE TABLE IF NOT EXISTS league_schedule_settings (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   regular_season_weeks INTEGER NOT NULL DEFAULT 18,
@@ -503,7 +905,7 @@ CREATE TABLE league_schedule_settings (
 );
 
 -- Create weekly_matchups table (enhanced for comprehensive scheduling)
-CREATE TABLE weekly_matchups (
+CREATE TABLE IF NOT EXISTS weekly_matchups (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID REFERENCES leagues(id) ON DELETE CASCADE,
   fantasy_team1_id UUID REFERENCES fantasy_teams(id) ON DELETE CASCADE,
@@ -525,7 +927,7 @@ CREATE TABLE weekly_matchups (
 );
 
 -- Create draft_chat_messages table for live draft chat
-CREATE TABLE draft_chat_messages (
+CREATE TABLE IF NOT EXISTS draft_chat_messages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   league_id UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -565,6 +967,122 @@ CREATE TABLE trades (
   cancelled_at TIMESTAMP WITH TIME ZONE
 );
 
+-- Create player_watchlist table (league-specific watchlist)
+CREATE TABLE player_watchlist (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  league_id UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  notes TEXT, -- Optional notes about why the player is on watchlist
+  UNIQUE(league_id, user_id, player_id)
+);
+
+-- Create player_favorites table (site-wide favorites)
+CREATE TABLE player_favorites (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  added_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  notes TEXT, -- Optional notes about why the player is a favorite
+  UNIQUE(user_id, player_id)
+);
+
+-- Create dynasty_keepers table (tracks kept players from season to season)
+CREATE TABLE dynasty_keepers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  league_id UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  fantasy_team_id UUID NOT NULL REFERENCES fantasy_teams(id) ON DELETE CASCADE,
+  player_id INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+  season_year INTEGER NOT NULL, -- e.g., 2024, 2025
+  keeper_round INTEGER, -- Round the player was kept in (for draft order purposes)
+  keeper_cost DECIMAL(10,2) DEFAULT 0, -- Cost to keep the player (for salary cap leagues)
+  is_rookie_keeper BOOLEAN DEFAULT false, -- True if this is a rookie being kept
+  keeper_notes TEXT, -- Optional notes about the keeper decision
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(league_id, fantasy_team_id, player_id, season_year)
+);
+
+-- Create dynasty_settings table (league-specific dynasty configuration)
+CREATE TABLE dynasty_settings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  league_id UUID NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+  is_dynasty_league BOOLEAN DEFAULT false,
+  max_keepers INTEGER DEFAULT 0, -- Maximum number of keepers per team
+  min_keepers INTEGER DEFAULT 0, -- Minimum number of keepers per team
+  keeper_deadline DATE, -- Deadline for declaring keepers
+  keeper_cost_type TEXT DEFAULT 'free' CHECK (keeper_cost_type IN ('free', 'draft_round', 'salary_cap', 'auction')),
+  rookie_keeper_bonus INTEGER DEFAULT 0, -- Extra years for rookie keepers
+  max_keeper_years INTEGER DEFAULT 0, -- Maximum years a player can be kept (0 = unlimited)
+  keeper_trade_deadline DATE, -- Deadline for trading keepers
+  allow_keeper_trades BOOLEAN DEFAULT true,
+  keeper_penalty_type TEXT DEFAULT 'none' CHECK (keeper_penalty_type IN ('none', 'draft_round', 'salary_increase', 'years_penalty')),
+  keeper_penalty_amount DECIMAL(5,2) DEFAULT 0, -- Amount of penalty (rounds, salary %, years)
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(league_id)
+);
+
+-- Create fantasy_season_weeks table (site-wide fantasy week structure)
+CREATE TABLE fantasy_season_weeks (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  season_year INTEGER NOT NULL, -- e.g., 2025, 2026
+  week_number INTEGER NOT NULL, -- 1-25 for regular season
+  week_name TEXT NOT NULL, -- e.g., "Week 1", "Week 2"
+  start_date DATE NOT NULL, -- Start of fantasy week
+  end_date DATE NOT NULL, -- End of fantasy week
+  is_regular_season BOOLEAN DEFAULT true, -- true for regular season, false for playoffs
+  is_playoff_week BOOLEAN DEFAULT false, -- true for playoff weeks
+  playoff_round INTEGER, -- NULL for regular season, 1-3 for playoffs
+  is_active BOOLEAN DEFAULT true, -- Whether this week is currently active
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(season_year, week_number)
+);
+
+-- ESPN Fantasy Basketball Player Projections
+CREATE TABLE espn_player_projections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  espn_name VARCHAR(255) NOT NULL,
+  espn_team VARCHAR(50),
+  espn_position VARCHAR(20),
+  player_id INTEGER REFERENCES players(id) ON DELETE SET NULL,
+  matched_at TIMESTAMP WITH TIME ZONE,
+  match_confidence DECIMAL(3,2) DEFAULT 0.0, -- 0.0 to 1.0 confidence score
+  -- 2025 Statistics
+  stats_2025_gp INTEGER,
+  stats_2025_min DECIMAL(4,1),
+  stats_2025_fg_pct DECIMAL(4,3),
+  stats_2025_ft_pct DECIMAL(4,3),
+  stats_2025_3pm DECIMAL(4,1),
+  stats_2025_reb DECIMAL(4,1),
+  stats_2025_ast DECIMAL(4,1),
+  stats_2025_ato DECIMAL(4,2),
+  stats_2025_stl DECIMAL(4,1),
+  stats_2025_blk DECIMAL(4,1),
+  stats_2025_to DECIMAL(4,1),
+  stats_2025_pts DECIMAL(4,1),
+  -- 2026 Projections
+  proj_2026_gp INTEGER,
+  proj_2026_min DECIMAL(4,1),
+  proj_2026_fg_pct DECIMAL(4,3),
+  proj_2026_ft_pct DECIMAL(4,3),
+  proj_2026_3pm DECIMAL(4,1),
+  proj_2026_reb DECIMAL(4,1),
+  proj_2026_ast DECIMAL(4,1),
+  proj_2026_ato DECIMAL(4,2),
+  proj_2026_stl DECIMAL(4,1),
+  proj_2026_blk DECIMAL(4,1),
+  proj_2026_to DECIMAL(4,1),
+  proj_2026_pts DECIMAL(4,1),
+  -- 2026 Outlook
+  outlook_2026 TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(espn_name)
+);
+
 -- ============================================================================
 -- INDEXES FOR PERFORMANCE
 -- ============================================================================
@@ -576,15 +1094,62 @@ CREATE INDEX idx_players_position ON players(position);
 CREATE INDEX idx_players_team_id ON players(team_id);
 CREATE INDEX idx_players_team_name ON players(team_name);
 CREATE INDEX idx_players_salary ON players(salary);
+CREATE INDEX idx_players_salary_2025_26 ON players(salary_2025_26);
+CREATE INDEX idx_players_salary_2026_27 ON players(salary_2026_27);
+CREATE INDEX idx_players_salary_2027_28 ON players(salary_2027_28);
+CREATE INDEX idx_players_salary_2028_29 ON players(salary_2028_29);
+CREATE INDEX idx_players_contract_years ON players(contract_years_remaining);
 CREATE INDEX idx_players_active ON players(is_active);
 CREATE INDEX idx_players_draft_year ON players(draft_year);
+CREATE INDEX idx_players_player_slug ON players(player_slug);
+CREATE INDEX idx_players_team_slug ON players(team_slug);
+CREATE INDEX idx_players_team_city ON players(team_city);
+CREATE INDEX idx_players_is_defunct ON players(is_defunct);
+CREATE INDEX idx_players_country ON players(country);
+CREATE INDEX idx_players_roster_status ON players(roster_status);
+CREATE INDEX idx_players_stats_timeframe ON players(stats_timeframe);
 
 -- Player stats indexes
 CREATE INDEX idx_player_game_logs_player_id ON player_game_logs(player_id);
+CREATE INDEX idx_player_game_logs_nba_player_id ON player_game_logs(nba_player_id);
+CREATE INDEX idx_player_game_logs_game_id ON player_game_logs(game_id);
 CREATE INDEX idx_player_game_logs_game_date ON player_game_logs(game_date);
-CREATE INDEX idx_player_game_logs_season ON player_game_logs(game_date);
+CREATE INDEX idx_player_game_logs_season_year ON player_game_logs(season_year);
+CREATE INDEX idx_player_game_logs_team_id ON player_game_logs(team_id);
+CREATE INDEX idx_player_game_logs_player_season ON player_game_logs(player_id, season_year);
 CREATE INDEX idx_player_season_stats_player_season ON player_season_stats(player_id, season);
-CREATE INDEX idx_player_career_stats_player_id ON player_career_stats(player_id);
+
+-- Career stats indexes
+CREATE INDEX idx_player_career_totals_regular_season_player_id ON player_career_totals_regular_season(player_id);
+CREATE INDEX idx_player_career_totals_regular_season_nba_id ON player_career_totals_regular_season(nba_player_id);
+CREATE INDEX idx_player_career_totals_post_season_player_id ON player_career_totals_post_season(player_id);
+CREATE INDEX idx_player_career_totals_post_season_nba_id ON player_career_totals_post_season(nba_player_id);
+CREATE INDEX idx_player_career_totals_all_star_season_player_id ON player_career_totals_all_star_season(player_id);
+CREATE INDEX idx_player_career_totals_all_star_season_nba_id ON player_career_totals_all_star_season(nba_player_id);
+CREATE INDEX idx_player_career_totals_college_season_player_id ON player_career_totals_college_season(player_id);
+CREATE INDEX idx_player_career_totals_college_season_nba_id ON player_career_totals_college_season(nba_player_id);
+
+-- Season totals indexes
+CREATE INDEX idx_player_season_totals_regular_season_player_id ON player_season_totals_regular_season(player_id);
+CREATE INDEX idx_player_season_totals_regular_season_nba_id ON player_season_totals_regular_season(nba_player_id);
+CREATE INDEX idx_player_season_totals_regular_season_season ON player_season_totals_regular_season(season_id);
+CREATE INDEX idx_player_season_totals_post_season_player_id ON player_season_totals_post_season(player_id);
+CREATE INDEX idx_player_season_totals_post_season_nba_id ON player_season_totals_post_season(nba_player_id);
+CREATE INDEX idx_player_season_totals_post_season_season ON player_season_totals_post_season(season_id);
+CREATE INDEX idx_player_season_totals_all_star_season_player_id ON player_season_totals_all_star_season(player_id);
+CREATE INDEX idx_player_season_totals_all_star_season_nba_id ON player_season_totals_all_star_season(nba_player_id);
+CREATE INDEX idx_player_season_totals_all_star_season_season ON player_season_totals_all_star_season(season_id);
+CREATE INDEX idx_player_season_totals_college_season_player_id ON player_season_totals_college_season(player_id);
+CREATE INDEX idx_player_season_totals_college_season_nba_id ON player_season_totals_college_season(nba_player_id);
+CREATE INDEX idx_player_season_totals_college_season_season ON player_season_totals_college_season(season_id);
+
+-- Season rankings indexes
+CREATE INDEX idx_player_season_rankings_regular_season_player_id ON player_season_rankings_regular_season(player_id);
+CREATE INDEX idx_player_season_rankings_regular_season_nba_id ON player_season_rankings_regular_season(nba_player_id);
+CREATE INDEX idx_player_season_rankings_regular_season_season ON player_season_rankings_regular_season(season_id);
+CREATE INDEX idx_player_season_rankings_post_season_player_id ON player_season_rankings_post_season(player_id);
+CREATE INDEX idx_player_season_rankings_post_season_nba_id ON player_season_rankings_post_season(nba_player_id);
+CREATE INDEX idx_player_season_rankings_post_season_season ON player_season_rankings_post_season(season_id);
 CREATE INDEX idx_nba_games_game_date ON nba_games(game_date);
 CREATE INDEX idx_nba_games_season_year ON nba_games(season_year);
 CREATE INDEX idx_nba_games_game_id ON nba_games(game_id);
@@ -602,7 +1167,10 @@ CREATE INDEX idx_leagues_public ON leagues(is_public);
 CREATE INDEX idx_league_settings_league ON league_settings(league_id);
 CREATE INDEX idx_league_members_league ON league_members(league_id);
 CREATE INDEX idx_league_members_user ON league_members(user_id);
+CREATE INDEX idx_divisions_league ON divisions(league_id);
+CREATE INDEX idx_divisions_order ON divisions(league_id, division_order);
 CREATE INDEX idx_fantasy_teams_league ON fantasy_teams(league_id);
+CREATE INDEX idx_fantasy_teams_division ON fantasy_teams(division_id);
 CREATE INDEX idx_fantasy_teams_user ON fantasy_teams(user_id);
 CREATE INDEX idx_draft_order_league ON draft_order(league_id);
 CREATE INDEX idx_draft_order_round_pick ON draft_order(league_id, round, pick_number);
@@ -639,6 +1207,31 @@ CREATE INDEX idx_trades_proposing_team ON trades(proposing_team_id);
 CREATE INDEX idx_trades_receiving_team ON trades(receiving_team_id);
 CREATE INDEX idx_trades_status ON trades(status);
 CREATE INDEX idx_trades_created_at ON trades(created_at);
+CREATE INDEX idx_player_watchlist_league ON player_watchlist(league_id);
+CREATE INDEX idx_player_watchlist_user ON player_watchlist(user_id);
+CREATE INDEX idx_player_watchlist_player ON player_watchlist(player_id);
+CREATE INDEX idx_player_watchlist_league_user ON player_watchlist(league_id, user_id);
+CREATE INDEX idx_player_favorites_user ON player_favorites(user_id);
+CREATE INDEX idx_player_favorites_player ON player_favorites(player_id);
+CREATE INDEX idx_dynasty_keepers_league ON dynasty_keepers(league_id);
+CREATE INDEX idx_dynasty_keepers_team ON dynasty_keepers(fantasy_team_id);
+CREATE INDEX idx_dynasty_keepers_player ON dynasty_keepers(player_id);
+CREATE INDEX idx_dynasty_keepers_season ON dynasty_keepers(season_year);
+CREATE INDEX idx_dynasty_keepers_league_season ON dynasty_keepers(league_id, season_year);
+CREATE INDEX idx_dynasty_keepers_team_season ON dynasty_keepers(fantasy_team_id, season_year);
+CREATE INDEX idx_dynasty_settings_league ON dynasty_settings(league_id);
+CREATE INDEX idx_fantasy_season_weeks_season ON fantasy_season_weeks(season_year);
+CREATE INDEX idx_fantasy_season_weeks_week ON fantasy_season_weeks(season_year, week_number);
+CREATE INDEX idx_fantasy_season_weeks_dates ON fantasy_season_weeks(start_date, end_date);
+CREATE INDEX idx_fantasy_season_weeks_active ON fantasy_season_weeks(is_active);
+
+-- ESPN projections indexes
+CREATE INDEX idx_espn_projections_name ON espn_player_projections(espn_name);
+CREATE INDEX idx_espn_projections_team ON espn_player_projections(espn_team);
+CREATE INDEX idx_espn_projections_position ON espn_player_projections(espn_position);
+CREATE INDEX idx_espn_projections_player_id ON espn_player_projections(player_id);
+CREATE INDEX idx_espn_projections_matched ON espn_player_projections(matched_at);
+CREATE INDEX idx_espn_projections_confidence ON espn_player_projections(match_confidence);
 
 -- ============================================================================
 -- FUNCTIONS AND TRIGGERS
@@ -669,8 +1262,54 @@ CREATE TRIGGER update_player_season_stats_updated_at
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
-CREATE TRIGGER update_player_career_stats_updated_at 
-    BEFORE UPDATE ON player_career_stats 
+-- Career stats triggers
+CREATE TRIGGER update_player_career_totals_regular_season_updated_at 
+    BEFORE UPDATE ON player_career_totals_regular_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_career_totals_post_season_updated_at 
+    BEFORE UPDATE ON player_career_totals_post_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_career_totals_all_star_season_updated_at 
+    BEFORE UPDATE ON player_career_totals_all_star_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_career_totals_college_season_updated_at 
+    BEFORE UPDATE ON player_career_totals_college_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_totals_regular_season_updated_at 
+    BEFORE UPDATE ON player_season_totals_regular_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_totals_post_season_updated_at 
+    BEFORE UPDATE ON player_season_totals_post_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_totals_all_star_season_updated_at 
+    BEFORE UPDATE ON player_season_totals_all_star_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_totals_college_season_updated_at 
+    BEFORE UPDATE ON player_season_totals_college_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_rankings_regular_season_updated_at 
+    BEFORE UPDATE ON player_season_rankings_regular_season 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_player_season_rankings_post_season_updated_at 
+    BEFORE UPDATE ON player_season_rankings_post_season 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -686,6 +1325,11 @@ CREATE TRIGGER update_nba_season_weeks_updated_at
 
 CREATE TRIGGER update_leagues_updated_at 
     BEFORE UPDATE ON leagues 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_divisions_updated_at 
+    BEFORE UPDATE ON divisions 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -711,6 +1355,26 @@ CREATE TRIGGER update_weekly_matchups_updated_at
 
 CREATE TRIGGER update_trades_updated_at 
     BEFORE UPDATE ON trades 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_dynasty_keepers_updated_at 
+    BEFORE UPDATE ON dynasty_keepers 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_fantasy_season_weeks_updated_at 
+    BEFORE UPDATE ON fantasy_season_weeks 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_espn_player_projections_updated_at 
+    BEFORE UPDATE ON espn_player_projections 
+    FOR EACH ROW 
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_dynasty_settings_updated_at 
+    BEFORE UPDATE ON dynasty_settings 
     FOR EACH ROW 
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -916,10 +1580,14 @@ CREATE OR REPLACE FUNCTION upsert_player(
   p_name TEXT,
   p_first_name TEXT DEFAULT NULL,
   p_last_name TEXT DEFAULT NULL,
+  p_player_slug TEXT DEFAULT NULL,
   p_position TEXT DEFAULT NULL,
   p_team_id INTEGER DEFAULT NULL,
   p_team_name TEXT DEFAULT NULL,
   p_team_abbreviation TEXT DEFAULT NULL,
+  p_team_slug TEXT DEFAULT NULL,
+  p_team_city TEXT DEFAULT NULL,
+  p_is_defunct BOOLEAN DEFAULT false,
   p_jersey_number TEXT DEFAULT NULL,
   p_height TEXT DEFAULT NULL,
   p_weight INTEGER DEFAULT NULL,
@@ -929,6 +1597,7 @@ CREATE OR REPLACE FUNCTION upsert_player(
   p_birth_state TEXT DEFAULT NULL,
   p_birth_country TEXT DEFAULT NULL,
   p_college TEXT DEFAULT NULL,
+  p_country TEXT DEFAULT NULL,
   p_draft_year INTEGER DEFAULT NULL,
   p_draft_round INTEGER DEFAULT NULL,
   p_draft_number INTEGER DEFAULT NULL,
@@ -937,32 +1606,43 @@ CREATE OR REPLACE FUNCTION upsert_player(
   p_is_rookie BOOLEAN DEFAULT false,
   p_years_pro INTEGER DEFAULT 0,
   p_from_year INTEGER DEFAULT NULL,
-  p_to_year INTEGER DEFAULT NULL
+  p_to_year INTEGER DEFAULT NULL,
+  p_roster_status TEXT DEFAULT NULL,
+  p_current_pts DECIMAL(5,1) DEFAULT NULL,
+  p_current_reb DECIMAL(5,1) DEFAULT NULL,
+  p_current_ast DECIMAL(5,1) DEFAULT NULL,
+  p_stats_timeframe TEXT DEFAULT NULL
 )
 RETURNS INTEGER AS $$
 DECLARE
   player_id INTEGER;
 BEGIN
   INSERT INTO players (
-    nba_player_id, name, first_name, last_name, position, team_id, team_name,
-    team_abbreviation, jersey_number, height, weight, age, birth_date,
-    birth_city, birth_state, birth_country, college, draft_year, draft_round,
-    draft_number, salary, is_active, is_rookie, years_pro, from_year, to_year
+    nba_player_id, name, first_name, last_name, player_slug, position, team_id, team_name,
+    team_abbreviation, team_slug, team_city, is_defunct, jersey_number, height, weight, age, birth_date,
+    birth_city, birth_state, birth_country, college, country, draft_year, draft_round,
+    draft_number, salary, is_active, is_rookie, years_pro, from_year, to_year,
+    roster_status, current_pts, current_reb, current_ast, stats_timeframe
   ) VALUES (
-    p_nba_player_id, p_name, p_first_name, p_last_name, p_position, p_team_id, p_team_name,
-    p_team_abbreviation, p_jersey_number, p_height, p_weight, p_age, p_birth_date,
-    p_birth_city, p_birth_state, p_birth_country, p_college, p_draft_year, p_draft_round,
-    p_draft_number, p_salary, p_is_active, p_is_rookie, p_years_pro, p_from_year, p_to_year
+    p_nba_player_id, p_name, p_first_name, p_last_name, p_player_slug, p_position, p_team_id, p_team_name,
+    p_team_abbreviation, p_team_slug, p_team_city, p_is_defunct, p_jersey_number, p_height, p_weight, p_age, p_birth_date,
+    p_birth_city, p_birth_state, p_birth_country, p_college, p_country, p_draft_year, p_draft_round,
+    p_draft_number, p_salary, p_is_active, p_is_rookie, p_years_pro, p_from_year, p_to_year,
+    p_roster_status, p_current_pts, p_current_reb, p_current_ast, p_stats_timeframe
   )
   ON CONFLICT (nba_player_id) 
   DO UPDATE SET
     name = EXCLUDED.name,
     first_name = EXCLUDED.first_name,
     last_name = EXCLUDED.last_name,
+    player_slug = EXCLUDED.player_slug,
     position = EXCLUDED.position,
     team_id = EXCLUDED.team_id,
     team_name = EXCLUDED.team_name,
     team_abbreviation = EXCLUDED.team_abbreviation,
+    team_slug = EXCLUDED.team_slug,
+    team_city = EXCLUDED.team_city,
+    is_defunct = EXCLUDED.is_defunct,
     jersey_number = EXCLUDED.jersey_number,
     height = EXCLUDED.height,
     weight = EXCLUDED.weight,
@@ -972,6 +1652,7 @@ BEGIN
     birth_state = EXCLUDED.birth_state,
     birth_country = EXCLUDED.birth_country,
     college = EXCLUDED.college,
+    country = EXCLUDED.country,
     draft_year = EXCLUDED.draft_year,
     draft_round = EXCLUDED.draft_round,
     draft_number = EXCLUDED.draft_number,
@@ -981,6 +1662,11 @@ BEGIN
     years_pro = EXCLUDED.years_pro,
     from_year = EXCLUDED.from_year,
     to_year = EXCLUDED.to_year,
+    roster_status = EXCLUDED.roster_status,
+    current_pts = EXCLUDED.current_pts,
+    current_reb = EXCLUDED.current_reb,
+    current_ast = EXCLUDED.current_ast,
+    stats_timeframe = EXCLUDED.stats_timeframe,
     updated_at = NOW()
   RETURNING id INTO player_id;
   
@@ -1336,6 +2022,223 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- ============================================================================
+-- FUZZY NAME MATCHING FUNCTIONS
+-- ============================================================================
+
+-- Function to calculate Levenshtein distance between two strings
+CREATE OR REPLACE FUNCTION levenshtein_distance(str1 TEXT, str2 TEXT)
+RETURNS INTEGER AS $$
+DECLARE
+    len1 INTEGER := length(str1);
+    len2 INTEGER := length(str2);
+    matrix INTEGER[][];
+    i INTEGER;
+    j INTEGER;
+    cost INTEGER;
+BEGIN
+    -- Handle edge cases
+    IF len1 = 0 THEN RETURN len2; END IF;
+    IF len2 = 0 THEN RETURN len1; END IF;
+    
+    -- Initialize matrix
+    matrix := array_fill(0, ARRAY[len1 + 1, len2 + 1]);
+    
+    -- Initialize first row and column
+    FOR i IN 0..len1 LOOP
+        matrix[i][0] := i;
+    END LOOP;
+    
+    FOR j IN 0..len2 LOOP
+        matrix[0][j] := j;
+    END LOOP;
+    
+    -- Fill the matrix
+    FOR i IN 1..len1 LOOP
+        FOR j IN 1..len2 LOOP
+            IF substring(str1, i, 1) = substring(str2, j, 1) THEN
+                cost := 0;
+            ELSE
+                cost := 1;
+            END IF;
+            
+            matrix[i][j] := LEAST(
+                matrix[i-1][j] + 1,      -- deletion
+                matrix[i][j-1] + 1,      -- insertion
+                matrix[i-1][j-1] + cost  -- substitution
+            );
+        END LOOP;
+    END LOOP;
+    
+    RETURN matrix[len1][len2];
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Function to normalize names for better matching
+CREATE OR REPLACE FUNCTION normalize_name(name TEXT)
+RETURNS TEXT AS $$
+BEGIN
+    -- Convert to lowercase
+    name := LOWER(name);
+    
+    -- Remove common suffixes and prefixes
+    name := REGEXP_REPLACE(name, '\s+(jr\.?|sr\.?|iii|ii|iv)$', '', 'gi');
+    name := REGEXP_REPLACE(name, '^st\.?\s+', '', 'gi');
+    
+    -- Replace common abbreviations
+    name := REGEXP_REPLACE(name, '\bj\.?\s*p\.?\s*', 'jp ', 'gi');
+    name := REGEXP_REPLACE(name, '\bj\.?\s*', 'j ', 'gi');
+    name := REGEXP_REPLACE(name, '\bm\.?\s*', 'm ', 'gi');
+    name := REGEXP_REPLACE(name, '\ba\.?\s*', 'a ', 'gi');
+    name := REGEXP_REPLACE(name, '\bb\.?\s*', 'b ', 'gi');
+    name := REGEXP_REPLACE(name, '\bc\.?\s*', 'c ', 'gi');
+    name := REGEXP_REPLACE(name, '\bd\.?\s*', 'd ', 'gi');
+    name := REGEXP_REPLACE(name, '\be\.?\s*', 'e ', 'gi');
+    name := REGEXP_REPLACE(name, '\bf\.?\s*', 'f ', 'gi');
+    name := REGEXP_REPLACE(name, '\bg\.?\s*', 'g ', 'gi');
+    name := REGEXP_REPLACE(name, '\bh\.?\s*', 'h ', 'gi');
+    name := REGEXP_REPLACE(name, '\bi\.?\s*', 'i ', 'gi');
+    name := REGEXP_REPLACE(name, '\bk\.?\s*', 'k ', 'gi');
+    name := REGEXP_REPLACE(name, '\bl\.?\s*', 'l ', 'gi');
+    name := REGEXP_REPLACE(name, '\bn\.?\s*', 'n ', 'gi');
+    name := REGEXP_REPLACE(name, '\bo\.?\s*', 'o ', 'gi');
+    name := REGEXP_REPLACE(name, '\bp\.?\s*', 'p ', 'gi');
+    name := REGEXP_REPLACE(name, '\bq\.?\s*', 'q ', 'gi');
+    name := REGEXP_REPLACE(name, '\br\.?\s*', 'r ', 'gi');
+    name := REGEXP_REPLACE(name, '\bs\.?\s*', 's ', 'gi');
+    name := REGEXP_REPLACE(name, '\bt\.?\s*', 't ', 'gi');
+    name := REGEXP_REPLACE(name, '\bu\.?\s*', 'u ', 'gi');
+    name := REGEXP_REPLACE(name, '\bv\.?\s*', 'v ', 'gi');
+    name := REGEXP_REPLACE(name, '\bw\.?\s*', 'w ', 'gi');
+    name := REGEXP_REPLACE(name, '\bx\.?\s*', 'x ', 'gi');
+    name := REGEXP_REPLACE(name, '\by\.?\s*', 'y ', 'gi');
+    name := REGEXP_REPLACE(name, '\bz\.?\s*', 'z ', 'gi');
+    
+    -- Remove extra spaces
+    name := REGEXP_REPLACE(name, '\s+', ' ', 'g');
+    name := TRIM(name);
+    
+    RETURN name;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Function to find best player match for ESPN name
+CREATE OR REPLACE FUNCTION find_best_player_match(espn_name TEXT, espn_team TEXT DEFAULT NULL)
+RETURNS TABLE(
+    player_id INTEGER,
+    player_name TEXT,
+    match_confidence DECIMAL(3,2)
+) AS $$
+DECLARE
+    normalized_espn_name TEXT;
+    best_match_id INTEGER;
+    best_match_name TEXT;
+    best_confidence DECIMAL(3,2) := 0.0;
+    current_distance INTEGER;
+    max_distance INTEGER;
+    current_confidence DECIMAL(3,2);
+    player_record RECORD;
+BEGIN
+    normalized_espn_name := normalize_name(espn_name);
+    
+    -- Set maximum allowed distance based on name length
+    max_distance := GREATEST(2, LENGTH(normalized_espn_name) / 4);
+    
+    -- Search for exact matches first
+    FOR player_record IN 
+        SELECT p.id, p.name, p.team_name
+        FROM players p
+        WHERE normalize_name(p.name) = normalized_espn_name
+        AND (espn_team IS NULL OR LOWER(p.team_name) = LOWER(espn_team))
+    LOOP
+        RETURN QUERY SELECT player_record.id, player_record.name, 1.0::DECIMAL(3,2);
+        RETURN;
+    END LOOP;
+    
+    -- Search for fuzzy matches
+    FOR player_record IN 
+        SELECT p.id, p.name, p.team_name
+        FROM players p
+        WHERE levenshtein_distance(normalize_name(p.name), normalized_espn_name) <= max_distance
+        ORDER BY levenshtein_distance(normalize_name(p.name), normalized_espn_name)
+    LOOP
+        current_distance := levenshtein_distance(normalize_name(player_record.name), normalized_espn_name);
+        current_confidence := 1.0 - (current_distance::DECIMAL / GREATEST(LENGTH(normalized_espn_name), LENGTH(normalize_name(player_record.name))));
+        
+        -- Bonus for team match
+        IF espn_team IS NOT NULL AND LOWER(player_record.team_name) = LOWER(espn_team) THEN
+            current_confidence := current_confidence + 0.1;
+        END IF;
+        
+        -- Cap confidence at 1.0
+        current_confidence := LEAST(1.0, current_confidence);
+        
+        IF current_confidence > best_confidence THEN
+            best_confidence := current_confidence;
+            best_match_id := player_record.id;
+            best_match_name := player_record.name;
+        END IF;
+    END LOOP;
+    
+    -- Only return if confidence is above threshold
+    IF best_confidence >= 0.6 THEN
+        RETURN QUERY SELECT best_match_id, best_match_name, best_confidence;
+    END IF;
+    
+    RETURN;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function to match all ESPN projections with players
+CREATE OR REPLACE FUNCTION match_espn_projections()
+RETURNS TABLE(
+    espn_name TEXT,
+    matched_player_name TEXT,
+    match_confidence DECIMAL(3,2),
+    matched_count INTEGER
+) AS $$
+DECLARE
+    projection_record RECORD;
+    match_result RECORD;
+    total_matched INTEGER := 0;
+BEGIN
+    -- Clear existing matches
+    UPDATE espn_player_projections 
+    SET player_id = NULL, matched_at = NULL, match_confidence = 0.0;
+    
+    -- Match each projection
+    FOR projection_record IN 
+        SELECT id, espn_name, espn_team
+        FROM espn_player_projections
+        ORDER BY espn_name
+    LOOP
+        -- Find best match
+        SELECT * INTO match_result
+        FROM find_best_player_match(projection_record.espn_name, projection_record.espn_team);
+        
+        IF match_result.player_id IS NOT NULL THEN
+            -- Update the projection with the match
+            UPDATE espn_player_projections
+            SET player_id = match_result.player_id,
+                matched_at = NOW(),
+                match_confidence = match_result.match_confidence
+            WHERE id = projection_record.id;
+            
+            total_matched := total_matched + 1;
+            
+            -- Return the match info
+            RETURN QUERY SELECT 
+                projection_record.espn_name,
+                match_result.player_name,
+                match_result.match_confidence,
+                total_matched;
+        END IF;
+    END LOOP;
+    
+    RETURN;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ============================================================================
 -- ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 
@@ -1343,12 +2246,23 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER TABLE players ENABLE ROW LEVEL SECURITY;
 ALTER TABLE player_game_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE player_season_stats ENABLE ROW LEVEL SECURITY;
-ALTER TABLE player_career_stats ENABLE ROW LEVEL SECURITY;
+-- Enable RLS for all career stats tables
+ALTER TABLE player_career_totals_regular_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_career_totals_post_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_career_totals_all_star_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_career_totals_college_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_totals_regular_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_totals_post_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_totals_all_star_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_totals_college_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_rankings_regular_season ENABLE ROW LEVEL SECURITY;
+ALTER TABLE player_season_rankings_post_season ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nba_games ENABLE ROW LEVEL SECURITY;
 ALTER TABLE nba_season_weeks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE leagues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE league_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE league_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE divisions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fantasy_teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_order ENABLE ROW LEVEL SECURITY;
 ALTER TABLE league_states ENABLE ROW LEVEL SECURITY;
@@ -1360,6 +2274,10 @@ ALTER TABLE league_schedule_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE weekly_matchups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_chat_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE draft_lobby_participants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fantasy_season_weeks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE espn_player_projections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dynasty_keepers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE dynasty_settings ENABLE ROW LEVEL SECURITY;
 
 -- ============================================================================
 -- PLAYER RLS POLICIES
@@ -1380,19 +2298,90 @@ CREATE POLICY "Allow authenticated users to read player stats" ON player_game_lo
 CREATE POLICY "Allow authenticated users to read season stats" ON player_season_stats
     FOR SELECT USING (auth.role() = 'authenticated');
 
-CREATE POLICY "Allow authenticated users to read career stats" ON player_career_stats
-    FOR SELECT USING (auth.role() = 'authenticated');
 
 
 -- Allow service role to manage all stats data
 CREATE POLICY "Allow service role to manage player stats" ON player_game_logs
     FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
 
+-- Public read access for frontend (Anon key)
+CREATE POLICY "Allow all users to read player stats (public)" ON player_game_logs
+    FOR SELECT USING (true);
+
 CREATE POLICY "Allow service role to manage season stats" ON player_season_stats
     FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
 
-CREATE POLICY "Allow service role to manage career stats" ON player_career_stats
+-- Career stats RLS policies
+CREATE POLICY "Allow authenticated users to read career stats" ON player_career_totals_regular_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage career stats" ON player_career_totals_regular_season
     FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- Public read access for frontend (Anon key)
+CREATE POLICY "Allow all users to read career stats (public)" ON player_career_totals_regular_season
+    FOR SELECT USING (true);
+
+CREATE POLICY "Allow authenticated users to read career stats" ON player_career_totals_post_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage career stats" ON player_career_totals_post_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Allow authenticated users to read career stats" ON player_career_totals_all_star_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage career stats" ON player_career_totals_all_star_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Allow authenticated users to read career stats" ON player_career_totals_college_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage career stats" ON player_career_totals_college_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- Season totals RLS policies
+CREATE POLICY "Allow authenticated users to read season totals" ON player_season_totals_regular_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season totals" ON player_season_totals_regular_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- Public read access for frontend (Anon key)
+CREATE POLICY "Allow all users to read season totals (public)" ON player_season_totals_regular_season
+    FOR SELECT USING (true);
+
+CREATE POLICY "Allow authenticated users to read season totals" ON player_season_totals_post_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season totals" ON player_season_totals_post_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Allow authenticated users to read season totals" ON player_season_totals_all_star_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season totals" ON player_season_totals_all_star_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Allow authenticated users to read season totals" ON player_season_totals_college_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season totals" ON player_season_totals_college_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+-- Season rankings RLS policies
+CREATE POLICY "Allow authenticated users to read season rankings" ON player_season_rankings_regular_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season rankings" ON player_season_rankings_regular_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
+CREATE POLICY "Allow authenticated users to read season rankings" ON player_season_rankings_post_season
+    FOR SELECT USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Allow service role to manage season rankings" ON player_season_rankings_post_season
+    FOR ALL USING (auth.role() = 'service_role') WITH CHECK (auth.role() = 'service_role');
+
 
 CREATE POLICY "Allow authenticated users to manage NBA games" ON nba_games
     FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
@@ -1480,6 +2469,23 @@ CREATE POLICY "Allow commissioners to manage league members" ON league_members
     league_id IN (
       SELECT id FROM leagues 
       WHERE commissioner_id = auth.uid()
+    )
+  );
+
+-- Create RLS policies for divisions
+CREATE POLICY "Allow commissioners to manage divisions in their leagues" ON divisions
+  FOR ALL USING (
+    league_id IN (
+      SELECT id FROM leagues 
+      WHERE commissioner_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Allow league members to read divisions" ON divisions
+  FOR SELECT USING (
+    league_id IN (
+      SELECT lm.league_id FROM league_members lm
+      WHERE lm.user_id = auth.uid()
     )
   );
 
@@ -1771,6 +2777,111 @@ CREATE POLICY "Allow team owners to delete their trades" ON trades
       WHERE ft.user_id = auth.uid()
     )
   );
+
+-- Create RLS policies for player_watchlist
+CREATE POLICY "Allow users to manage their own watchlist" ON player_watchlist
+  FOR ALL USING (user_id = auth.uid());
+
+CREATE POLICY "Allow league members to read watchlist" ON player_watchlist
+  FOR SELECT USING (
+    league_id IN (
+      SELECT lm.league_id FROM league_members lm
+      WHERE lm.user_id = auth.uid()
+    )
+  );
+
+-- Create RLS policies for player_favorites
+CREATE POLICY "Allow users to manage their own favorites" ON player_favorites
+  FOR ALL USING (user_id = auth.uid());
+
+-- Create RLS policies for dynasty_keepers
+CREATE POLICY "Allow league members to read dynasty keepers" ON dynasty_keepers
+  FOR SELECT USING (
+    league_id IN (
+      SELECT lm.league_id FROM league_members lm
+      WHERE lm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Allow team owners to manage their dynasty keepers" ON dynasty_keepers
+  FOR ALL USING (
+    fantasy_team_id IN (
+      SELECT ft.id FROM fantasy_teams ft
+      WHERE ft.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Allow commissioners to manage dynasty keepers" ON dynasty_keepers
+  FOR ALL USING (
+    league_id IN (
+      SELECT id FROM leagues 
+      WHERE commissioner_id = auth.uid()
+    )
+  );
+
+-- Create RLS policies for fantasy_season_weeks
+CREATE POLICY "Allow all users to read fantasy season weeks" ON fantasy_season_weeks
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow service role to manage fantasy season weeks" ON fantasy_season_weeks
+  FOR ALL USING (auth.role() = 'service_role');
+
+-- Create RLS policies for dynasty_settings
+CREATE POLICY "Allow league members to read dynasty settings" ON dynasty_settings
+  FOR SELECT USING (
+    league_id IN (
+      SELECT lm.league_id FROM league_members lm
+      WHERE lm.user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Allow commissioners to manage dynasty settings" ON dynasty_settings
+  FOR ALL USING (
+    league_id IN (
+      SELECT id FROM leagues 
+      WHERE commissioner_id = auth.uid()
+    )
+  );
+
+-- Create RLS policies for espn_player_projections
+CREATE POLICY "Allow all users to read ESPN projections" ON espn_player_projections
+  FOR SELECT USING (true);
+
+CREATE POLICY "Allow service role to manage ESPN projections" ON espn_player_projections
+  FOR ALL USING (auth.role() = 'service_role');
+
+-- ============================================================================
+-- INSERT DEFAULT DATA
+-- ============================================================================
+
+-- Insert 2025-26 Fantasy Season Weeks (Site-wide structure)
+INSERT INTO fantasy_season_weeks (season_year, week_number, week_name, start_date, end_date, is_regular_season, is_playoff_week, playoff_round, is_active) VALUES
+(2025, 0, 'Preseason', '2025-10-02', '2025-10-20', false, false, NULL, true),
+(2025, 1, 'Week 1', '2025-10-21', '2025-10-26', true, false, NULL, true),
+(2025, 2, 'Week 2', '2025-10-27', '2025-11-02', true, false, NULL, true),
+(2025, 3, 'Week 3', '2025-11-03', '2025-11-09', true, false, NULL, true),
+(2025, 4, 'Week 4', '2025-11-10', '2025-11-16', true, false, NULL, true),
+(2025, 5, 'Week 5', '2025-11-17', '2025-11-23', true, false, NULL, true),
+(2025, 6, 'Week 6', '2025-11-24', '2025-11-30', true, false, NULL, true),
+(2025, 7, 'Week 7', '2025-12-01', '2025-12-07', true, false, NULL, true),
+(2025, 8, 'Week 8', '2025-12-08', '2025-12-14', true, false, NULL, true),
+(2025, 9, 'Week 9', '2025-12-15', '2025-12-21', true, false, NULL, true),
+(2025, 10, 'Week 10', '2025-12-22', '2025-12-28', true, false, NULL, true),
+(2025, 11, 'Week 11', '2025-12-29', '2026-01-04', true, false, NULL, true),
+(2025, 12, 'Week 12', '2026-01-05', '2026-01-11', true, false, NULL, true),
+(2025, 13, 'Week 13', '2026-01-12', '2026-01-18', true, false, NULL, true),
+(2025, 14, 'Week 14', '2026-01-19', '2026-01-25', true, false, NULL, true),
+(2025, 15, 'Week 15', '2026-01-26', '2026-02-01', true, false, NULL, true),
+(2025, 16, 'Week 16', '2026-02-02', '2026-02-08', true, false, NULL, true),
+(2025, 17, 'Week 17', '2026-02-09', '2026-02-15', true, false, NULL, true),
+(2025, 18, 'Week 18', '2026-02-16', '2026-02-22', true, false, NULL, true),
+(2025, 19, 'Week 19', '2026-02-23', '2026-03-01', true, false, NULL, true),
+(2025, 20, 'Week 20', '2026-03-02', '2026-03-08', true, false, NULL, true),
+(2025, 21, 'Week 21', '2026-03-09', '2026-03-15', true, false, NULL, true),
+(2025, 22, 'Week 22', '2026-03-16', '2026-03-22', true, false, NULL, true),
+(2025, 23, 'Week 23', '2026-03-23', '2026-03-29', true, false, NULL, true),
+(2025, 24, 'Week 24', '2026-03-30', '2026-04-05', true, false, NULL, true),
+(2025, 25, 'Week 25', '2026-04-06', '2026-04-12', true, false, NULL, true);
 
 -- ============================================================================
 -- GRANT PERMISSIONS

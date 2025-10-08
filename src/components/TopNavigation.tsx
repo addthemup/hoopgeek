@@ -195,6 +195,8 @@ export default function TopNavigation() {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
+        maxWidth: '1400px',
+        mx: 'auto',
         width: '100%'
       }}>
         {/* Logo and Brand */}
@@ -213,6 +215,18 @@ export default function TopNavigation() {
           >
             🏀 HoopGeek
           </Typography>
+          <Chip 
+            size="sm" 
+            variant="soft" 
+            color="warning"
+            sx={{ 
+              fontWeight: 'bold',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px'
+            }}
+          >
+            Basketball Mecca
+          </Chip>
         </Box>
 
         {/* Desktop Navigation */}

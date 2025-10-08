@@ -24,18 +24,13 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { useTeams } from '../hooks/useTeams';
-import { useSearchParams } from 'react-router-dom';
 import { useUserTeamRoster } from '../hooks/useUserTeamRoster';
 import { useTeamDraftedPlayers } from '../hooks/useTeamDraftData';
 import { useAvailableDraftPicks } from '../hooks/useAvailableDraftPicks';
-import { useTrades, useCreateTrade, useUpdateTradeStatus, TradeItem as TradeItemType } from '../hooks/useTrades';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import AddIcon from '@mui/icons-material/Add';
 import RemoveIcon from '@mui/icons-material/Remove';
 import SportsBasketballIcon from '@mui/icons-material/SportsBasketball';
-import CheckIcon from '@mui/icons-material/Check';
-import CloseIcon from '@mui/icons-material/Close';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
 
 interface Player {
   id: string;
@@ -72,11 +67,9 @@ interface TradesProps {
 
 export default function Trades({ leagueId }: TradesProps) {
   const { user } = useAuth();
-  const { isLoading, error } = useLeague(leagueId);
+  const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading } = useTeams(leagueId);
   const { data: userTeamRoster, isLoading: rosterLoading } = useUserTeamRoster(leagueId);
-  const [searchParams] = useSearchParams();
-  
   // State for trade management
   const [selectedTeam, setSelectedTeam] = useState<string>('');
   const { data: selectedTeamRoster } = useTeamDraftedPlayers(leagueId, selectedTeam);
@@ -85,19 +78,6 @@ export default function Trades({ leagueId }: TradesProps) {
   const userTeam = teams?.find(team => team.user_id === user?.id);
   const { data: userAvailablePicks } = useAvailableDraftPicks(leagueId, userTeam?.id || '');
   const { data: selectedTeamAvailablePicks } = useAvailableDraftPicks(leagueId, selectedTeam);
-  
-  // Trade management hooks
-  const { data: trades } = useTrades(leagueId);
-  const createTradeMutation = useCreateTrade();
-  const updateTradeStatusMutation = useUpdateTradeStatus();
-  
-  // Debug logging
-  console.log('🔍 Trades Debug Info:');
-  console.log('- userTeam:', userTeam);
-  console.log('- selectedTeam:', selectedTeam);
-  console.log('- teams:', teams);
-  console.log('- userTeamRoster:', userTeamRoster);
-  console.log('- selectedTeamRoster:', selectedTeamRoster);
   const [myTradeItems, setMyTradeItems] = useState<TradeItem[]>([]);
   const [theirTradeItems, setTheirTradeItems] = useState<TradeItem[]>([]);
   const [showTradeModal, setShowTradeModal] = useState(false);
@@ -106,47 +86,6 @@ export default function Trades({ leagueId }: TradesProps) {
     message: string;
     salaryDifference?: number;
   }>({ isValid: false, message: '' });
-
-  // Trade submission handler
-  const handleSubmitTrade = async () => {
-    if (!tradeValidation.isValid || !userTeam || !selectedTeam) {
-      return;
-    }
-
-    try {
-      // Combine all trade items
-      const allTradeItems: TradeItemType[] = [
-        ...myTradeItems.map(item => ({
-          ...item,
-          fromTeam: userTeam.id,
-          toTeam: selectedTeam,
-        })),
-        ...theirTradeItems.map(item => ({
-          ...item,
-          fromTeam: selectedTeam,
-          toTeam: userTeam.id,
-        }))
-      ];
-
-      await createTradeMutation.mutateAsync({
-        leagueId,
-        proposingTeamId: userTeam.id,
-        receivingTeamId: selectedTeam,
-        tradeItems: allTradeItems,
-        message: `Trade proposal from ${userTeam.team_name}`,
-      });
-
-      // Reset form
-      setMyTradeItems([]);
-      setTheirTradeItems([]);
-      setShowTradeModal(false);
-      setTradeValidation({ isValid: false, message: '' });
-      
-      console.log('✅ Trade submitted successfully');
-    } catch (error) {
-      console.error('❌ Error submitting trade:', error);
-    }
-  };
 
   // Get available teams for trading
   const availableTeams = teams?.filter(team => team.id !== userTeam?.id) || [];
@@ -275,17 +214,6 @@ export default function Trades({ leagueId }: TradesProps) {
     return `${pick.year} ${pick.round === 1 ? '1st' : '2nd'} Round (${pick.team})`;
   };
 
-  // Handle pre-selected team from URL parameters
-  useEffect(() => {
-    const teamParam = searchParams.get('team');
-    if (teamParam && teams) {
-      const team = teams.find(t => t.id === teamParam);
-      if (team && team.id !== userTeam?.id) {
-        setSelectedTeam(teamParam);
-      }
-    }
-  }, [searchParams, teams, userTeam]);
-
   // Validate trade whenever items change
   useEffect(() => {
     validateTrade();
@@ -344,145 +272,6 @@ export default function Trades({ leagueId }: TradesProps) {
           Build and validate trades with other teams in your league
         </Typography>
       </Box>
-
-      {/* Pending Trades */}
-      {trades && trades.length > 0 && (
-        <Box sx={{ mb: 4 }}>
-          <Typography level="h4" sx={{ mb: 2, fontWeight: 'bold' }}>
-            Pending Trades
-          </Typography>
-          <Stack spacing={2}>
-            {trades.filter(trade => trade.status === 'pending').map((trade) => (
-              <Card key={trade.id} variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Box>
-                      <Typography level="title-md" sx={{ fontWeight: 'bold' }}>
-                        {trade.proposing_team_name} ↔ {trade.receiving_team_name}
-                      </Typography>
-                      <Typography level="body-sm" color="neutral">
-                        Proposed {new Date(trade.created_at).toLocaleDateString()}
-                      </Typography>
-                      {trade.message && (
-                        <Typography level="body-sm" sx={{ mt: 1, fontStyle: 'italic' }}>
-                          "{trade.message}"
-                        </Typography>
-                      )}
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      {trade.receiving_team_id === userTeam?.id && (
-                        <>
-                          <Button
-                            size="sm"
-                            color="success"
-                            startDecorator={<CheckIcon />}
-                            onClick={() => updateTradeStatusMutation.mutate({
-                              tradeId: trade.id,
-                              status: 'accepted'
-                            })}
-                            disabled={updateTradeStatusMutation.isPending}
-                          >
-                            Accept
-                          </Button>
-                          <Button
-                            size="sm"
-                            color="danger"
-                            variant="outlined"
-                            startDecorator={<CloseIcon />}
-                            onClick={() => updateTradeStatusMutation.mutate({
-                              tradeId: trade.id,
-                              status: 'rejected'
-                            })}
-                            disabled={updateTradeStatusMutation.isPending}
-                          >
-                            Decline
-                          </Button>
-                        </>
-                      )}
-                      {trade.proposing_team_id === userTeam?.id && (
-                        <Button
-                          size="sm"
-                          color="neutral"
-                          variant="outlined"
-                          startDecorator={<CloseIcon />}
-                          onClick={() => updateTradeStatusMutation.mutate({
-                            tradeId: trade.id,
-                            status: 'cancelled'
-                          })}
-                          disabled={updateTradeStatusMutation.isPending}
-                        >
-                          Cancel
-                        </Button>
-                      )}
-                    </Box>
-                  </Box>
-                  
-                  {/* Trade Items */}
-                  <Box sx={{ display: 'flex', gap: 3 }}>
-                    <Box sx={{ flex: 1 }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        {trade.proposing_team_name} gives:
-                      </Typography>
-                      <Stack spacing={1}>
-                        {trade.trade_items
-                          .filter(item => item.fromTeam === trade.proposing_team_id)
-                          .map((item, index) => (
-                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              {item.type === 'player' ? (
-                                <>
-                                  <SportsBasketballIcon sx={{ fontSize: '16px' }} />
-                                  <Typography level="body-sm">
-                                    {item.playerName} ({item.playerPosition})
-                                  </Typography>
-                                </>
-                              ) : (
-                                <>
-                                  <AccessTimeIcon sx={{ fontSize: '16px' }} />
-                                  <Typography level="body-sm">
-                                    {item.pickYear} Round {item.pickRound} Pick
-                                  </Typography>
-                                </>
-                              )}
-                            </Box>
-                          ))}
-                      </Stack>
-                    </Box>
-                    
-                    <Box sx={{ flex: 1 }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold', mb: 1 }}>
-                        {trade.receiving_team_name} gives:
-                      </Typography>
-                      <Stack spacing={1}>
-                        {trade.trade_items
-                          .filter(item => item.fromTeam === trade.receiving_team_id)
-                          .map((item, index) => (
-                            <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              {item.type === 'player' ? (
-                                <>
-                                  <SportsBasketballIcon sx={{ fontSize: '16px' }} />
-                                  <Typography level="body-sm">
-                                    {item.playerName} ({item.playerPosition})
-                                  </Typography>
-                                </>
-                              ) : (
-                                <>
-                                  <AccessTimeIcon sx={{ fontSize: '16px' }} />
-                                  <Typography level="body-sm">
-                                    {item.pickYear} Round {item.pickRound} Pick
-                                  </Typography>
-                                </>
-                              )}
-                            </Box>
-                          ))}
-                      </Stack>
-                    </Box>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
-          </Stack>
-        </Box>
-      )}
 
       {/* Team Selection */}
       <Card variant="outlined" sx={{ mb: 3 }}>
@@ -944,13 +733,8 @@ export default function Trades({ leagueId }: TradesProps) {
             <Button variant="outlined" onClick={() => setShowTradeModal(false)}>
               Cancel
             </Button>
-            <Button 
-              variant="solid" 
-              color="primary"
-              onClick={handleSubmitTrade}
-              disabled={createTradeMutation.isPending}
-            >
-              {createTradeMutation.isPending ? 'Submitting...' : 'Submit Trade'}
+            <Button variant="solid" color="primary">
+              Submit Trade
             </Button>
           </Stack>
         </ModalDialog>

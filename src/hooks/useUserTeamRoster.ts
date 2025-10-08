@@ -8,6 +8,7 @@ export interface RosterPlayer {
   position: string;
   team_abbreviation: string;
   jersey_number?: number;
+  nba_player_id?: number;
   roster_spot_id: string;
   fantasy_team_id: string;
 }
@@ -48,7 +49,8 @@ export function useUserTeamRoster(leagueId: string) {
             name,
             position,
             team_abbreviation,
-            jersey_number
+            jersey_number,
+            nba_player_id
           )
         `)
         .eq('fantasy_team_id', userTeam.id)
@@ -65,6 +67,7 @@ export function useUserTeamRoster(leagueId: string) {
         position: item.player.position,
         team_abbreviation: item.player.team_abbreviation,
         jersey_number: item.player.jersey_number,
+        nba_player_id: item.player.nba_player_id,
         roster_spot_id: item.roster_spot_id,
         fantasy_team_id: item.fantasy_team_id,
       })) as RosterPlayer[];

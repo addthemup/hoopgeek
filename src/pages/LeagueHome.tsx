@@ -31,8 +31,11 @@ import { useLeague } from '../hooks/useLeagues';
 import { useTeams } from '../hooks/useTeams';
 import { useCurrentWeekMatchups } from '../hooks/useMatchups';
 import { useNBAScoreboard } from '../hooks/useNBAScoreboard';
+import { useCurrentFantasyWeek, getWeekDisplayText, getSeasonPhaseColor } from '../hooks/useCurrentFantasyWeek';
+import { useDivisions } from '../hooks/useDivisions';
 import { FantasyTeam } from '../types';
-import { TeamLink } from '../components/TeamLink';
+import { supabase } from '../utils/supabase';
+import { useQuery } from '@tanstack/react-query';
 
 // Mock data for demonstration (keeping for other sections)
 
@@ -115,13 +118,66 @@ const mockNews = [
 
 interface LeagueHomeProps {
   leagueId: string;
+  onTeamClick?: (teamId: string) => void;
 }
 
-export default function LeagueHome({ leagueId }: LeagueHomeProps) {
+export default function LeagueHome({ leagueId, onTeamClick }: LeagueHomeProps) {
   const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading, error: teamsError } = useTeams(leagueId);
   const { data: matchups, isLoading: matchupsLoading, error: matchupsError } = useCurrentWeekMatchups(leagueId);
   const { data: nbaScoreboard, isLoading: scoreboardLoading, error: scoreboardError } = useNBAScoreboard();
+  const { currentWeek, seasonPhase, isLoading: weekLoading } = useCurrentFantasyWeek();
+  const { data: divisions = [], isLoading: divisionsLoading } = useDivisions(leagueId);
+
+  // Fetch salary cap usage for all teams - moved to top to avoid hooks order issues
+  const { data: teamSalaryData } = useQuery({
+    queryKey: ['team-salary-cap-usage', leagueId],
+    queryFn: async () => {
+      if (!teams || teams.length === 0) return {};
+
+      const salaryData: Record<string, number> = {};
+
+      // Fetch salary data for all teams in parallel
+      const promises = teams.map(async (team) => {
+        try {
+          const { data: rosterData, error } = await supabase
+            .from('fantasy_team_players')
+            .select(`
+              player:player_id (
+                salary_2025_26
+              )
+            `)
+            .eq('fantasy_team_id', team.id);
+
+          if (error) {
+            console.error(`Error fetching roster for team ${team.id}:`, error);
+            return { teamId: team.id, salary: 0 };
+          }
+
+          const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
+            const player = rosterSpot.player as any; // Type assertion for player
+            const playerSalary = player?.salary_2025_26 || 0;
+            return sum + playerSalary;
+          }, 0) || 0;
+
+          return { teamId: team.id, salary: totalSalary };
+        } catch (error) {
+          console.error(`Error calculating salary for team ${team.id}:`, error);
+          return { teamId: team.id, salary: 0 };
+        }
+      });
+
+      const results = await Promise.all(promises);
+      
+      results.forEach(({ teamId, salary }) => {
+        salaryData[teamId] = salary;
+      });
+
+      return salaryData;
+    },
+    enabled: !!teams && teams.length > 0,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
 
   // Debug logging
   console.log('LeagueHome Debug Info:', {
@@ -133,7 +189,7 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
     errorStack: error?.stack
   });
 
-  if (isLoading || teamsLoading || matchupsLoading) {
+  if (isLoading || teamsLoading || matchupsLoading || weekLoading || divisionsLoading) {
     console.log('LeagueHome: Loading state');
     return (
       <Box sx={{ p: 3 }}>
@@ -168,15 +224,62 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
     );
   }
 
-  // Generate standings from real team data
-  const standings = teams ? teams
-    .sort((a, b) => {
-      const aWinPct = a.wins / (a.wins + a.losses + a.ties);
-      const bWinPct = b.wins / (b.wins + b.losses + b.ties);
-      if (aWinPct !== bWinPct) return bWinPct - aWinPct;
-      return b.points_for - a.points_for;
-    })
-    .map((team, index) => transformTeamToStanding(team, index + 1)) : [];
+  // Generate standings grouped by divisions
+  const generateDivisionStandings = () => {
+    if (!teams || !divisions) return { divisionStandings: [], unassignedTeams: [] };
+
+    const divisionStandings: Array<{
+      division: { id: string; name: string; division_order: number };
+      teams: Array<ReturnType<typeof transformTeamToStanding>>;
+    }> = [];
+
+    const unassignedTeams: Array<ReturnType<typeof transformTeamToStanding>> = [];
+
+    // Sort divisions by order
+    const sortedDivisions = [...divisions].sort((a, b) => a.division_order - b.division_order);
+
+    // Process each division
+    sortedDivisions.forEach(division => {
+      const divisionTeams = teams.filter(team => team.division_id === division.id);
+      
+      if (divisionTeams.length > 0) {
+        const sortedTeams = divisionTeams
+          .sort((a, b) => {
+            const aWinPct = a.wins / (a.wins + a.losses + a.ties);
+            const bWinPct = b.wins / (b.wins + b.losses + b.ties);
+            if (aWinPct !== bWinPct) return bWinPct - aWinPct;
+            return b.points_for - a.points_for;
+          })
+          .map((team, index) => transformTeamToStanding(team, index + 1));
+
+        divisionStandings.push({
+          division,
+          teams: sortedTeams
+        });
+      }
+    });
+
+    // Handle unassigned teams
+    const assignedTeamIds = new Set(teams.filter(team => team.division_id).map(team => team.id));
+    const unassigned = teams.filter(team => !assignedTeamIds.has(team.id));
+    
+    if (unassigned.length > 0) {
+      const sortedUnassigned = unassigned
+        .sort((a, b) => {
+          const aWinPct = a.wins / (a.wins + a.losses + a.ties);
+          const bWinPct = b.wins / (b.wins + b.losses + b.ties);
+          if (aWinPct !== bWinPct) return bWinPct - aWinPct;
+          return b.points_for - a.points_for;
+        })
+        .map((team, index) => transformTeamToStanding(team, index + 1));
+
+      unassignedTeams.push(...sortedUnassigned);
+    }
+
+    return { divisionStandings, unassignedTeams };
+  };
+
+  const { divisionStandings, unassignedTeams } = generateDivisionStandings();
 
   return (
     <Box sx={{ maxWidth: '100%', mx: 'auto', p: 2 }}>
@@ -218,28 +321,47 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
         </Stack>
         
         <Grid container spacing={2}>
-          <Grid xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={2.4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.max_teams}</Typography>
               <Typography level="body-sm" sx={{ opacity: 0.8 }}>Teams</Typography>
             </Box>
           </Grid>
-          <Grid xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={2.4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.scoring_type || 'H2H Points'}</Typography>
               <Typography level="body-sm" sx={{ opacity: 0.8 }}>Scoring</Typography>
             </Box>
           </Grid>
-          <Grid xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={2.4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.lineup_frequency || 'Weekly'}</Typography>
               <Typography level="body-sm" sx={{ opacity: 0.8 }}>Lineups</Typography>
             </Box>
           </Grid>
-          <Grid xs={12} sm={6} md={3}>
+          <Grid xs={12} sm={6} md={2.4}>
             <Box sx={{ textAlign: 'center' }}>
               <Typography level="h4" sx={{ fontWeight: 'bold' }}>${(league.salary_cap_amount || 100000000) / 1000000}M</Typography>
               <Typography level="body-sm" sx={{ opacity: 0.8 }}>Salary Cap</Typography>
+            </Box>
+          </Grid>
+          <Grid xs={12} sm={6} md={2.4}>
+            <Box sx={{ textAlign: 'center' }}>
+              <Chip 
+                color={getSeasonPhaseColor(seasonPhase) as any} 
+                variant="solid"
+                sx={{ 
+                  mb: 1,
+                  fontWeight: 'bold',
+                  fontSize: '0.9rem',
+                  minWidth: '80px'
+                }}
+              >
+                {getWeekDisplayText(currentWeek, seasonPhase)}
+              </Chip>
+              <Typography level="body-sm" sx={{ opacity: 0.8 }}>
+                {currentWeek ? `${currentWeek.start_date} - ${currentWeek.end_date}` : 'Season Phase'}
+              </Typography>
             </Box>
           </Grid>
         </Grid>
@@ -247,16 +369,36 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
 
 
       <Grid container spacing={3}>
-        {/* Main Content */}
+        {/* Left Column - Matchups, Standings, and Commish Notes */}
         <Grid xs={12} lg={8}>
           <Stack spacing={3}>
-            {/* Matchups Section */}
+            {/* Commissioner Notes */}
             <Card>
               <CardContent>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                    Week 1 Matchups
+                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  Commish Notes
+                </Typography>
+                
+                <Alert color="primary" sx={{ mb: 2 }}>
+                  <Typography level="body-sm">
+                    Welcome to Week 6! Make sure to set your lineups before the games start. 
+                    Good luck to everyone!
                   </Typography>
+                </Alert>
+                
+                <Button variant="outlined" size="sm" fullWidth>
+                  View All Announcements
+                </Button>
+              </CardContent>
+            </Card>
+            {/* Matchups Section - Only show during regular season and playoffs */}
+            {seasonPhase !== 'preseason' && seasonPhase !== 'offseason' && (
+              <Card>
+                <CardContent>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                    <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                      {getWeekDisplayText(currentWeek, seasonPhase)} Matchups
+                    </Typography>
                   <Chip size="sm" color="neutral">Not started yet</Chip>
                 </Stack>
                 
@@ -266,18 +408,19 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
                     <Sheet key={matchup.id} variant="outlined" sx={{ p: 2 }}>
                       <Grid container spacing={2} alignItems="center">
                         <Grid xs={5}>
-                          {matchup.team1 ? (
-                            <TeamLink
-                              team={matchup.team1}
-                              leagueId={leagueId}
-                              variant="compact"
-                              size="sm"
-                            />
-                          ) : (
-                            <Typography level="body-sm" color="neutral">
-                              Team 1
-                            </Typography>
-                          )}
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.500', cursor: 'pointer' }} onClick={() => onTeamClick?.(matchup.fantasy_team1_id)}>
+                              {matchup.team1?.team_name?.charAt(0) || '?'}
+                            </Avatar>
+                            <Box>
+                              <Typography level="body-sm" sx={{ fontWeight: 'bold', cursor: 'pointer' }} onClick={() => onTeamClick?.(matchup.fantasy_team1_id)}>
+                                {matchup.team1?.team_name || 'Team 1'}
+                              </Typography>
+                              <Typography level="body-xs" color="neutral">
+                                {matchup.team1?.user_id ? 'Owner Assigned' : 'TBD'}
+                              </Typography>
+                            </Box>
+                          </Stack>
                         </Grid>
                         <Grid xs={2} sx={{ textAlign: 'center' }}>
                           <Typography level="h4" sx={{ fontWeight: 'bold' }}>
@@ -292,20 +435,19 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
                           </Chip>
                         </Grid>
                         <Grid xs={5}>
-                          {matchup.team2 ? (
-                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                              <TeamLink
-                                team={matchup.team2}
-                                leagueId={leagueId}
-                                variant="compact"
-                                size="sm"
-                              />
+                          <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography level="body-sm" sx={{ fontWeight: 'bold', cursor: 'pointer' }} onClick={() => onTeamClick?.(matchup.fantasy_team2_id)}>
+                                {matchup.team2?.team_name || 'Team 2'}
+                              </Typography>
+                              <Typography level="body-xs" color="neutral">
+                                {matchup.team2?.user_id ? 'Owner Assigned' : 'TBD'}
+                              </Typography>
                             </Box>
-                          ) : (
-                            <Typography level="body-sm" color="neutral" sx={{ textAlign: 'right' }}>
-                              Team 2
-                            </Typography>
-                          )}
+                            <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.500', cursor: 'pointer' }} onClick={() => onTeamClick?.(matchup.fantasy_team2_id)}>
+                              {matchup.team2?.team_name?.charAt(0) || '?'}
+                            </Avatar>
+                          </Stack>
                         </Grid>
                       </Grid>
                     </Sheet>
@@ -323,6 +465,28 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
                 </Stack>
               </CardContent>
             </Card>
+            )}
+
+            {/* Preseason Message */}
+            {seasonPhase === 'preseason' && (
+              <Card>
+                <CardContent>
+                  <Stack direction="row" alignItems="center" spacing={2}>
+                    <Avatar sx={{ bgcolor: 'warning.500' }}>
+                      <EmojiEvents />
+                    </Avatar>
+                    <Box>
+                      <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                        Preseason
+                      </Typography>
+                      <Typography level="body-md" color="neutral">
+                        The regular season hasn't started yet. Matchups will appear once Week 1 begins on {currentWeek?.start_date}.
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Standings Section */}
             <Card>
@@ -331,58 +495,145 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
                   League Standings
                 </Typography>
                 
-                <Table size="sm" hoverRow>
-                  <thead>
-                    <tr>
-                      <th>Rank</th>
-                      <th>Team</th>
-                      <th style={{ textAlign: 'center' }}>W</th>
-                      <th style={{ textAlign: 'center' }}>L</th>
-                      <th style={{ textAlign: 'center' }}>PCT</th>
-                      <th style={{ textAlign: 'center' }}>PF</th>
-                      <th style={{ textAlign: 'center' }}>PA</th>
-                      <th style={{ textAlign: 'center' }}>Streak</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                      {standings.map((team) => (
-                        <tr key={team.rank}>
-                          <td>
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                {team.rank}
-                              </Typography>
-                              {team.rank <= 3 && (
-                                <EmojiEvents sx={{ fontSize: 16, color: team.rank === 1 ? 'gold' : team.rank === 2 ? 'silver' : '#CD7F32' }} />
-                              )}
-                            </Stack>
-                          </td>
-                          <td>
-                            <TeamLink
-                              team={teams?.find(t => t.team_name === team.team) || { id: '', team_name: team.team }}
-                              leagueId={leagueId}
-                              variant="minimal"
-                              size="sm"
-                            />
-                          </td>
-                          <td style={{ textAlign: 'center' }}>{team.wins}</td>
-                          <td style={{ textAlign: 'center' }}>{team.losses}</td>
-                          <td style={{ textAlign: 'center' }}>{team.pct.toFixed(3)}</td>
-                          <td style={{ textAlign: 'center' }}>{team.pointsFor.toFixed(1)}</td>
-                          <td style={{ textAlign: 'center' }}>{team.pointsAgainst.toFixed(1)}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <Chip 
-                              size="sm" 
-                              color={team.streak.startsWith('W') ? 'success' : 'danger'}
-                              variant="outlined"
-                            >
-                              {team.streak}
-                            </Chip>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </Table>
+                <Stack spacing={3}>
+                  {/* Division Standings */}
+                  {divisionStandings.map(({ division, teams: divisionTeams }) => (
+                    <Box key={division.id}>
+                      <Typography level="title-md" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.600' }}>
+                        {division.name}
+                      </Typography>
+                      <Table size="sm" hoverRow>
+                        <thead>
+                          <tr>
+                            <th>Rank</th>
+                            <th>Team</th>
+                            <th style={{ textAlign: 'center' }}>W</th>
+                            <th style={{ textAlign: 'center' }}>L</th>
+                            <th style={{ textAlign: 'center' }}>PCT</th>
+                            <th style={{ textAlign: 'center' }}>PF</th>
+                            <th style={{ textAlign: 'center' }}>PA</th>
+                            <th style={{ textAlign: 'center' }}>Streak</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {divisionTeams.map((team) => (
+                            <tr key={team.rank} onClick={() => {
+                              const found = teams?.find(t => t.team_name === team.team)
+                              if (found) onTeamClick?.(found.id)
+                            }} style={{ cursor: 'pointer' }}>
+                              <td>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {team.rank}
+                                  </Typography>
+                                  {team.rank <= 3 && (
+                                    <EmojiEvents sx={{ fontSize: 16, color: team.rank === 1 ? 'gold' : team.rank === 2 ? 'silver' : '#CD7F32' }} />
+                                  )}
+                                </Stack>
+                              </td>
+                              <td>
+                                <Box>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {team.team}
+                                  </Typography>
+                                  <Typography level="body-xs" color="neutral">
+                                    {team.owner}
+                                  </Typography>
+                                </Box>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>{team.wins}</td>
+                              <td style={{ textAlign: 'center' }}>{team.losses}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pct.toFixed(3)}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pointsFor.toFixed(1)}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pointsAgainst.toFixed(1)}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                <Chip 
+                                  size="sm" 
+                                  color={team.streak.startsWith('W') ? 'success' : 'danger'}
+                                  variant="outlined"
+                                >
+                                  {team.streak}
+                                </Chip>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </Box>
+                  ))}
+
+                  {/* Unassigned Teams */}
+                  {unassignedTeams.length > 0 && (
+                    <Box>
+                      <Typography level="title-md" sx={{ fontWeight: 'bold', mb: 1, color: 'neutral.600' }}>
+                        Unassigned Teams
+                      </Typography>
+                      <Table size="sm" hoverRow>
+                        <thead>
+                          <tr>
+                            <th>Rank</th>
+                            <th>Team</th>
+                            <th style={{ textAlign: 'center' }}>W</th>
+                            <th style={{ textAlign: 'center' }}>L</th>
+                            <th style={{ textAlign: 'center' }}>PCT</th>
+                            <th style={{ textAlign: 'center' }}>PF</th>
+                            <th style={{ textAlign: 'center' }}>PA</th>
+                            <th style={{ textAlign: 'center' }}>Streak</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {unassignedTeams.map((team) => (
+                            <tr key={team.rank} onClick={() => {
+                              const found = teams?.find(t => t.team_name === team.team)
+                              if (found) onTeamClick?.(found.id)
+                            }} style={{ cursor: 'pointer' }}>
+                              <td>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {team.rank}
+                                  </Typography>
+                                </Stack>
+                              </td>
+                              <td>
+                                <Box>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {team.team}
+                                  </Typography>
+                                  <Typography level="body-xs" color="neutral">
+                                    {team.owner}
+                                  </Typography>
+                                </Box>
+                              </td>
+                              <td style={{ textAlign: 'center' }}>{team.wins}</td>
+                              <td style={{ textAlign: 'center' }}>{team.losses}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pct.toFixed(3)}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pointsFor.toFixed(1)}</td>
+                              <td style={{ textAlign: 'center' }}>{team.pointsAgainst.toFixed(1)}</td>
+                              <td style={{ textAlign: 'center' }}>
+                                <Chip 
+                                  size="sm" 
+                                  color={team.streak.startsWith('W') ? 'success' : 'danger'}
+                                  variant="outlined"
+                                >
+                                  {team.streak}
+                                </Chip>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </Table>
+                    </Box>
+                  )}
+
+                  {/* No divisions message */}
+                  {divisionStandings.length === 0 && unassignedTeams.length === 0 && (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography level="body-md" color="neutral">
+                        No teams found in standings.
+                      </Typography>
+                    </Box>
+                  )}
+                </Stack>
               </CardContent>
             </Card>
 
@@ -442,7 +693,7 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
           </Stack>
         </Grid>
 
-        {/* Sidebar */}
+        {/* Right Column - NBA Scoreboard and Salary Table */}
         <Grid xs={12} lg={4}>
           <Stack spacing={3}>
             {/* NBA Scoreboard */}
@@ -532,25 +783,101 @@ export default function LeagueHome({ leagueId }: LeagueHomeProps) {
               </CardContent>
             </Card>
 
-            {/* Commish Notes */}
-            <Card>
-              <CardContent>
-                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
-                  Commish Notes
-                </Typography>
-                
-                <Alert color="primary" sx={{ mb: 2 }}>
-                  <Typography level="body-sm">
-                    Welcome to Week 6! Make sure to set your lineups before the games start. 
-                    Good luck to everyone!
+            {/* Salary Table - Only show if league has salary cap enabled */}
+            {league.salary_cap_enabled && (
+              <Card>
+                <CardContent>
+                  <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
+                    League Salary Cap
                   </Typography>
-                </Alert>
-                
-                <Button variant="outlined" size="sm" fullWidth>
-                  View All Announcements
-                </Button>
-              </CardContent>
-            </Card>
+                  
+                  <Box sx={{ mb: 2 }}>
+                    <Typography level="body-sm" color="neutral" sx={{ mb: 1 }}>
+                      League Cap: ${(league.salary_cap_amount || 100000000) / 1000000}M
+                    </Typography>
+                  </Box>
+                  
+                  <Table size="sm" hoverRow>
+                    <thead>
+                      <tr>
+                        <th>Team</th>
+                        <th style={{ textAlign: 'right' }}>Used</th>
+                        <th style={{ textAlign: 'right' }}>Available</th>
+                        <th style={{ textAlign: 'right' }}>% Used</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {teams && teams.length > 0 ? (
+                        teams
+                          .sort((a, b) => {
+                            const aSalary = teamSalaryData?.[a.id] || 0;
+                            const bSalary = teamSalaryData?.[b.id] || 0;
+                            return bSalary - aSalary; // Sort by salary used (highest first)
+                          })
+                          .map((team) => {
+                            const salaryCapMax = league.salary_cap_amount || 100000000;
+                            const used = teamSalaryData?.[team.id] || 0;
+                            const available = salaryCapMax - used;
+                            const percentUsed = (used / salaryCapMax) * 100;
+                            
+                            return (
+                              <tr 
+                                key={team.id} 
+                                onClick={() => onTeamClick?.(team.id)} 
+                                style={{ cursor: 'pointer' }}
+                              >
+                                <td>
+                                  <Box>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                      {team.team_name}
+                                    </Typography>
+                                    <Typography level="body-xs" color="neutral">
+                                      {team.user_id ? 'Owner Assigned' : 'TBD'}
+                                    </Typography>
+                                  </Box>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    ${(used / 1000000).toFixed(1)}M
+                                  </Typography>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <Typography 
+                                    level="body-sm" 
+                                    sx={{ 
+                                      fontWeight: 'bold',
+                                      color: available < 0 ? 'danger.500' : 'success.500'
+                                    }}
+                                  >
+                                    ${(available / 1000000).toFixed(1)}M
+                                  </Typography>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <Chip 
+                                    size="sm" 
+                                    color={percentUsed > 90 ? 'danger' : percentUsed > 75 ? 'warning' : 'success'}
+                                    variant="outlined"
+                                  >
+                                    {percentUsed.toFixed(1)}%
+                                  </Chip>
+                                </td>
+                              </tr>
+                            );
+                          })
+                      ) : (
+                        <tr>
+                          <td colSpan={4} style={{ textAlign: 'center', padding: '1rem' }}>
+                            <Typography level="body-sm" color="neutral">
+                              No teams found
+                            </Typography>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Fantasy News */}
             <Card>

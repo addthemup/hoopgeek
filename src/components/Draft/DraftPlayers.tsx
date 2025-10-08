@@ -42,11 +42,14 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [positionFilter, setPositionFilter] = useState<string>('');
   const [teamFilter, setTeamFilter] = useState<string>('');
+  const [salaryFilter, setSalaryFilter] = useState<string>('');
   const [showInactive, setShowInactive] = useState(false);
   const [page, setPage] = useState(1);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [cooldownTimer, setCooldownTimer] = useState(0);
+  const [hiddenPlayerIds, setHiddenPlayerIds] = useState<Set<number>>(new Set());
+  const [showProjections, setShowProjections] = useState(true); // Default to 2025-26 projections
 
   // Check if current user is commissioner
   const isCommissioner = league?.commissioner_id === user?.id;
@@ -57,6 +60,8 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
   
   // Check if buttons should be enabled (user's turn and no cooldown)
   const buttonsEnabled = isUserTurn && cooldownTimer === 0;
+  // Commissioners can always use Auto for the current picking team (respect cooldown)
+  const autoEnabled = !!isCommissioner && !!nextPick && cooldownTimer === 0;
 
   // Debounced search
   useEffect(() => {
@@ -90,9 +95,76 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     search: debouncedSearch,
     position: positionFilter,
     team: teamFilter,
+    salary: salaryFilter,
     showInactive: showInactive,
     leagueId
-  });
+  } as any);
+
+  // Calculate projected fantasy points for a player
+  const calculateProjectedFantasyPoints = (player: any) => {
+    const projections = (player as any).espn_player_projections?.[0];
+    if (!projections) return 0;
+
+    const {
+      proj_2026_gp = 0,      // Games played
+      proj_2026_pts = 0,     // Points per game
+      proj_2026_reb = 0,     // Rebounds per game
+      proj_2026_ast = 0,     // Assists per game
+      proj_2026_stl = 0,     // Steals per game
+      proj_2026_blk = 0,     // Blocks per game
+      proj_2026_to = 0,      // Turnovers per game
+      proj_2026_3pm = 0      // 3-pointers made per game
+    } = projections;
+
+    // Calculate total stats for the season
+    const totalPts = proj_2026_pts * proj_2026_gp;
+    const totalReb = proj_2026_reb * proj_2026_gp;
+    const totalAst = proj_2026_ast * proj_2026_gp;
+    const totalStl = proj_2026_stl * proj_2026_gp;
+    const totalBlk = proj_2026_blk * proj_2026_gp;
+    const totalTo = proj_2026_to * proj_2026_gp;
+    const total3pm = proj_2026_3pm * proj_2026_gp;
+
+    // Calculate field goals made (approximate from FG% and points)
+    // Assuming average 2-pt FG value of 2 points, we can estimate 2-pt FGs
+    const total2ptFg = Math.max(0, (totalPts - (total3pm * 3)) / 2);
+    const totalFg = total2ptFg + total3pm;
+
+    // Calculate free throws made (approximate from FT% and points)
+    // This is a rough estimate - in reality we'd need FTA data
+    const totalFt = Math.max(0, (totalPts - (totalFg * 2) - (total3pm * 1)) / 1);
+
+    // Apply fantasy scoring formula
+    const fantasyPoints = 
+      (total3pm * 3) +           // 3-pt FG = 3pts
+      (total2ptFg * 2) +         // 2-pt FG = 2pts  
+      (totalFt * 1) +            // FT = 1pt
+      (totalReb * 1.2) +         // Rebound = 1.2pts
+      (totalAst * 1.5) +         // Assist = 1.5pts
+      (totalBlk * 3) +           // Block = 3pts
+      (totalStl * 3) +           // Steal = 3pts
+      (totalTo * -1);            // Turnover = -1pt
+
+    return Math.round(fantasyPoints);
+  };
+
+  // Sort players by projected fantasy points in descending order
+  const allSortedPlayers = playersData?.players ? [...playersData.players].sort((a, b) => {
+    const aFantasy = calculateProjectedFantasyPoints(a);
+    const bFantasy = calculateProjectedFantasyPoints(b);
+    return bFantasy - aFantasy; // Descending order
+  }) : [];
+
+  // Implement client-side pagination for draft players
+  const pageSize = 25;
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const sortedPlayers = allSortedPlayers.slice(startIndex, endIndex);
+  
+  // Calculate pagination info
+  const totalPlayers = allSortedPlayers.length;
+  const totalPages = Math.ceil(totalPlayers / pageSize);
+  const hasMore = page < totalPages;
 
 
   const getPositionColor = (position: string) => {
@@ -128,6 +200,8 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     try {
       // Start cooldown immediately
       setCooldownTimer(2);
+      // Optimistically hide the player immediately
+      setHiddenPlayerIds(prev => new Set(prev).add(player.id));
       
       // For now, just show a message - this would call a draft API
       setSnackbarMessage(`Drafted ${player.name}! (Feature coming soon)`);
@@ -137,6 +211,12 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
       setSnackbarOpen(true);
       // Reset cooldown on error
       setCooldownTimer(0);
+      // Unhide on error
+      setHiddenPlayerIds(prev => {
+        const next = new Set(prev);
+        next.delete(player.id);
+        return next;
+      });
     }
   };
 
@@ -145,6 +225,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     setDebouncedSearch('');
     setPositionFilter('');
     setTeamFilter('');
+    setSalaryFilter('');
     setShowInactive(false);
     setPage(1);
   };
@@ -156,8 +237,8 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
       return;
     }
 
-    if (!buttonsEnabled) {
-      setSnackbarMessage('Please wait for your turn or cooldown to finish');
+    if (!autoEnabled) {
+      setSnackbarMessage(isCommissioner ? 'Please wait for cooldown to finish' : "Only the commissioner can auto-pick");
       setSnackbarOpen(true);
       return;
     }
@@ -165,6 +246,8 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     try {
       // Start cooldown immediately
       setCooldownTimer(2);
+      // Optimistically hide the player immediately
+      setHiddenPlayerIds(prev => new Set(prev).add(playerId));
       
       await autoDraftMutation.mutateAsync({
         leagueId,
@@ -180,6 +263,12 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
       setSnackbarOpen(true);
       // Reset cooldown on error
       setCooldownTimer(0);
+      // Unhide on error
+      setHiddenPlayerIds(prev => {
+        const next = new Set(prev);
+        next.delete(playerId);
+        return next;
+      });
     }
   };
 
@@ -295,6 +384,24 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                 <Option value="WAS">Wizards</Option>
               </Select>
               
+              <Select
+                placeholder="Salary Range"
+                value={salaryFilter}
+                onChange={(_, value) => {
+                  setSalaryFilter(value as string);
+                  setPage(1); // Reset to first page when filtering
+                }}
+                size="sm"
+                sx={{ flex: 1 }}
+              >
+                <Option value="">All Salaries</Option>
+                <Option value="40+">$40M+</Option>
+                <Option value="30-40">$30M - $40M</Option>
+                <Option value="20-30">$20M - $30M</Option>
+                <Option value="10-20">$10M - $20M</Option>
+                <Option value="0-10">$0M - $10M</Option>
+              </Select>
+              
               <Button
                 size="sm"
                 variant="outlined"
@@ -318,6 +425,19 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                 size="sm"
               />
             </FormControl>
+
+            {/* Stats/Projections Toggle */}
+            <FormControl orientation="horizontal" sx={{ justifyContent: 'space-between' }}>
+              <FormLabel>View 2025-26 projections</FormLabel>
+              <Switch
+                checked={showProjections}
+                onChange={(event) => {
+                  setShowProjections(event.target.checked);
+                  setPage(1); // Reset to first page when toggling
+                }}
+                size="sm"
+              />
+            </FormControl>
           </Stack>
         </CardContent>
       </Card>
@@ -332,11 +452,16 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                   <th style={{ width: '200px' }}>Player</th>
                   <th style={{ width: '80px' }}>Pos</th>
                   <th style={{ width: '100px' }}>Team</th>
+                  <th style={{ width: '100px' }}>Proj Fantasy Pts</th>
+                  <th style={{ width: '80px' }}>{showProjections ? '2026 PTS' : '2025 PTS'}</th>
+                  <th style={{ width: '80px' }}>{showProjections ? '2026 REB' : '2025 REB'}</th>
+                  <th style={{ width: '80px' }}>{showProjections ? '2026 AST' : '2025 AST'}</th>
+                  <th style={{ width: '120px' }}>2025-26 Salary</th>
                   <th style={{ width: '100px' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {playersData?.players.map((player) => (
+                {sortedPlayers.filter(p => !hiddenPlayerIds.has(p.id)).map((player) => (
                   <tr key={player.id}>
                     <td>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -377,6 +502,43 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                       </Typography>
                     </td>
                     <td>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                        {calculateProjectedFantasyPoints(player).toLocaleString()}
+                      </Typography>
+                    </td>
+                    <td>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                        {showProjections 
+                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')
+                          : ((player as any).espn_player_projections?.[0]?.stats_2025_pts?.toFixed(1) || 'N/A')
+                        }
+                      </Typography>
+                    </td>
+                    <td>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                        {showProjections 
+                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')
+                          : ((player as any).espn_player_projections?.[0]?.stats_2025_reb?.toFixed(1) || 'N/A')
+                        }
+                      </Typography>
+                    </td>
+                    <td>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                        {showProjections 
+                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')
+                          : ((player as any).espn_player_projections?.[0]?.stats_2025_ast?.toFixed(1) || 'N/A')
+                        }
+                      </Typography>
+                    </td>
+                    <td>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
+                        {player.salary_2025_26 
+                          ? `$${(player.salary_2025_26 / 1000000).toFixed(1)}M`
+                          : 'N/A'
+                        }
+                      </Typography>
+                    </td>
+                    <td>
                       <Stack direction="row" spacing={1}>
                         <Button
                           size="sm"
@@ -396,7 +558,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                             startDecorator={<AutoAwesome />}
                             onClick={() => handleAutoDraft(player.id)}
                             loading={autoDraftMutation.isPending}
-                            disabled={!buttonsEnabled}
+                            disabled={!autoEnabled}
                             sx={{ fontSize: '0.7rem' }}
                           >
                             {cooldownTimer > 0 ? `${cooldownTimer}s` : 'Auto'}
@@ -414,7 +576,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
           <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
             <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
               <Typography level="body-sm" color="neutral">
-                Showing {((page - 1) * 25) + 1}-{Math.min(page * 25, playersData?.totalCount || 0)} of {playersData?.totalCount || 0} players
+                Showing {startIndex + 1}-{Math.min(endIndex, totalPlayers)} of {totalPlayers} players
               </Typography>
               
               <Stack direction="row" spacing={1}>
@@ -427,13 +589,13 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                   Previous
                 </Button>
                 <Typography level="body-sm" sx={{ alignSelf: 'center', px: 2 }}>
-                  Page {page} of {playersData?.totalPages || 1}
+                  Page {page} of {totalPages}
                 </Typography>
                 <Button
                   size="sm"
                   variant="outlined"
                   onClick={() => setPage(page + 1)}
-                  disabled={!playersData?.hasMore}
+                  disabled={!hasMore}
                 >
                   Next
                 </Button>

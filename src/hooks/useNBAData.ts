@@ -27,7 +27,19 @@ export function usePlayers() {
   })
 }
 
-export function usePlayersPaginated(page: number = 1, pageSize: number = 25, filters: { search?: string; position?: string; team?: string; showInactive?: boolean; leagueId?: string } = {}) {
+// Updated to include salary filter
+export function usePlayersPaginated(
+  page: number = 1, 
+  pageSize: number = 25, 
+  filters: { 
+    search?: string; 
+    position?: string; 
+    team?: string; 
+    salary?: string; 
+    showInactive?: boolean; 
+    leagueId?: string 
+  } = {}
+) {
   return useQuery({
     queryKey: ['players-paginated', page, pageSize, filters, filters.leagueId],
     queryFn: async () => {
@@ -35,7 +47,33 @@ export function usePlayersPaginated(page: number = 1, pageSize: number = 25, fil
       
       let query = supabase
         .from('players')
-        .select('*', { count: 'exact' })
+        .select(`
+          *,
+          espn_player_projections (
+            proj_2026_pts,
+            proj_2026_reb,
+            proj_2026_ast,
+            proj_2026_stl,
+            proj_2026_blk,
+            proj_2026_to,
+            proj_2026_gp,
+            proj_2026_min,
+            proj_2026_fg_pct,
+            proj_2026_ft_pct,
+            proj_2026_3pm,
+            stats_2025_pts,
+            stats_2025_reb,
+            stats_2025_ast,
+            stats_2025_stl,
+            stats_2025_blk,
+            stats_2025_to,
+            stats_2025_gp,
+            stats_2025_min,
+            stats_2025_fg_pct,
+            stats_2025_ft_pct,
+            stats_2025_3pm
+          )
+        `, { count: 'exact' })
         .order('name')
 
       // Apply search filter
@@ -51,6 +89,27 @@ export function usePlayersPaginated(page: number = 1, pageSize: number = 25, fil
       // Apply team filter
       if (filters.team) {
         query = query.eq('team_abbreviation', filters.team)
+      }
+
+      // Apply salary filter
+      if (filters.salary) {
+        switch (filters.salary) {
+          case '40+':
+            query = query.gte('salary_2025_26', 40000000)
+            break
+          case '30-40':
+            query = query.gte('salary_2025_26', 30000000).lt('salary_2025_26', 40000000)
+            break
+          case '20-30':
+            query = query.gte('salary_2025_26', 20000000).lt('salary_2025_26', 30000000)
+            break
+          case '10-20':
+            query = query.gte('salary_2025_26', 10000000).lt('salary_2025_26', 20000000)
+            break
+          case '0-10':
+            query = query.gte('salary_2025_26', 0).lt('salary_2025_26', 10000000)
+            break
+        }
       }
 
       // Apply active/inactive filter - by default only show active players
@@ -75,10 +134,16 @@ export function usePlayersPaginated(page: number = 1, pageSize: number = 25, fil
         }
       }
 
-      // Apply pagination
-      const from = (page - 1) * pageSize
-      const to = from + pageSize - 1
-      query = query.range(from, to)
+      // For draft players, we need global sorting by fantasy points
+      // So we'll fetch all players and handle pagination client-side
+      if (filters.leagueId) {
+        // Don't apply pagination here - we'll handle it client-side after sorting
+      } else {
+        // Apply pagination for non-draft views
+        const from = (page - 1) * pageSize
+        const to = from + pageSize - 1
+        query = query.range(from, to)
+      }
 
       const { data, error, count } = await query
 

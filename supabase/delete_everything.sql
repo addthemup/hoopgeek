@@ -3,6 +3,12 @@
 -- WARNING: This will delete ALL data and tables!
 
 -- Drop all tables in correct order (due to foreign key constraints)
+DROP TABLE IF EXISTS espn_player_projections CASCADE;
+DROP TABLE IF EXISTS fantasy_season_weeks CASCADE;
+DROP TABLE IF EXISTS dynasty_keepers CASCADE;
+DROP TABLE IF EXISTS dynasty_settings CASCADE;
+DROP TABLE IF EXISTS player_favorites CASCADE;
+DROP TABLE IF EXISTS player_watchlist CASCADE;
 DROP TABLE IF EXISTS trades CASCADE;
 DROP TABLE IF EXISTS draft_chat_messages CASCADE;
 DROP TABLE IF EXISTS draft_lobby_participants CASCADE;
@@ -13,14 +19,25 @@ DROP TABLE IF EXISTS draft_picks CASCADE;
 DROP TABLE IF EXISTS fantasy_team_players CASCADE;
 DROP TABLE IF EXISTS roster_spots CASCADE;
 DROP TABLE IF EXISTS fantasy_teams CASCADE;
+DROP TABLE IF EXISTS divisions CASCADE;
 DROP TABLE IF EXISTS league_members CASCADE;
 DROP TABLE IF EXISTS league_states CASCADE;
 DROP TABLE IF EXISTS league_settings CASCADE;
 DROP TABLE IF EXISTS draft_order CASCADE;
-DROP TABLE IF EXISTS draft_picks CASCADE;
 DROP TABLE IF EXISTS leagues CASCADE;
 DROP TABLE IF EXISTS player_game_logs CASCADE;
 DROP TABLE IF EXISTS player_season_stats CASCADE;
+-- Drop all career stats tables
+DROP TABLE IF EXISTS player_career_totals_regular_season CASCADE;
+DROP TABLE IF EXISTS player_career_totals_post_season CASCADE;
+DROP TABLE IF EXISTS player_career_totals_all_star_season CASCADE;
+DROP TABLE IF EXISTS player_career_totals_college_season CASCADE;
+DROP TABLE IF EXISTS player_season_totals_regular_season CASCADE;
+DROP TABLE IF EXISTS player_season_totals_post_season CASCADE;
+DROP TABLE IF EXISTS player_season_totals_all_star_season CASCADE;
+DROP TABLE IF EXISTS player_season_totals_college_season CASCADE;
+DROP TABLE IF EXISTS player_season_rankings_regular_season CASCADE;
+DROP TABLE IF EXISTS player_season_rankings_post_season CASCADE;
 DROP TABLE IF EXISTS player_career_stats CASCADE;
 DROP TABLE IF EXISTS nba_games CASCADE;
 DROP TABLE IF EXISTS nba_season_weeks CASCADE;
@@ -39,7 +56,10 @@ DROP FUNCTION IF EXISTS generate_league_schedule(UUID, INTEGER, INTEGER, INTEGER
 DROP FUNCTION IF EXISTS generate_draft_order(UUID, INTEGER) CASCADE;
 DROP FUNCTION IF EXISTS regenerate_draft_order(UUID, INTEGER) CASCADE;
 DROP FUNCTION IF EXISTS get_draft_order(UUID) CASCADE;
-DROP FUNCTION IF EXISTS process_trade(UUID) CASCADE;
+DROP FUNCTION IF EXISTS match_espn_projections() CASCADE;
+DROP FUNCTION IF EXISTS find_best_player_match(TEXT, TEXT) CASCADE;
+DROP FUNCTION IF EXISTS normalize_name(TEXT) CASCADE;
+DROP FUNCTION IF EXISTS levenshtein_distance(TEXT, TEXT) CASCADE;
 
 -- Drop all extensions (optional - be careful with this)
 -- DROP EXTENSION IF EXISTS "uuid-ossp" CASCADE;

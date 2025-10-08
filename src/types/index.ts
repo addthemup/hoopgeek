@@ -61,6 +61,12 @@ export interface Player {
   draft_round?: number
   draft_number?: number
   salary: number
+  // Contract data fields
+  salary_2025_26?: number
+  salary_2026_27?: number
+  salary_2027_28?: number
+  salary_2028_29?: number
+  contract_years_remaining?: number
   is_active: boolean
   is_rookie: boolean
   years_pro: number
@@ -69,6 +75,7 @@ export interface Player {
   created_at: string
   updated_at: string
   stats?: PlayerStats
+  espn_player_projections?: ESPNPlayerProjections[]
 }
 
 export interface PlayerStats {
@@ -81,6 +88,31 @@ export interface PlayerStats {
   field_goal_percentage: number
   free_throw_percentage: number
   three_point_percentage: number
+}
+
+export interface ESPNPlayerProjections {
+  proj_2026_pts?: number
+  proj_2026_reb?: number
+  proj_2026_ast?: number
+  proj_2026_stl?: number
+  proj_2026_blk?: number
+  proj_2026_to?: number
+  proj_2026_gp?: number
+  proj_2026_min?: number
+  proj_2026_fg_pct?: number
+  proj_2026_ft_pct?: number
+  proj_2026_3pm?: number
+  stats_2025_pts?: number
+  stats_2025_reb?: number
+  stats_2025_ast?: number
+  stats_2025_stl?: number
+  stats_2025_blk?: number
+  stats_2025_to?: number
+  stats_2025_gp?: number
+  stats_2025_min?: number
+  stats_2025_fg_pct?: number
+  stats_2025_ft_pct?: number
+  stats_2025_3pm?: number
 }
 
 export interface LeagueInvitation {
@@ -137,6 +169,7 @@ export interface FantasyTeamPlayer {
 export interface FantasyTeam {
   id: string
   league_id: string
+  division_id?: string
   user_id?: string
   team_name: string
   team_abbreviation?: string

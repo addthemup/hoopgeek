@@ -79,8 +79,6 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
   return useQuery<TeamDraftedPlayer[], Error>({
     queryKey: ['team-drafted-players', leagueId, teamId],
     queryFn: async () => {
-      console.log(`🏀 Fetching drafted players for team ${teamId} in league ${leagueId}...`);
-      
       const { data, error } = await supabase
         .from('draft_picks')
         .select(`
@@ -95,15 +93,14 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
           )
         `)
         .eq('league_id', leagueId)
-        .eq('fantasy_team_id', teamId)
+        .eq('team_id', teamId)
         .order('pick_number');
 
       if (error) {
-        console.error('❌ Error fetching team drafted players:', error);
+        console.error('Error fetching team drafted players:', error);
         throw new Error(`Failed to fetch team drafted players: ${error.message}`);
       }
 
-      console.log(`✅ Successfully fetched ${data.length} drafted players for team`);
       return data.map(pick => ({
         id: pick.players.id,
         name: pick.players.name,
