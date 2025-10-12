@@ -15,6 +15,7 @@ import TeamManagement from './pages/TeamManagement'
 import TeamsAndDivisions from './pages/TeamsAndDivisions'
 import DraftSettings from './pages/DraftSettings'
 import DraftOrder from './pages/DraftOrder'
+import Betting from './pages/Betting'
 
 // Placeholder components for new routes
 const Highlights = () => (
@@ -28,13 +29,6 @@ const Analysis = () => (
   <Box sx={{ textAlign: 'center', py: 8 }}>
     <h1>📊 Basketball Analysis</h1>
     <p>Advanced analytics and insights coming soon</p>
-  </Box>
-)
-
-const Betting = () => (
-  <Box sx={{ textAlign: 'center', py: 8 }}>
-    <h1>💰 Betting Insights</h1>
-    <p>Betting analysis and odds coming soon</p>
   </Box>
 )
 

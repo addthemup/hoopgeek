@@ -131,9 +131,16 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   }
 
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <Box 
+      sx={{ 
+        display: 'flex', 
+        flexDirection: 'column',
+        height: '100%',
+        overflow: 'hidden'
+      }}
+    >
       {/* Chat Header */}
-      <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider', flexShrink: 0 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Chat />
           <Typography level="h4">Draft Chat</Typography>
@@ -144,9 +151,17 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
       </Box>
 
       {/* Main Content Area */}
-      <Grid container sx={{ flex: 1, overflow: 'hidden' }}>
+      <Box 
+        sx={{ 
+          flex: 1, 
+          display: 'flex',
+          overflow: 'hidden',
+          minHeight: 0 
+        }}
+      >
+        <Grid container sx={{ flex: 1 }}>
         {/* User List - Left Column */}
-        <Grid xs={3} sx={{ borderRight: '1px solid', borderColor: 'divider' }}>
+        <Grid xs={3} sx={{ borderRight: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
           <DraftUserList 
             leagueId={leagueId} 
             onUserMention={handleUserMention}
@@ -154,12 +169,13 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
         </Grid>
 
         {/* Chat Area - Right Column */}
-        <Grid xs={9} sx={{ display: 'flex', flexDirection: 'column' }}>
+        <Grid xs={9} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
           {/* Messages Area */}
           <Box 
             sx={{ 
               flex: 1, 
-              overflow: 'auto', 
+              overflowY: 'auto',
+              overflowX: 'hidden',
               p: 2,
               minHeight: 0
             }}
@@ -217,7 +233,15 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
           </Box>
 
           {/* Message Input */}
-          <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+          <Box 
+            sx={{ 
+              p: 2, 
+              borderTop: '1px solid', 
+              borderColor: 'divider',
+              flexShrink: 0,
+              backgroundColor: 'background.surface'
+            }}
+          >
             <Stack direction="row" spacing={1}>
               <Input
                 ref={inputRef}
@@ -239,7 +263,8 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
             </Stack>
           </Box>
         </Grid>
-      </Grid>
+        </Grid>
+      </Box>
     </Box>
   );
 }

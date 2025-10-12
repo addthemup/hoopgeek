@@ -103,8 +103,8 @@ export default function TopNavigation() {
       label: 'Betting',
       icon: <MonetizationOn />,
       path: '/betting',
-      description: 'Betting insights and odds',
-      badge: 'Coming Soon'
+      description: 'Live betting odds and lines',
+      badge: 'Live'
     },
     {
       id: 'community',

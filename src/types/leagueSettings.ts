@@ -63,6 +63,14 @@ export interface LeagueSettings {
   salary_cap_enabled: boolean
   salary_cap_amount?: number
   
+  // Weekly Lineup Settings
+  starters_count: number // Always 5
+  starters_multiplier: number // Default 1.0
+  rotation_count: number // 3-7
+  rotation_multiplier: number // Default 0.75
+  bench_count: number // 3-5
+  bench_multiplier: number // Default 0.5
+  
   // Other Settings
   public_league: boolean
   allow_duplicate_players: boolean

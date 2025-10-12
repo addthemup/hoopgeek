@@ -20,8 +20,6 @@ import {
 } from '@mui/joy';
 import {
   SportsBasketball,
-  Add,
-  Remove,
   SwapHoriz,
   Notifications,
   Settings,
@@ -36,6 +34,7 @@ import { useDivisions } from '../hooks/useDivisions';
 import { FantasyTeam } from '../types';
 import { supabase } from '../utils/supabase';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 
 // Mock data for demonstration (keeping for other sections)
 
@@ -57,36 +56,6 @@ const transformTeamToStanding = (dbTeam: FantasyTeam, rank: number) => {
     streak: dbTeam.wins > dbTeam.losses ? 'W2' : dbTeam.losses > dbTeam.wins ? 'L1' : '--',
   };
 };
-
-const mockTransactions = [
-  {
-    id: 1,
-    type: 'add',
-    player: 'LeBron James',
-    team: 'Lakers Legends',
-    owner: 'John Doe',
-    time: '2 hours ago',
-    position: 'SF/PF',
-  },
-  {
-    id: 2,
-    type: 'drop',
-    player: 'Russell Westbrook',
-    team: 'Warriors Dynasty',
-    owner: 'Jane Smith',
-    time: '4 hours ago',
-    position: 'PG',
-  },
-  {
-    id: 3,
-    type: 'trade',
-    player: 'Stephen Curry',
-    team: 'Celtics Pride',
-    owner: 'Mike Johnson',
-    time: '1 day ago',
-    position: 'PG',
-  },
-];
 
 const mockNews = [
   {
@@ -119,9 +88,11 @@ const mockNews = [
 interface LeagueHomeProps {
   leagueId: string;
   onTeamClick?: (teamId: string) => void;
+  onNavigateToTransactions?: () => void;
 }
 
-export default function LeagueHome({ leagueId, onTeamClick }: LeagueHomeProps) {
+export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransactions }: LeagueHomeProps) {
+  const navigate = useNavigate();
   const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading, error: teamsError } = useTeams(leagueId);
   const { data: matchups, isLoading: matchupsLoading, error: matchupsError } = useCurrentWeekMatchups(leagueId);
@@ -177,6 +148,91 @@ export default function LeagueHome({ leagueId, onTeamClick }: LeagueHomeProps) {
     },
     enabled: !!teams && teams.length > 0,
     staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+
+  // Fetch recent accepted trades with player and pick details
+  const { data: recentTrades = [] } = useQuery({
+    queryKey: ['recent-trades', leagueId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('draft_trade_offers')
+        .select(`
+          id,
+          created_at,
+          responded_at,
+          offered_players,
+          offered_picks,
+          requested_players,
+          requested_picks,
+          from_team:fantasy_teams!from_team_id(team_name, user_id),
+          to_team:fantasy_teams!to_team_id(team_name, user_id)
+        `)
+        .eq('league_id', leagueId)
+        .eq('status', 'accepted')
+        .order('responded_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching recent trades:', error);
+        return [];
+      }
+
+      // Fetch player details for all players involved in trades
+      const allPlayerIds = new Set<number>();
+      data?.forEach((trade: any) => {
+        trade.offered_players?.forEach((id: number) => allPlayerIds.add(id));
+        trade.requested_players?.forEach((id: number) => allPlayerIds.add(id));
+      });
+
+      let playersMap: Record<number, any> = {};
+      if (allPlayerIds.size > 0) {
+        const { data: playersData, error: playersError } = await supabase
+          .from('players')
+          .select('id, name, position, team_abbreviation, nba_player_id, salary_2025_26')
+          .in('id', Array.from(allPlayerIds));
+
+        if (!playersError && playersData) {
+          playersData.forEach((player) => {
+            playersMap[player.id] = player;
+          });
+        }
+      }
+
+      // Fetch pick details for all picks involved in trades
+      const allPickNumbers = new Set<number>();
+      data?.forEach((trade: any) => {
+        trade.offered_picks?.forEach((num: number) => allPickNumbers.add(num));
+        trade.requested_picks?.forEach((num: number) => allPickNumbers.add(num));
+      });
+
+      let picksMap: Record<number, any> = {};
+      if (allPickNumbers.size > 0) {
+        const { data: picksData, error: picksError } = await supabase
+          .from('draft_order')
+          .select('pick_number, round, team_position')
+          .eq('league_id', leagueId)
+          .in('pick_number', Array.from(allPickNumbers));
+
+        if (!picksError && picksData) {
+          picksData.forEach((pick) => {
+            picksMap[pick.pick_number] = pick;
+          });
+        }
+      }
+
+      // Attach player and pick data to trades
+      const tradesWithDetails = data?.map((trade: any) => ({
+        ...trade,
+        offered_players_data: trade.offered_players?.map((id: number) => playersMap[id]).filter(Boolean) || [],
+        requested_players_data: trade.requested_players?.map((id: number) => playersMap[id]).filter(Boolean) || [],
+        offered_picks_data: trade.offered_picks?.map((num: number) => picksMap[num]).filter(Boolean) || [],
+        requested_picks_data: trade.requested_picks?.map((num: number) => picksMap[num]).filter(Boolean) || [],
+      })) || [];
+
+      return tradesWithDetails;
+    },
+    enabled: !!leagueId,
+    refetchInterval: 30000, // Refetch every 30 seconds
   });
 
   // Debug logging
@@ -644,50 +700,191 @@ export default function LeagueHome({ leagueId, onTeamClick }: LeagueHomeProps) {
                   <Typography level="h4" sx={{ fontWeight: 'bold' }}>
                     Recent Transactions
                   </Typography>
-                  <Button size="sm" variant="outlined">
-                    View All
+                  <Button 
+                    size="sm" 
+                    variant="outlined"
+                    onClick={onNavigateToTransactions}
+                  >
+                    View All Transactions
                   </Button>
                 </Stack>
                 
-                <List>
-                  {mockTransactions.map((transaction) => (
-                    <ListItem key={transaction.id}>
-                      <ListItemDecorator>
-                        <Avatar sx={{ 
-                          bgcolor: transaction.type === 'add' ? 'success.500' : 
-                                  transaction.type === 'drop' ? 'danger.500' : 'warning.500',
-                          width: 32,
-                          height: 32
-                        }}>
-                          {transaction.type === 'add' ? <Add /> : 
-                           transaction.type === 'drop' ? <Remove /> : <SwapHoriz />}
-                        </Avatar>
-                      </ListItemDecorator>
-                      <ListItemContent>
-                        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
-                          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                            {transaction.player}
-                          </Typography>
-                          <Chip size="sm" variant="outlined">
-                            {transaction.position}
-                          </Chip>
-                          <Typography level="body-xs" color="neutral">
-                            {transaction.type === 'add' ? 'Added' : 
-                             transaction.type === 'drop' ? 'Dropped' : 'Traded'}
-                          </Typography>
-                        </Stack>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography level="body-xs" color="neutral">
-                            {transaction.team} • {transaction.owner}
-                          </Typography>
-                          <Typography level="body-xs" color="neutral">
-                            {transaction.time}
-                          </Typography>
-                        </Stack>
-                      </ListItemContent>
-                    </ListItem>
-                  ))}
-                </List>
+                {recentTrades.length > 0 ? (
+                  <List>
+                    {recentTrades.map((trade: any) => {
+                      const fromTeamName = trade.from_team?.team_name || 'Unknown Team';
+                      const toTeamName = trade.to_team?.team_name || 'Unknown Team';
+                      const tradeTime = trade.responded_at 
+                        ? new Date(trade.responded_at).toLocaleString('en-US', { 
+                            month: 'short', 
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit'
+                          })
+                        : 'Recently';
+                      
+                      return (
+                        <ListItem key={trade.id} sx={{ alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider', pb: 2, mb: 2 }}>
+                          <ListItemDecorator sx={{ mt: 0.5 }}>
+                            <Avatar sx={{ 
+                              bgcolor: 'primary.500',
+                              width: 36,
+                              height: 36
+                            }}>
+                              <SwapHoriz />
+                            </Avatar>
+                          </ListItemDecorator>
+                          <ListItemContent>
+                            <Stack spacing={1.5}>
+                              {/* Trade Header */}
+                              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {fromTeamName}
+                                  </Typography>
+                                  <Typography level="body-xs" color="neutral">
+                                    ↔
+                                  </Typography>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {toTeamName}
+                                  </Typography>
+                                </Stack>
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Chip size="sm" color="success" variant="soft">
+                                    ✓ Accepted
+                                  </Chip>
+                                  <Typography level="body-xs" color="neutral">
+                                    {tradeTime}
+                                  </Typography>
+                                </Stack>
+                              </Stack>
+                              
+                              {/* Trade Details */}
+                              <Grid container spacing={2}>
+                                {/* From Team Assets */}
+                                <Grid xs={12} md={6}>
+                                  <Box sx={{ bgcolor: 'background.level1', p: 1.5, borderRadius: 'sm' }}>
+                                    <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.600' }}>
+                                      {fromTeamName} Sends:
+                                    </Typography>
+                                    <Stack spacing={0.5}>
+                                      {trade.offered_players_data?.map((player: any) => (
+                                        <Box 
+                                          key={player.id}
+                                          onClick={() => navigate(`/players/${player.id}`)}
+                                          sx={{ 
+                                            cursor: 'pointer',
+                                            '&:hover': { bgcolor: 'primary.50' },
+                                            p: 0.5,
+                                            borderRadius: 'sm',
+                                            transition: 'background-color 0.2s'
+                                          }}
+                                        >
+                                          <Stack direction="row" spacing={1} alignItems="center">
+                                            <Avatar 
+                                              size="sm" 
+                                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                              sx={{ width: 24, height: 24 }}
+                                            >
+                                              {player.name?.charAt(0)}
+                                            </Avatar>
+                                            <Box sx={{ flex: 1 }}>
+                                              <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+                                                {player.name}
+                                              </Typography>
+                                              <Typography level="body-xs" color="neutral">
+                                                {player.position} • {player.team_abbreviation} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
+                                              </Typography>
+                                            </Box>
+                                          </Stack>
+                                        </Box>
+                                      ))}
+                                      {trade.offered_picks_data?.map((pick: any) => (
+                                        <Box key={pick.pick_number} sx={{ p: 0.5 }}>
+                                          <Stack direction="row" spacing={1} alignItems="center">
+                                            <Chip size="sm" variant="outlined" color="neutral">
+                                              Pick #{pick.pick_number}
+                                            </Chip>
+                                            <Typography level="body-xs" color="neutral">
+                                              Round {pick.round}
+                                            </Typography>
+                                          </Stack>
+                                        </Box>
+                                      ))}
+                                    </Stack>
+                                  </Box>
+                                </Grid>
+                                
+                                {/* To Team Assets */}
+                                <Grid xs={12} md={6}>
+                                  <Box sx={{ bgcolor: 'background.level1', p: 1.5, borderRadius: 'sm' }}>
+                                    <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.600' }}>
+                                      {toTeamName} Sends:
+                                    </Typography>
+                                    <Stack spacing={0.5}>
+                                      {trade.requested_players_data?.map((player: any) => (
+                                        <Box 
+                                          key={player.id}
+                                          onClick={() => navigate(`/players/${player.id}`)}
+                                          sx={{ 
+                                            cursor: 'pointer',
+                                            '&:hover': { bgcolor: 'primary.50' },
+                                            p: 0.5,
+                                            borderRadius: 'sm',
+                                            transition: 'background-color 0.2s'
+                                          }}
+                                        >
+                                          <Stack direction="row" spacing={1} alignItems="center">
+                                            <Avatar 
+                                              size="sm" 
+                                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                              sx={{ width: 24, height: 24 }}
+                                            >
+                                              {player.name?.charAt(0)}
+                                            </Avatar>
+                                            <Box sx={{ flex: 1 }}>
+                                              <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+                                                {player.name}
+                                              </Typography>
+                                              <Typography level="body-xs" color="neutral">
+                                                {player.position} • {player.team_abbreviation} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
+                                              </Typography>
+                                            </Box>
+                                          </Stack>
+                                        </Box>
+                                      ))}
+                                      {trade.requested_picks_data?.map((pick: any) => (
+                                        <Box key={pick.pick_number} sx={{ p: 0.5 }}>
+                                          <Stack direction="row" spacing={1} alignItems="center">
+                                            <Chip size="sm" variant="outlined" color="neutral">
+                                              Pick #{pick.pick_number}
+                                            </Chip>
+                                            <Typography level="body-xs" color="neutral">
+                                              Round {pick.round}
+                                            </Typography>
+                                          </Stack>
+                                        </Box>
+                                      ))}
+                                    </Stack>
+                                  </Box>
+                                </Grid>
+                              </Grid>
+                            </Stack>
+                          </ListItemContent>
+                        </ListItem>
+                      );
+                    })}
+                  </List>
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography level="body-md" color="neutral">
+                      No transactions yet
+                    </Typography>
+                    <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
+                      Trades will appear here once they are accepted
+                    </Typography>
+                  </Box>
+                )}
               </CardContent>
             </Card>
           </Stack>

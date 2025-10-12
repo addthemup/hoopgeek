@@ -84,7 +84,7 @@ export default function PlayerActionButtons({
   })
 
   const isOnUserRoster = rosterInfo?.isOnRoster || false
-  const isOnAnotherTeam = playerRosterInfo && playerRosterInfo.fantasy_teams?.user_id !== user?.id
+  const isOnAnotherTeam = playerRosterInfo && playerRosterInfo.fantasy_teams && playerRosterInfo.fantasy_teams.user_id !== user?.id
 
   const handleAddToRoster = async () => {
     if (!userTeam) return
@@ -115,7 +115,7 @@ export default function PlayerActionButtons({
   }
 
   const handleTradeClick = () => {
-    if (playerRosterInfo && onTradeClick) {
+    if (playerRosterInfo && playerRosterInfo.fantasy_teams && onTradeClick) {
       onTradeClick(
         playerId,
         playerName,
@@ -254,7 +254,7 @@ export default function PlayerActionButtons({
         </Tooltip>
 
         {/* Player Status Indicators */}
-        {isOnAnotherTeam && playerRosterInfo && (
+        {isOnAnotherTeam && playerRosterInfo && playerRosterInfo.fantasy_teams && (
           <Chip
             size="sm"
             variant="soft"

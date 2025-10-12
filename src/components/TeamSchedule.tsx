@@ -47,7 +47,8 @@ const TeamSchedule: React.FC<TeamScheduleProps> = ({ teamId }) => {
     }
   };
 
-  const getMatchupTypeColor = (type: string, isDivision: boolean) => {
+  const getMatchupTypeColor = (type: string, isDivision: boolean, isPreseason: boolean) => {
+    if (isPreseason) return 'warning';
     if (isDivision) return 'primary';
     switch (type) {
       case 'playoff':
@@ -59,7 +60,8 @@ const TeamSchedule: React.FC<TeamScheduleProps> = ({ teamId }) => {
     }
   };
 
-  const getMatchupTypeText = (type: string, isDivision: boolean) => {
+  const getMatchupTypeText = (type: string, isDivision: boolean, isPreseason: boolean) => {
+    if (isPreseason) return 'Preseason (Practice)';
     if (isDivision) return 'Division Game';
     switch (type) {
       case 'playoff':
@@ -214,10 +216,10 @@ const TeamSchedule: React.FC<TeamScheduleProps> = ({ teamId }) => {
                   <td>
                     <Chip 
                       size="sm" 
-                      color={getMatchupTypeColor(matchup.matchup_type, matchup.division_game)}
+                      color={getMatchupTypeColor(matchup.matchup_type, matchup.division_game, matchup.is_preseason || false)}
                       variant="soft"
                     >
-                      {getMatchupTypeText(matchup.matchup_type, matchup.division_game)}
+                      {getMatchupTypeText(matchup.matchup_type, matchup.division_game, matchup.is_preseason || false)}
                     </Chip>
                   </td>
                   <td>

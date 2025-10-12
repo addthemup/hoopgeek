@@ -7,13 +7,13 @@ import LeagueSettingsManager from '../components/LeagueSettings'
 import LeagueHome from './LeagueHome'
 import TeamRoster from './TeamRoster'
 import LeagueScoreboard from './LeagueScoreboard'
-import MatchupDetails from './MatchupDetails'
 import Lineups from './Lineups'
 import Trades from './Trades'
 import Standings from './Standings'
 import Players from './Players'
 import CommissionerTools from './CommissionerTools'
 import DraftComponent from '../components/Draft/DraftComponent'
+import Transactions from './Transactions'
 import { useAuth } from '../hooks/useAuth'
 import { useLeague } from '../hooks/useLeagues'
 import { useUpdateLeagueSettings } from '../hooks/useUpdateLeagueSettings'
@@ -226,7 +226,19 @@ export default function League() {
     switch (tabId) {
       case 'home':
         console.log('League: Rendering LeagueHome component with leagueId:', id);
-        return <LeagueHome leagueId={id || ''} onTeamClick={setSelectedTeamId} />
+        return (
+          <LeagueHome 
+            leagueId={id || ''} 
+            onTeamClick={setSelectedTeamId}
+            onNavigateToTransactions={() => {
+              // Dispatch custom event to change tab
+              const event = new CustomEvent('changeLeagueTab', { 
+                detail: { tabId: 'transactions' } 
+              });
+              window.dispatchEvent(event);
+            }}
+          />
+        )
       case 'my-team':
         // Only show my-team tab if user has a team
         if (userTeam) {
@@ -265,6 +277,9 @@ export default function League() {
       case 'draft':
         console.log('League: Rendering DraftComponent with leagueId:', id);
         return <DraftComponent />
+      case 'transactions':
+        console.log('League: Rendering Transactions component with leagueId:', id);
+        return <Transactions leagueId={id || ''} />
       case 'settings':
         console.log('League: Rendering settings');
         return renderSettings()

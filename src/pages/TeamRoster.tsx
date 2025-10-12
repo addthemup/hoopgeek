@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import {
   Box,
   Typography,
@@ -21,11 +21,18 @@ import {
 import { ArrowBack, CalendarToday, NavigateBefore, NavigateNext } from '@mui/icons-material';
 import { useTeamRoster } from '../hooks/useTeamRoster';
 import { useTeams } from '../hooks/useTeams';
-import { FantasyTeamPlayer } from '../types';
 import TeamSchedule from '../components/TeamSchedule';
+import { supabase } from '../utils/supabase';
+import { useQuery } from '@tanstack/react-query';
+import { useLeague } from '../hooks/useLeagues';
 import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
 import { usePlayerUpcomingGames } from '../hooks/usePlayerUpcomingGames';
 import PlayerActionButtons from '../components/PlayerActionButtons';
+import BasketballCourtMatchup from '../components/BasketballCourtMatchup';
+import RecentTransactions from '../components/Team/RecentTransactions';
+import TradingBlock from '../components/Team/TradingBlock';
+import FuturePicks from '../components/Team/FuturePicks';
+import TeamPerformanceRadial from '../components/Team/TeamPerformanceRadial';
 
 interface TeamRosterProps {
   leagueId: string;
@@ -34,6 +41,7 @@ interface TeamRosterProps {
 
 export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
   const { data: teams } = useTeams(leagueId);
+  const { data: league } = useLeague(leagueId);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
   
   // Determine which team to display
@@ -51,6 +59,43 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
 
   const { data: roster, isLoading, error } = useTeamRoster(selectedTeam?.id || '');
 
+  // Calculate actual salary from roster
+  const { data: actualSalary } = useQuery({
+    queryKey: ['team-salary-usage', selectedTeam?.id],
+    queryFn: async () => {
+      if (!selectedTeam?.id) return 0;
+
+      try {
+        const { data: rosterData, error } = await supabase
+          .from('fantasy_team_players')
+          .select(`
+            player:player_id (
+              salary_2025_26
+            )
+          `)
+          .eq('fantasy_team_id', selectedTeam.id);
+
+        if (error) {
+          console.error(`Error fetching roster for salary calculation:`, error);
+          return 0;
+        }
+
+        const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
+          const player = rosterSpot.player as any;
+          const playerSalary = player?.salary_2025_26 || 0;
+          return sum + playerSalary;
+        }, 0) || 0;
+
+        return totalSalary;
+      } catch (error) {
+        console.error(`Error calculating salary:`, error);
+        return 0;
+      }
+    },
+    enabled: !!selectedTeam?.id,
+    staleTime: 1000 * 60 * 2, // 2 minutes
+  });
+
   const getPositionColor = (position: string) => {
     switch (position) {
       case 'PG':
@@ -66,7 +111,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       case 'UTIL':
         return 'neutral';
       case 'BENCH':
-        return 'secondary';
+        return 'neutral';
       case 'IR':
         return 'danger';
       default:
@@ -379,7 +424,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
         <Grid xs={12} md={4}>
           <Card variant="outlined">
             <CardContent>
-              <Typography level="h6" sx={{ mb: 2 }}>
+              <Typography level="title-md" sx={{ mb: 2 }}>
                 Roster Summary
               </Typography>
               <Stack spacing={1}>
@@ -415,26 +460,47 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
         <Grid xs={12} md={4}>
           <Card variant="outlined">
             <CardContent>
-              <Typography level="h6" sx={{ mb: 2 }}>
+              <Typography level="title-md" sx={{ mb: 2 }}>
                 Salary Cap
               </Typography>
               <Stack spacing={1}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography level="body-sm">Used:</Typography>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {formatSalary(selectedTeam.salary_cap_used)}
+                    {formatSalary(actualSalary || 0)}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography level="body-sm">Available:</Typography>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {formatSalary(selectedTeam.salary_cap_max - selectedTeam.salary_cap_used)}
+                  <Typography 
+                    level="body-sm" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      color: ((league?.salary_cap_amount || 100000000) - (actualSalary || 0)) < 0 ? 'danger.500' : 'success.500'
+                    }}
+                  >
+                    {formatSalary((league?.salary_cap_amount || 100000000) - (actualSalary || 0))}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography level="body-sm">Total:</Typography>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {formatSalary(selectedTeam.salary_cap_max)}
+                    {formatSalary(league?.salary_cap_amount || 100000000)}
+                  </Typography>
+                </Box>
+                <Box sx={{ mt: 1 }}>
+                  <LinearProgress 
+                    determinate 
+                    value={Math.min(((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) * 100, 100)}
+                    color={
+                      ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.9 ? 'danger' : 
+                      ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.75 ? 'warning' : 
+                      'success'
+                    }
+                    sx={{ height: 8 }}
+                  />
+                  <Typography level="body-xs" color="neutral" sx={{ textAlign: 'center', mt: 0.5 }}>
+                    {(((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) * 100).toFixed(1)}% Used
                   </Typography>
                 </Box>
               </Stack>
@@ -445,7 +511,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
         <Grid xs={12} md={4}>
           <Card variant="outlined">
             <CardContent>
-              <Typography level="h6" sx={{ mb: 2 }}>
+              <Typography level="title-md" sx={{ mb: 2 }}>
                 Team Record
               </Typography>
               <Stack spacing={1}>
@@ -470,6 +536,58 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
               </Stack>
             </CardContent>
           </Card>
+        </Grid>
+      </Grid>
+
+      {/* Current Matchup - Basketball Court Visualization */}
+      <BasketballCourtMatchup
+        homeTeam={{
+          name: selectedTeam.team_name,
+          abbreviation: selectedTeam.team_name.substring(0, 3).toUpperCase(),
+          starters: roster?.filter(r => r.is_starter && r.player).map(r => ({
+            id: r.player!.id,
+            name: r.player!.name,
+            position: r.player!.position || 'N/A',
+            jersey_number: r.player!.jersey_number,
+            team_abbreviation: r.player!.team_abbreviation || '',
+          })) || [],
+          bench: roster?.filter(r => !r.is_starter && r.player).map(r => ({
+            id: r.player!.id,
+            name: r.player!.name,
+            position: r.player!.position || 'N/A',
+            jersey_number: r.player!.jersey_number,
+            team_abbreviation: r.player!.team_abbreviation || '',
+          })) || [],
+        }}
+        awayTeam={{
+          name: 'Opponent Team',
+          abbreviation: 'OPP',
+          starters: [],
+          bench: [],
+        }}
+        weekNumber={1}
+      />
+
+      {/* Additional Modules Grid */}
+      <Grid container spacing={3} sx={{ mt: 3 }}>
+        {/* Recent Transactions */}
+        <Grid xs={12} md={6}>
+          <RecentTransactions teamId={selectedTeam.id} />
+        </Grid>
+
+        {/* Trading Block */}
+        <Grid xs={12} md={6}>
+          <TradingBlock teamId={selectedTeam.id} />
+        </Grid>
+
+        {/* Future Picks */}
+        <Grid xs={12} md={6}>
+          <FuturePicks teamId={selectedTeam.id} />
+        </Grid>
+
+        {/* Team Performance Radial */}
+        <Grid xs={12} md={6}>
+          <TeamPerformanceRadial teamId={selectedTeam.id} />
         </Grid>
       </Grid>
 

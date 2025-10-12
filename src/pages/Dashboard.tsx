@@ -1,7 +1,31 @@
-import { Box, Typography, Button, Stack, Card, CardContent, Grid, Chip, CircularProgress, Alert } from '@mui/joy'
+import { 
+  Box, 
+  Typography, 
+  Button, 
+  Stack, 
+  Card, 
+  CardContent, 
+  Grid, 
+  Chip, 
+  CircularProgress, 
+  Alert,
+  IconButton,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Divider,
+  Input,
+  FormControl,
+  FormLabel
+} from '@mui/joy'
+import { Delete, Warning } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useUserLeagues, useRefreshLeagues } from '../hooks/useUserLeagues'
+import { useDeleteLeague } from '../hooks/useDeleteLeague'
 import { format } from 'date-fns'
 import { useState } from 'react'
 import LeagueCreationForm from '../components/LeagueCreationForm'
@@ -11,8 +35,44 @@ export default function Dashboard() {
   const { user } = useAuth()
   const { data: leagues, isLoading, isError, error } = useUserLeagues()
   const refreshLeagues = useRefreshLeagues()
+  const deleteLeagueMutation = useDeleteLeague()
   const [showCreateLeague, setShowCreateLeague] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [leagueToDelete, setLeagueToDelete] = useState<{ id: string; name: string } | null>(null)
+  const [confirmationText, setConfirmationText] = useState('')
+  const [isDeleting, setIsDeleting] = useState(false)
 
+  const handleDeleteClick = (e: React.MouseEvent, leagueId: string, leagueName: string) => {
+    e.stopPropagation() // Prevent card click
+    setLeagueToDelete({ id: leagueId, name: leagueName })
+    setDeleteModalOpen(true)
+  }
+
+  const handleDeleteConfirm = async () => {
+    if (!leagueToDelete || confirmationText !== leagueToDelete.name) {
+      return
+    }
+
+    setIsDeleting(true)
+    try {
+      await deleteLeagueMutation.mutateAsync(leagueToDelete.id)
+      setDeleteModalOpen(false)
+      setLeagueToDelete(null)
+      setConfirmationText('')
+      refreshLeagues.mutate() // Refresh the leagues list
+    } catch (error) {
+      console.error('Error deleting league:', error)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleModalClose = () => {
+    setDeleteModalOpen(false)
+    setLeagueToDelete(null)
+    setConfirmationText('')
+    setIsDeleting(false)
+  }
   
   // Show user-specific content when available
   if (!user) {
@@ -95,11 +155,28 @@ export default function Dashboard() {
                     <Typography level="h4" sx={{ mb: 1 }}>
                       {league.name}
                     </Typography>
-                    {league.is_commissioner && (
-                      <Chip size="sm" color="primary" variant="soft">
-                        Commissioner
-                      </Chip>
-                    )}
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      {league.is_commissioner && (
+                        <>
+                          <Chip size="sm" color="primary" variant="soft">
+                            Commissioner
+                          </Chip>
+                          <IconButton
+                            size="sm"
+                            color="danger"
+                            variant="plain"
+                            onClick={(e) => handleDeleteClick(e, league.id, league.name)}
+                            sx={{ 
+                              '&:hover': { 
+                                bgcolor: 'danger.100' 
+                              }
+                            }}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </>
+                      )}
+                    </Stack>
                   </Box>
                   
                   {league.description && (
@@ -216,6 +293,71 @@ export default function Dashboard() {
           navigate(`/league/${leagueId}`) // Navigate to the new league
         }}
       />
+
+      {/* Delete Confirmation Modal */}
+      <Modal open={deleteModalOpen} onClose={handleModalClose}>
+        <ModalDialog variant="outlined" role="alertdialog" sx={{ maxWidth: 500 }}>
+          <ModalClose />
+          <DialogTitle>
+            <Warning sx={{ mr: 1 }} />
+            Confirm League Deletion
+          </DialogTitle>
+          <Divider />
+          <DialogContent>
+            <Alert color="danger" sx={{ mb: 2 }}>
+              <Typography level="body-sm">
+                This action cannot be undone. This will permanently delete the league and all associated data including teams, rosters, and settings.
+              </Typography>
+            </Alert>
+            <Typography level="body-sm" color="neutral" sx={{ mb: 2 }}>
+              To confirm, please type the league name exactly as shown:
+            </Typography>
+            <Typography 
+              level="body-sm" 
+              sx={{ 
+                fontWeight: 'bold', 
+                mb: 2, 
+                p: 2, 
+                bgcolor: 'background.level1', 
+                borderRadius: 'sm',
+                fontFamily: 'monospace'
+              }}
+            >
+              {leagueToDelete?.name}
+            </Typography>
+            <FormControl>
+              <FormLabel>League Name</FormLabel>
+              <Input
+                placeholder="Type the league name here"
+                value={confirmationText}
+                onChange={(e) => setConfirmationText(e.target.value)}
+                disabled={isDeleting}
+                autoFocus
+              />
+            </FormControl>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              variant="plain"
+              color="neutral"
+              onClick={handleModalClose}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              color="danger"
+              variant="solid"
+              startDecorator={<Delete />}
+              onClick={handleDeleteConfirm}
+              disabled={!leagueToDelete || confirmationText !== leagueToDelete.name || isDeleting}
+              loading={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Delete League'}
+            </Button>
+          </DialogActions>
+        </ModalDialog>
+      </Modal>
     </Box>
   )
 }

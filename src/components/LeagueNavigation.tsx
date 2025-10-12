@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Box,
@@ -35,10 +35,12 @@ interface LeagueNavigationProps {
   isCommissioner: boolean
   children: (activeTab: string) => React.ReactNode
   userHasTeam?: boolean
+  defaultTab?: number
+  onTabChange?: (tabIndex: number, tabId: string) => void
 }
 
-export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false }: LeagueNavigationProps) {
-  const [activeTab, setActiveTab] = useState(0)
+export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false, defaultTab = 0, onTabChange }: LeagueNavigationProps) {
+  const [activeTab, setActiveTab] = useState(defaultTab)
 
   const tabs = [
     {
@@ -102,10 +104,10 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
       description: 'Advanced stats and analysis'
     },
     {
-      id: 'activity',
-      label: 'Activity',
+      id: 'transactions',
+      label: 'Transactions',
       icon: <Message />,
-      description: 'League activity and messages'
+      description: 'League transactions and activity'
     },
             {
               id: 'members',
@@ -131,7 +133,28 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue)
+    if (onTabChange) {
+      const tab = tabs[newValue]
+      onTabChange(newValue, tab.id)
+    }
   }
+  
+  // Expose method to programmatically change tab
+  React.useEffect(() => {
+    // Listen for custom events to change tabs
+    const handleChangeTab = (e: CustomEvent) => {
+      const tabId = e.detail.tabId
+      const tabIndex = tabs.findIndex(t => t.id === tabId)
+      if (tabIndex !== -1) {
+        setActiveTab(tabIndex)
+      }
+    }
+    
+    window.addEventListener('changeLeagueTab' as any, handleChangeTab as any)
+    return () => {
+      window.removeEventListener('changeLeagueTab' as any, handleChangeTab as any)
+    }
+  }, [tabs])
 
   return (
     <Box sx={{ width: '100%' }}>

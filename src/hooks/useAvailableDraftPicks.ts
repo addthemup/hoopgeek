@@ -6,6 +6,7 @@ export interface AvailableDraftPick {
   round: number;
   team_position: number;
   is_completed: boolean;
+  fantasy_team_id?: string | null; // Set if pick was traded
 }
 
 export function useAvailableDraftPicks(leagueId: string, teamId: string) {
@@ -39,17 +40,21 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
       const teamPosition = teamIndex + 1; // 1-based position
 
       // Get all draft picks for this team that haven't been completed yet
+      // This includes:
+      // 1. Original picks (fantasy_team_id IS NULL and team_position matches)
+      // 2. Traded picks (fantasy_team_id matches this team)
       const { data, error } = await supabase
         .from('draft_order')
         .select(`
           pick_number,
           round,
           team_position,
-          is_completed
+          is_completed,
+          fantasy_team_id
         `)
         .eq('league_id', leagueId)
-        .eq('team_position', teamPosition)
         .eq('is_completed', false) // Only get picks that haven't been used
+        .or(`and(fantasy_team_id.is.null,team_position.eq.${teamPosition}),fantasy_team_id.eq.${teamId}`)
         .order('pick_number');
 
       if (error) {
@@ -57,7 +62,7 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
         throw new Error(`Failed to fetch available draft picks: ${error.message}`);
       }
 
-      console.log(`✅ Successfully fetched ${data.length} available draft picks for team`);
+      console.log(`✅ Successfully fetched ${data.length} available draft picks for team (including traded picks)`);
       return data as AvailableDraftPick[];
     },
     enabled: !!leagueId && !!teamId,

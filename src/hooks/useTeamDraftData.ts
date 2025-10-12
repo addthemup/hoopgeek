@@ -16,6 +16,7 @@ export interface TeamDraftedPlayer {
   name: string;
   position: string;
   team_abbreviation: string;
+  nba_player_id: number;
   jersey_number?: number;
   pick_number: number;
   round: number;
@@ -89,11 +90,12 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
             name,
             position,
             team_abbreviation,
+            nba_player_id,
             jersey_number
           )
         `)
         .eq('league_id', leagueId)
-        .eq('team_id', teamId)
+        .eq('fantasy_team_id', teamId)
         .order('pick_number');
 
       if (error) {
@@ -106,6 +108,7 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
         name: pick.players.name,
         position: pick.players.position,
         team_abbreviation: pick.players.team_abbreviation,
+        nba_player_id: pick.players.nba_player_id,
         jersey_number: pick.players.jersey_number,
         pick_number: pick.pick_number,
         round: pick.round,

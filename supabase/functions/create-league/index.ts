@@ -48,7 +48,14 @@ serve(async (req) => {
       scoringType, 
       teamName,
       rosterConfig,
-      draftDate
+      draftDate,
+      salaryCapAmount,
+      startersCount,
+      startersMultiplier,
+      rotationCount,
+      rotationMultiplier,
+      benchCount,
+      benchMultiplier
     } = body
 
     // Validate required fields
@@ -81,10 +88,16 @@ serve(async (req) => {
         scoring_type_val: scoringType,
         team_name_val: teamName,
         salary_cap_enabled_val: true,
-        salary_cap_amount_val: 100000000,
+        salary_cap_amount_val: salaryCapAmount || 200000000,
         lineup_frequency_val: 'daily',
         roster_config: rosterConfig || defaultRosterConfig,
-        draft_date_val: draftDate || null
+        draft_date_val: draftDate || null,
+        starters_count_val: startersCount || 5,
+        starters_multiplier_val: startersMultiplier || 1.0,
+        rotation_count_val: rotationCount || 5,
+        rotation_multiplier_val: rotationMultiplier || 0.75,
+        bench_count_val: benchCount || 3,
+        bench_multiplier_val: benchMultiplier || 0.5
       })
 
     if (leagueError) {

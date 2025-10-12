@@ -175,10 +175,24 @@ export default function Standings({ leagueId }: StandingsProps) {
       </Box>
 
       {/* Division Standings */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          flexDirection: { xs: 'column', md: 'row' },
+          gap: 3, 
+          mb: 4,
+          width: '100%'
+        }}
+      >
         {divisionNames.map((division) => (
-          <Grid xs={12} md={6} lg={3} key={division}>
-            <Card variant="outlined">
+          <Box 
+            key={division}
+            sx={{ 
+              flex: 1,
+              minWidth: { xs: '100%', md: 0 }
+            }}
+          >
+            <Card variant="outlined" sx={{ height: '100%' }}>
               <CardContent>
                 <Typography 
                   level="h4" 
@@ -276,9 +290,9 @@ export default function Standings({ leagueId }: StandingsProps) {
                 </table>
               </CardContent>
             </Card>
-          </Grid>
+          </Box>
         ))}
-      </Grid>
+      </Box>
 
       {/* Standings Glossary */}
       <Card variant="outlined" sx={{ mb: 4 }}>

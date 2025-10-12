@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -6,6 +6,7 @@ import {
   CardContent,
   Button,
   Input,
+  Textarea,
   Modal,
   ModalDialog,
   ModalClose,
@@ -21,13 +22,12 @@ import {
   Grid,
   Chip,
   IconButton,
-  Tooltip,
 } from '@mui/joy';
 import { useAuth } from '../hooks/useAuth';
 import { useCreateLeagueMinimal as useCreateLeague } from '../hooks/useLeagueInitializationMinimal';
 import { validateLeagueSettings, getDefaultLeagueSettings } from '../hooks/useLeagueInitialization';
 import { LeagueSettings, LeagueCreationData } from '../types/leagueSettings';
-import { Add, Remove, Settings, People, SportsBasketball, Schedule } from '@mui/icons-material';
+import { Add, Remove } from '@mui/icons-material';
 
 interface LeagueCreationFormProps {
   open: boolean;
@@ -36,13 +36,18 @@ interface LeagueCreationFormProps {
 }
 
 export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueCreationFormProps) {
-  const { user, isLoading: userLoading } = useAuth();
+  const { user, loading: userLoading } = useAuth();
   const createLeague = useCreateLeague();
   
   const [step, setStep] = useState(1);
-  const [settings, setSettings] = useState<LeagueSettings>(() => 
-    getDefaultLeagueSettings(user?.id || '')
-  );
+  const [settings, setSettings] = useState<LeagueSettings>(() => {
+    const defaults = getDefaultLeagueSettings(user?.id || '');
+    // Set default salary cap to $200M
+    return {
+      ...defaults,
+      salary_cap_amount: 200000000 // $200M default
+    };
+  });
 
   // Update settings when user changes
   React.useEffect(() => {
@@ -91,6 +96,27 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     if (step === 1) {
       if (!commissionerTeamName.trim()) {
         newErrors.push('Commissioner team name is required');
+      }
+    }
+    
+    if (step === 3) {
+      const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
+      const lineupSize = settings.starters_count + settings.rotation_count + settings.bench_count;
+      
+      if (lineupSize > rosterSize) {
+        newErrors.push(`Lineup size (${lineupSize}) cannot exceed roster size (${rosterSize})`);
+      }
+      
+      if (settings.starters_count !== 5) {
+        newErrors.push('Starters count must be 5');
+      }
+      
+      if (settings.rotation_count < 3 || settings.rotation_count > 7) {
+        newErrors.push('Rotation count must be between 3 and 7');
+      }
+      
+      if (settings.bench_count < 3 || settings.bench_count > 5) {
+        newErrors.push('Bench count must be between 3 and 5');
       }
     }
     
@@ -153,12 +179,11 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
 
       <FormControl>
         <FormLabel>Description</FormLabel>
-        <Input
+        <Textarea
           value={settings.description || ''}
           onChange={(e) => handleSettingsChange('description', e.target.value)}
           placeholder="Enter league description (optional)"
-          multiline={true}
-          sx={{ minHeight: '80px' }}
+          minRows={3}
         />
       </FormControl>
 
@@ -272,7 +297,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
         ))}
       </Grid>
 
-      <Alert color="info">
+      <Alert color="primary">
         <Typography level="body-sm">
           Total roster spots: {Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0)}
         </Typography>
@@ -280,7 +305,176 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     </Stack>
   );
 
-  const renderStep3 = () => (
+  const renderStep3 = () => {
+    const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
+    const lineupSize = settings.starters_count + settings.rotation_count + settings.bench_count;
+    const isLineupValid = lineupSize <= rosterSize;
+
+    return (
+      <Stack spacing={3}>
+        <Typography level="h4" sx={{ mb: 2 }}>
+          Weekly Lineup Configuration
+        </Typography>
+        
+        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+          Set up how many players are active each week and their fantasy point multipliers.
+          Each week, you'll select players from your roster to fill these spots.
+        </Typography>
+
+        <Alert color={isLineupValid ? 'success' : 'danger'}>
+          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+            Roster Size: {rosterSize} players
+          </Typography>
+          <Typography level="body-sm">
+            Lineup Size: {lineupSize} players ({settings.starters_count} + {settings.rotation_count} + {settings.bench_count})
+          </Typography>
+          {!isLineupValid && (
+            <Typography level="body-sm" color="danger" sx={{ mt: 1 }}>
+              ❌ Lineup cannot exceed roster size!
+            </Typography>
+          )}
+        </Alert>
+
+        {/* STARTERS */}
+        <Card variant="outlined" sx={{ bgcolor: 'primary.50' }}>
+          <CardContent>
+            <Typography level="title-lg" sx={{ mb: 2, color: 'primary.700' }}>
+              ⭐ Starters (Locked at 5)
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Number of Starters</FormLabel>
+                  <Input
+                    value={5}
+                    disabled
+                    endDecorator="players"
+                  />
+                  <FormHelperText>Always 5 starters (NBA lineup)</FormHelperText>
+                </FormControl>
+              </Grid>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Points Multiplier</FormLabel>
+                  <Input
+                    type="number"
+                    value={settings.starters_multiplier}
+                    onChange={(e) => handleSettingsChange('starters_multiplier', parseFloat(e.target.value))}
+                    slotProps={{
+                      input: {
+                        min: 0,
+                        max: 2,
+                        step: 0.05
+                      }
+                    }}
+                    endDecorator="x"
+                  />
+                  <FormHelperText>Default: 1.0x (100%)</FormHelperText>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+
+        {/* ROTATION */}
+        <Card variant="outlined" sx={{ bgcolor: 'warning.50' }}>
+          <CardContent>
+            <Typography level="title-lg" sx={{ mb: 2, color: 'warning.700' }}>
+              🔄 Rotation Players
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Number of Rotation Players</FormLabel>
+                  <Select
+                    value={settings.rotation_count}
+                    onChange={(_, value) => handleSettingsChange('rotation_count', value)}
+                  >
+                    {[3, 4, 5, 6, 7].map(num => (
+                      <Option key={num} value={num}>{num} players</Option>
+                    ))}
+                  </Select>
+                  <FormHelperText>Range: 3-7 players</FormHelperText>
+                </FormControl>
+              </Grid>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Points Multiplier</FormLabel>
+                  <Input
+                    type="number"
+                    value={settings.rotation_multiplier}
+                    onChange={(e) => handleSettingsChange('rotation_multiplier', parseFloat(e.target.value))}
+                    slotProps={{
+                      input: {
+                        min: 0,
+                        max: 2,
+                        step: 0.05
+                      }
+                    }}
+                    endDecorator="x"
+                  />
+                  <FormHelperText>Default: 0.75x (75%)</FormHelperText>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+
+        {/* BENCH */}
+        <Card variant="outlined" sx={{ bgcolor: 'neutral.50' }}>
+          <CardContent>
+            <Typography level="title-lg" sx={{ mb: 2, color: 'neutral.700' }}>
+              📋 Bench Players
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Number of Bench Players</FormLabel>
+                  <Select
+                    value={settings.bench_count}
+                    onChange={(_, value) => handleSettingsChange('bench_count', value)}
+                  >
+                    {[3, 4, 5].map(num => (
+                      <Option key={num} value={num}>{num} players</Option>
+                    ))}
+                  </Select>
+                  <FormHelperText>Range: 3-5 players</FormHelperText>
+                </FormControl>
+              </Grid>
+              <Grid xs={6}>
+                <FormControl>
+                  <FormLabel>Points Multiplier</FormLabel>
+                  <Input
+                    type="number"
+                    value={settings.bench_multiplier}
+                    onChange={(e) => handleSettingsChange('bench_multiplier', parseFloat(e.target.value))}
+                    slotProps={{
+                      input: {
+                        min: 0,
+                        max: 2,
+                        step: 0.05
+                      }
+                    }}
+                    endDecorator="x"
+                  />
+                  <FormHelperText>Default: 0.5x (50%)</FormHelperText>
+                </FormControl>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+
+        <Alert color="primary" variant="soft">
+          <Typography level="body-sm">
+            💡 <strong>How it works:</strong> Each week, you'll set your lineup by assigning players from your roster to these tiers. 
+            Starters get full points, rotation players get reduced points, and bench players get even fewer points.
+          </Typography>
+        </Alert>
+      </Stack>
+    );
+  };
+
+  const renderStep4 = () => (
     <Stack spacing={3}>
       <Typography level="h4" sx={{ mb: 2 }}>
         League Settings
@@ -298,6 +492,28 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
           <Option value="Roto">Rotisserie</Option>
           <Option value="Season_Points">Season Points</Option>
         </Select>
+      </FormControl>
+
+      <FormControl>
+        <FormLabel>Salary Cap (in millions)</FormLabel>
+        <Input
+          type="number"
+          value={(settings.salary_cap_amount || 200000000) / 1000000}
+          onChange={(e) => handleSettingsChange('salary_cap_amount', parseInt(e.target.value) * 1000000)}
+          placeholder="200"
+          slotProps={{
+            input: {
+              min: 50,
+              max: 500,
+              step: 10
+            }
+          }}
+          startDecorator="$"
+          endDecorator="M"
+        />
+        <FormHelperText>
+          Total salary cap per team. Default is $200M. Range: $50M - $500M
+        </FormHelperText>
       </FormControl>
 
       <Grid container spacing={2}>
@@ -332,7 +548,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
       <Divider />
 
       <Stack spacing={2}>
-        <Typography level="h6">Additional Options</Typography>
+        <Typography level="title-md">Additional Options</Typography>
         
         <FormControl orientation="horizontal">
           <FormLabel>Auto-fill empty teams</FormLabel>
@@ -361,7 +577,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     </Stack>
   );
 
-  const renderStep4 = () => (
+  const renderStep5 = () => (
     <Stack spacing={3}>
       <Typography level="h4" sx={{ mb: 2 }}>
         Invite Members
@@ -408,8 +624,9 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     switch (step) {
       case 1: return renderStep1();
       case 2: return renderStep2();
-      case 3: return renderStep3();
-      case 4: return renderStep4();
+      case 3: return renderStep3(); // Weekly Lineup Config
+      case 4: return renderStep4(); // League Settings
+      case 5: return renderStep5(); // Invite Members
       default: return null;
     }
   };
@@ -418,8 +635,9 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     switch (step) {
       case 1: return 'Basic Information';
       case 2: return 'Roster Setup';
-      case 3: return 'League Rules';
-      case 4: return 'Invite Members';
+      case 3: return 'Weekly Lineup Configuration';
+      case 4: return 'League Rules';
+      case 5: return 'Invite Members';
       default: return '';
     }
   };
@@ -460,7 +678,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
         {/* Progress Indicator */}
         <Box sx={{ mb: 3 }}>
           <Stack direction="row" spacing={1} justifyContent="center">
-            {[1, 2, 3, 4].map((stepNum) => (
+            {[1, 2, 3, 4, 5].map((stepNum) => (
               <Chip
                 key={stepNum}
                 color={stepNum <= step ? 'primary' : 'neutral'}
@@ -472,7 +690,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
             ))}
           </Stack>
           <Typography level="body-sm" sx={{ textAlign: 'center', mt: 1, color: 'text.secondary' }}>
-            Step {step} of 4: {getStepTitle()}
+            Step {step} of 5: {getStepTitle()}
           </Typography>
         </Box>
 
@@ -507,11 +725,11 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
           
           <Button
             variant="solid"
-            onClick={step === 4 ? handleSubmit : handleNext}
+            onClick={step === 5 ? handleSubmit : handleNext}
             loading={createLeague.isPending}
             disabled={createLeague.isPending}
           >
-            {step === 4 ? 'Create League' : 'Next'}
+            {step === 5 ? 'Create League' : 'Next'}
           </Button>
         </Stack>
       </ModalDialog>

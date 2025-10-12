@@ -27,6 +27,7 @@ import { useJoinDraftLobby, useUpdateLobbyStatus } from '../../hooks/useDraftLob
 import { useNextPick } from '../../hooks/useNextPick';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
 import PostDraftModal from '../PostDraftModal';
+import { supabase } from '../../utils/supabase';
 
 export default function DraftComponent() {
   const { id: leagueId } = useParams<{ id: string }>();
@@ -42,12 +43,66 @@ export default function DraftComponent() {
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
   const [showPostDraftModal, setShowPostDraftModal] = useState(false);
+  const [tradeContext, setTradeContext] = useState<{
+    teamId: string;
+    teamName: string;
+    asset: {
+      type: 'player' | 'pick';
+      playerId?: number;
+      playerName?: string;
+      position?: string;
+      nbaPlayerId?: number;
+      pickNumber?: number;
+      round?: number;
+    };
+  } | null>(null);
 
   // Check if user is commissioner
   const isCommissioner = league?.commissioner_id === user?.id;
 
   // Find user's team
   const userTeam = teams?.find(team => team.user_id === user?.id);
+
+  // Handler to initiate trade from carousel
+  const handleInitiateTrade = (pick: any) => {
+    if (!teams) return;
+    
+    // Find the team that owns this pick
+    // ✅ Use current_owner_id to handle traded picks correctly
+    const ownerId = pick.current_owner_id || pick.team_id;
+    const owningTeam = teams.find(t => t.id === ownerId);
+    if (!owningTeam) return;
+
+    // Build trade context based on whether pick is completed
+    if (pick.is_completed && pick.player_id) {
+      // Trading a drafted player
+      setTradeContext({
+        teamId: owningTeam.id,
+        teamName: owningTeam.team_name,
+        asset: {
+          type: 'player',
+          playerId: pick.player_id,
+          playerName: pick.player_name,
+          position: pick.position,
+          nbaPlayerId: pick.nba_player_id,
+        }
+      });
+    } else {
+      // Trading a future pick
+      setTradeContext({
+        teamId: owningTeam.id,
+        teamName: owningTeam.team_name,
+        asset: {
+          type: 'pick',
+          pickNumber: pick.pick_number,
+          round: pick.round,
+        }
+      });
+    }
+
+    // Switch to trade tab (index 4)
+    setActiveTab(4);
+  };
 
   // Auto-join lobby when component mounts
   useEffect(() => {
@@ -106,6 +161,56 @@ export default function DraftComponent() {
     
     return hoursUntilDraft <= 1 || isDraftStarted;
   }, [draftStartTime, isDraftStarted]);
+
+  // Poll draft-manager edge function every 10 seconds when draft is active
+  useEffect(() => {
+    // Only poll if draft has started and is not in lobby
+    if (!isDraftStarted || isLobbyOpen || !leagueId) {
+      return;
+    }
+
+    console.log('🏀 Starting draft-manager polling for league:', leagueId);
+
+    // Call draft-manager immediately on mount
+    const callDraftManager = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/draft-manager`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ leagueId })
+          }
+        );
+
+        if (!response.ok) {
+          console.error('❌ Draft-manager error:', response.status, await response.text());
+        } else {
+          const result = await response.json();
+          console.log('✅ Draft-manager response:', result);
+        }
+      } catch (error) {
+        console.error('❌ Failed to call draft-manager:', error);
+      }
+    };
+
+    // Call immediately
+    callDraftManager();
+
+    // Then poll every 10 seconds
+    const interval = setInterval(callDraftManager, 10000);
+
+    return () => {
+      console.log('🛑 Stopping draft-manager polling');
+      clearInterval(interval);
+    };
+  }, [isDraftStarted, isLobbyOpen, leagueId]);
 
   // Countdown timer effect
   useEffect(() => {
@@ -189,9 +294,9 @@ export default function DraftComponent() {
       case 2:
         return <DraftBestAvailable leagueId={leagueId || ''} />;
       case 3:
-        return <DraftPicks leagueId={leagueId || ''} />;
+        return <DraftPicks leagueId={leagueId || ''} userTeamId={userTeam?.id} />;
       case 4:
-        return <DraftTrade leagueId={leagueId || ''} />;
+        return <DraftTrade leagueId={leagueId || ''} tradeContext={tradeContext} onClearContext={() => setTradeContext(null)} isCommissioner={isCommissioner} />;
       case 5:
         return <DraftChat leagueId={leagueId || ''} />;
       case 6:
@@ -208,6 +313,7 @@ export default function DraftComponent() {
     return (
       <Box sx={{ 
         minHeight: 'calc(100vh - 200px)',
+        pb: '100px', // Space for fixed bottom nav
         bgcolor: 'background.body'
       }}>
         <DraftLobby 
@@ -221,7 +327,7 @@ export default function DraftComponent() {
   return (
     <Box sx={{ 
       minHeight: 'calc(100vh - 200px)', // Adjust for league header
-      pb: '80px', // Space for bottom nav
+      pb: '100px', // Space for fixed bottom nav
       bgcolor: 'background.body'
     }}>
       {/* Draft Header - Only show when draft is more than 1 hour away */}
@@ -266,6 +372,8 @@ export default function DraftComponent() {
             currentPickNumber={currentPickInfo.currentPick}
             timeRemaining={currentPickInfo.timeRemaining}
             isDraftStarted={isDraftStarted}
+            isCommissioner={isCommissioner}
+            onInitiateTrade={handleInitiateTrade}
           />
         </Box>
       )}
@@ -280,6 +388,7 @@ export default function DraftComponent() {
         activeTab={activeTab} 
         onTabChange={setActiveTab}
         isCommissioner={isCommissioner}
+        userTeamId={userTeam?.id}
       />
 
       {/* Post-Draft Modal */}

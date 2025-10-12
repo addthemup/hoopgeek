@@ -34,7 +34,14 @@ export function useCreateLeagueMinimal() {
           scoringType: settings.scoring_type,
           teamName: commissioner_team_name,
           rosterConfig: settings.roster_positions,
-          draftDate: settings.draft_date
+          draftDate: settings.draft_date,
+          salaryCapAmount: settings.salary_cap_amount || 200000000,
+          startersCount: settings.starters_count,
+          startersMultiplier: settings.starters_multiplier,
+          rotationCount: settings.rotation_count,
+          rotationMultiplier: settings.rotation_multiplier,
+          benchCount: settings.bench_count,
+          benchMultiplier: settings.bench_multiplier
         }
       })
 

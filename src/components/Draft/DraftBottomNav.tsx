@@ -5,6 +5,7 @@ import {
   TabList,
   Tab,
   tabClasses,
+  Badge,
 } from '@mui/joy';
 import {
   GroupRounded as RosterIcon,
@@ -16,20 +17,25 @@ import {
   AdminPanelSettingsRounded as CommishIcon,
   ChatRounded as ChatIcon,
 } from '@mui/icons-material';
+import { usePendingTradesCount } from '../../hooks/usePendingTradesCount';
 
 interface DraftBottomNavProps {
   activeTab: number;
   onTabChange: (tab: number) => void;
   isCommissioner?: boolean;
+  userTeamId?: string;
 }
 
-export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner = false }: DraftBottomNavProps) {
+export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner = false, userTeamId }: DraftBottomNavProps) {
+  // Fetch pending trades count
+  const { data: pendingCount = 0 } = usePendingTradesCount(userTeamId);
+
   const tabs = [
     { label: 'Roster', icon: RosterIcon, color: 'primary' },
     { label: 'Players', icon: PlayersIcon, color: 'success' },
     { label: 'Best Available', icon: BestAvailableIcon, color: 'warning' },
     { label: 'Picks', icon: PicksIcon, color: 'danger' },
-    { label: 'Trade', icon: TradeIcon, color: 'neutral' },
+    { label: 'Trade', icon: TradeIcon, color: 'neutral', badge: pendingCount },
     { label: 'Chat', icon: ChatIcon, color: 'info' },
     { label: 'Rules', icon: RulesIcon, color: 'info' },
     ...(isCommissioner ? [{ label: 'Commish', icon: CommishIcon, color: 'primary' }] : []),
@@ -42,14 +48,15 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
   return (
     <Box
       sx={{
-        position: 'sticky',
+        position: 'fixed',
         bottom: 0,
-        zIndex: 100,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
         borderTopLeftRadius: '12px',
         borderTopRightRadius: '12px',
         bgcolor: `${'var(--colors-index)'}.500`,
         boxShadow: '0 -4px 20px rgba(0,0,0,0.1)',
-        mt: 2,
       }}
       style={{ '--colors-index': tabs[safeActiveTab]?.color || 'primary' } as any}
     >
@@ -99,7 +106,18 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
               sx={{ minWidth: '80px' }}
             >
               <ListItemDecorator sx={{ mb: 0.5 }}>
-                <tab.icon fontSize="small" />
+                {tab.badge && tab.badge > 0 ? (
+                  <Badge 
+                    badgeContent={tab.badge} 
+                    color="danger"
+                    size="sm"
+                    badgeInset="10%"
+                  >
+                    <tab.icon fontSize="small" />
+                  </Badge>
+                ) : (
+                  <tab.icon fontSize="small" />
+                )}
               </ListItemDecorator>
               <Box sx={{ fontSize: '0.7rem', lineHeight: 1 }}>
                 {tab.label}

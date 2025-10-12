@@ -1508,10 +1508,10 @@ BEGIN
   IF max_teams_count >= 2 THEN
     PERFORM generate_league_schedule(
       new_league_id,
-      18, -- regular_season_weeks (default)
+      22, -- regular_season_weeks (will be recalculated based on playoff_weeks)
       6,  -- playoff_teams (default)
-      3,  -- playoff_weeks (default)
-      CURRENT_DATE -- season_start_date
+      3,  -- playoff_weeks (default - weeks 23, 24, 25)
+      EXTRACT(YEAR FROM CURRENT_DATE)::INTEGER -- season_year
     );
   END IF;
 
@@ -1730,6 +1730,7 @@ BEGIN
         team_index := i; -- Normal order for odd rounds
       END IF;
       
+      -- Leave fantasy_team_id NULL initially (only set when picks are traded)
       INSERT INTO draft_order (
         league_id,
         round,
@@ -1879,19 +1880,19 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create function to generate league schedule
+-- Create function to generate league schedule (uses fantasy_season_weeks for dates)
 CREATE OR REPLACE FUNCTION generate_league_schedule(
   league_id_param UUID,
   regular_season_weeks_param INTEGER DEFAULT 18,
   playoff_teams_param INTEGER DEFAULT 6,
   playoff_weeks_param INTEGER DEFAULT 3,
-  season_start_date_param DATE DEFAULT CURRENT_DATE
+  season_year_param INTEGER DEFAULT EXTRACT(YEAR FROM CURRENT_DATE)
 )
 RETURNS BOOLEAN AS $$
 DECLARE
   team_count INTEGER;
-  team_rec RECORD;
   team_list UUID[];
+  rotated_list UUID[];
   i INTEGER;
   j INTEGER;
   week_num INTEGER;
@@ -1901,7 +1902,10 @@ DECLARE
   team2_id UUID;
   team1_index INTEGER;
   team2_index INTEGER;
-  matchup_date DATE;
+  fixed_team UUID;
+  rotation_week INTEGER;
+  week_record RECORD;
+  total_weeks INTEGER := 25;
 BEGIN
   -- Get team count for the league
   SELECT COUNT(*) INTO team_count
@@ -1912,8 +1916,12 @@ BEGIN
     RAISE EXCEPTION 'League must have at least 2 teams to generate schedule';
   END IF;
   
-  -- Get all team IDs
-  SELECT ARRAY_AGG(id ORDER BY id) INTO team_list
+  -- Calculate playoff start week (last N weeks of the season)
+  playoff_start_week := total_weeks - playoff_weeks_param + 1;
+  regular_season_weeks_param := playoff_start_week - 1;
+  
+  -- Get all team IDs in random order for preseason
+  SELECT ARRAY_AGG(id ORDER BY RANDOM()) INTO team_list
   FROM fantasy_teams 
   WHERE league_id = league_id_param;
   
@@ -1931,8 +1939,8 @@ BEGIN
     regular_season_weeks_param,
     playoff_weeks_param,
     playoff_teams_param,
-    regular_season_weeks_param + 1,
-    season_start_date_param,
+    playoff_start_week,
+    (SELECT start_date FROM fantasy_season_weeks WHERE season_year = season_year_param AND week_number = 1),
     true
   ) ON CONFLICT (league_id) DO UPDATE SET
     regular_season_weeks = EXCLUDED.regular_season_weeks,
@@ -1946,73 +1954,81 @@ BEGIN
   -- Clear existing matchups for this league
   DELETE FROM weekly_matchups WHERE league_id = league_id_param;
   
-  -- Generate regular season schedule (round-robin style)
+  -- GENERATE PRESEASON (Week 0)
+  SELECT * INTO week_record FROM fantasy_season_weeks
+  WHERE season_year = season_year_param AND week_number = 0;
+  
+  IF FOUND THEN
+    FOR i IN 1..(team_count / 2) LOOP
+      team1_index := (i - 1) * 2 + 1;
+      team2_index := (i - 1) * 2 + 2;
+      IF team2_index <= team_count THEN
+        INSERT INTO weekly_matchups (
+          league_id, fantasy_team1_id, fantasy_team2_id, week_number,
+          season_year, season_type, matchup_date, status, is_preseason
+        ) VALUES (
+          league_id_param, team_list[team1_index], team_list[team2_index], 0,
+          season_year_param, 'regular', week_record.start_date, 'scheduled', true
+        );
+      END IF;
+    END LOOP;
+  END IF;
+  
+  -- GENERATE REGULAR SEASON (Round-robin rotation)
+  SELECT ARRAY_AGG(id ORDER BY RANDOM()) INTO team_list
+  FROM fantasy_teams WHERE league_id = league_id_param;
+  
+  fixed_team := team_list[1];
+  
   FOR week_num IN 1..regular_season_weeks_param LOOP
-    matchup_date := season_start_date_param + (week_num - 1) * INTERVAL '7 days';
+    SELECT * INTO week_record FROM fantasy_season_weeks
+    WHERE season_year = season_year_param AND week_number = week_num;
     
-    -- Create matchups for this week (each team plays one other team)
+    IF NOT FOUND THEN CONTINUE; END IF;
+    
+    rotated_list := team_list;
+    IF team_count > 2 THEN
+      FOR i IN 2..team_count LOOP
+        rotation_week := ((week_num - 1) % (team_count - 1));
+        j := 2 + ((i - 2 + rotation_week) % (team_count - 1));
+        rotated_list[i] := team_list[j];
+      END LOOP;
+    END IF;
+    
     FOR i IN 1..(team_count / 2) LOOP
       team1_index := i;
       team2_index := team_count - i + 1;
-      
-      -- Skip if we have an odd number of teams and this would be a bye week
       IF team1_index < team2_index THEN
         INSERT INTO weekly_matchups (
-          league_id,
-          fantasy_team1_id,
-          fantasy_team2_id,
-          week_number,
-          season_year,
-          season_type,
-          matchup_date,
-          status
+          league_id, fantasy_team1_id, fantasy_team2_id, week_number,
+          season_year, season_type, matchup_date, status, is_preseason
         ) VALUES (
-          league_id_param,
-          team_list[team1_index],
-          team_list[team2_index],
-          week_num,
-          EXTRACT(YEAR FROM season_start_date_param),
-          'regular',
-          matchup_date,
-          'scheduled'
+          league_id_param, rotated_list[team1_index], rotated_list[team2_index], week_num,
+          season_year_param, 'regular', week_record.start_date, 'scheduled', false
         );
       END IF;
     END LOOP;
   END LOOP;
   
-  -- Generate playoff schedule
-  playoff_start_week := regular_season_weeks_param + 1;
-  
-  -- Round 1 (Quarterfinals if 8+ teams, or first round)
-  FOR week_num IN playoff_start_week..(playoff_start_week + playoff_weeks_param - 1) LOOP
-    playoff_round := week_num - playoff_start_week + 1;
-    matchup_date := season_start_date_param + (week_num - 1) * INTERVAL '7 days';
+  -- GENERATE PLAYOFF SCHEDULE
+  FOR week_num IN playoff_start_week..total_weeks LOOP
+    SELECT * INTO week_record FROM fantasy_season_weeks
+    WHERE season_year = season_year_param AND week_number = week_num;
     
-    -- Create playoff matchups (simplified - top teams advance)
+    IF NOT FOUND THEN CONTINUE; END IF;
+    
+    playoff_round := week_num - playoff_start_week + 1;
+    
     FOR i IN 1..(playoff_teams_param / 2) LOOP
       team1_id := team_list[i];
       team2_id := team_list[playoff_teams_param - i + 1];
       
       INSERT INTO weekly_matchups (
-        league_id,
-        fantasy_team1_id,
-        fantasy_team2_id,
-        week_number,
-        season_year,
-        season_type,
-        playoff_round,
-        matchup_date,
-        status
+        league_id, fantasy_team1_id, fantasy_team2_id, week_number,
+        season_year, season_type, playoff_round, matchup_date, status, is_preseason
       ) VALUES (
-        league_id_param,
-        team1_id,
-        team2_id,
-        week_num,
-        EXTRACT(YEAR FROM season_start_date_param),
-        'playoff',
-        playoff_round,
-        matchup_date,
-        'scheduled'
+        league_id_param, team1_id, team2_id, week_num,
+        season_year_param, 'playoff', playoff_round, week_record.start_date, 'scheduled', false
       );
     END LOOP;
   END LOOP;

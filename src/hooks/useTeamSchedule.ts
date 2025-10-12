@@ -22,6 +22,7 @@ export interface TeamMatchup {
   status: 'scheduled' | 'live' | 'completed';
   matchup_type: 'regular' | 'playoff' | 'championship';
   division_game: boolean;
+  is_preseason?: boolean;
 }
 
 export function useTeamSchedule(teamId: string) {
@@ -31,6 +32,23 @@ export function useTeamSchedule(teamId: string) {
       if (!teamId) return [];
 
       try {
+        // First get the league and season from the team
+        const { data: team } = await supabase
+          .from('fantasy_teams')
+          .select('league_id')
+          .eq('id', teamId)
+          .single();
+
+        if (!team) return [];
+
+        const { data: league } = await supabase
+          .from('leagues')
+          .select('season_year')
+          .eq('id', team.league_id)
+          .single();
+
+        const seasonYear = league?.season_year || new Date().getFullYear();
+
         // Fetch all matchups for this team
         const { data: matchups, error } = await supabase
           .from('weekly_matchups')
@@ -43,7 +61,8 @@ export function useTeamSchedule(teamId: string) {
             fantasy_team2_score,
             status,
             season_type,
-            matchup_date
+            matchup_date,
+            is_preseason
           `)
           .or(`fantasy_team1_id.eq.${teamId},fantasy_team2_id.eq.${teamId}`)
           .order('week_number', { ascending: true });
@@ -62,7 +81,7 @@ export function useTeamSchedule(teamId: string) {
 
         const { data: teams, error: teamsError } = await supabase
           .from('fantasy_teams')
-          .select('id, team_name, user_id, wins, losses, points_for, points_against')
+          .select('id, team_name, user_id, wins, losses, points_for, points_against, division_id')
           .in('id', teamIds);
 
         if (teamsError) {
@@ -70,19 +89,42 @@ export function useTeamSchedule(teamId: string) {
           throw teamsError;
         }
 
+        // Fetch week details from fantasy_season_weeks
+        const weekNumbers = matchups.map(m => m.week_number);
+        const { data: weeks, error: weeksError } = await supabase
+          .from('fantasy_season_weeks')
+          .select('week_number, week_name, start_date, end_date')
+          .eq('season_year', seasonYear)
+          .in('week_number', weekNumbers);
+
+        if (weeksError) {
+          console.error('Error fetching week details:', weeksError);
+          throw weeksError;
+        }
+
+        // Get the current team's division for checking division games
+        const { data: currentTeam } = await supabase
+          .from('fantasy_teams')
+          .select('division_id')
+          .eq('id', teamId)
+          .single();
+
         // Transform the data
         const schedule: TeamMatchup[] = matchups.map(matchup => {
           const isHome = matchup.fantasy_team1_id === teamId;
           const opponentId = isHome ? matchup.fantasy_team2_id : matchup.fantasy_team1_id;
           const opponent = teams?.find(t => t.id === opponentId);
           
-          // Create week name from week number
-          const weekName = `Week ${matchup.week_number}`;
+          // Get week info from fantasy_season_weeks
+          const weekInfo = weeks?.find(w => w.week_number === matchup.week_number);
+          const weekName = weekInfo?.week_name || `Week ${matchup.week_number}`;
+          const startDate = weekInfo?.start_date || matchup.matchup_date;
+          const endDate = weekInfo?.end_date || matchup.matchup_date;
           
-          // Create date range from matchup date (simplified)
-          const matchupDate = new Date(matchup.matchup_date);
-          const startDate = matchupDate.toISOString().split('T')[0];
-          const endDate = new Date(matchupDate.getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          // Check if this is a division game
+          const isDivisionGame = !!(currentTeam?.division_id && 
+                                     opponent?.division_id && 
+                                     currentTeam.division_id === opponent.division_id);
           
           return {
             id: matchup.id,
@@ -108,11 +150,12 @@ export function useTeamSchedule(teamId: string) {
               points_against: 0,
             },
             is_home: isHome,
-            team_score: isHome ? matchup.fantasy_team1_score : matchup.fantasy_team2_score,
-            opponent_score: isHome ? matchup.fantasy_team2_score : matchup.fantasy_team1_score,
+            team_score: isHome ? (matchup.fantasy_team1_score || 0) : (matchup.fantasy_team2_score || 0),
+            opponent_score: isHome ? (matchup.fantasy_team2_score || 0) : (matchup.fantasy_team1_score || 0),
             status: matchup.status as 'scheduled' | 'live' | 'completed',
             matchup_type: matchup.season_type as 'regular' | 'playoff' | 'championship',
-            division_game: false, // We don't have division info in current schema
+            division_game: isDivisionGame,
+            is_preseason: matchup.is_preseason || false,
           };
         });
 
