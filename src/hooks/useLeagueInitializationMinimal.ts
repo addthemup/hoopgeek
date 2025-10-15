@@ -26,23 +26,35 @@ export function useCreateLeagueMinimal() {
       
       // Call the Edge Function to create the league with roster configuration
       console.log('📝 Creating league via Edge Function...')
+      console.log('🔧 Settings being sent:', settings);
+      console.log('🔧 Position unit assignments:', settings.position_unit_assignments);
+      
+      const edgeFunctionBody = {
+        name: settings.name,
+        description: settings.description,
+        maxTeams: settings.max_teams,
+        scoringType: settings.scoring_type,
+        teamName: commissioner_team_name,
+        rosterConfig: settings.roster_positions,
+        draftDate: settings.draft_date,
+        tradeDeadline: settings.trade_deadline,
+        salaryCapAmount: settings.salary_cap_amount || 200000000,
+        startersCount: settings.starters_count,
+        startersMultiplier: settings.starters_multiplier,
+        rotationCount: settings.rotation_count,
+        rotationMultiplier: settings.rotation_multiplier,
+        benchCount: settings.bench_count,
+        benchMultiplier: settings.bench_multiplier,
+        positionUnitAssignments: settings.position_unit_assignments,
+        fantasyScoringFormat: settings.fantasy_scoring_format
+      };
+      
+      console.log('🔧 ===== EDGE FUNCTION BODY =====');
+      console.log('🔧 Edge Function Body:', JSON.stringify(edgeFunctionBody, null, 2));
+      console.log('🔧 ==============================');
+      
       const { data, error } = await supabase.functions.invoke('create-league', {
-        body: {
-          name: settings.name,
-          description: settings.description,
-          maxTeams: settings.max_teams,
-          scoringType: settings.scoring_type,
-          teamName: commissioner_team_name,
-          rosterConfig: settings.roster_positions,
-          draftDate: settings.draft_date,
-          salaryCapAmount: settings.salary_cap_amount || 200000000,
-          startersCount: settings.starters_count,
-          startersMultiplier: settings.starters_multiplier,
-          rotationCount: settings.rotation_count,
-          rotationMultiplier: settings.rotation_multiplier,
-          benchCount: settings.bench_count,
-          benchMultiplier: settings.bench_multiplier
-        }
+        body: edgeFunctionBody
       })
 
       if (error) {
@@ -53,7 +65,7 @@ export function useCreateLeagueMinimal() {
       console.log('✅ League created via Edge Function:', data)
       return {
         league: data.league,
-        commissionerTeam: data.league.league_members?.[0],
+        commissionerTeam: data.league.fantasy_teams?.[0],
         totalTeams: settings.max_teams,
       }
     },

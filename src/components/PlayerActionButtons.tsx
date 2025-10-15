@@ -39,10 +39,10 @@ import { useAddToWatchlist, useRemoveFromWatchlist, useIsPlayerOnWatchlist } fro
 import { useAddToFavorites, useRemoveFromFavorites, useIsPlayerFavorite } from '../hooks/usePlayerFavorites'
 
 interface PlayerActionButtonsProps {
-  playerId: number
+  playerId: string
   playerName: string
   leagueId?: string
-  onTradeClick?: (playerId: number, playerName: string, teamId: string, teamName: string) => void
+  onTradeClick?: (playerId: string, playerName: string, teamId: string, teamName: string) => void
 }
 
 export default function PlayerActionButtons({ 

@@ -26,7 +26,8 @@ export interface LeagueSettings {
   }
   
   // Scoring Settings
-  scoring_type: 'H2H_Points' | 'H2H_Category' | 'H2H_Most_Categories' | 'Roto' | 'Season_Points'
+  scoring_type: 'H2H_Weekly'
+  fantasy_scoring_format: 'FanDuel' | 'DraftKings' | 'Yahoo' | 'ESPN' | 'Custom'
   scoring_categories: {
     points: number
     rebounds: number
@@ -70,6 +71,13 @@ export interface LeagueSettings {
   rotation_multiplier: number // Default 0.75
   bench_count: number // 3-5
   bench_multiplier: number // Default 0.5
+  
+  // Position Unit Assignment
+  position_unit_assignments: {
+    starters: Record<string, number>
+    rotation: Record<string, number>
+    bench: Record<string, number>
+  }
   
   // Other Settings
   public_league: boolean

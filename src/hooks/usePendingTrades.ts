@@ -47,10 +47,9 @@ export function usePendingTrades(
         return [];
       }
 
-      const { data, error } = await supabase.rpc('get_pending_trades', {
-        team_id_param: teamId,
-        league_id_param: leagueId,
-        is_commissioner_param: isCommissioner,
+      const { data, error } = await supabase.rpc('get_pending_draft_trades', {
+        p_team_id: teamId,
+        p_league_id: leagueId,
       });
 
       if (error) {

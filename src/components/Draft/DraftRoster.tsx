@@ -64,7 +64,7 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
 
       try {
         const { data: rosterData, error } = await supabase
-          .from('fantasy_team_players')
+          .from('fantasy_roster_spots')
           .select(`
             player:player_id (
               salary_2025_26

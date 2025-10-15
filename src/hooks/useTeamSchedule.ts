@@ -42,7 +42,7 @@ export function useTeamSchedule(teamId: string) {
         if (!team) return [];
 
         const { data: league } = await supabase
-          .from('leagues')
+          .from('fantasy_leagues')
           .select('season_year')
           .eq('id', team.league_id)
           .single();
@@ -51,18 +51,18 @@ export function useTeamSchedule(teamId: string) {
 
         // Fetch all matchups for this team
         const { data: matchups, error } = await supabase
-          .from('weekly_matchups')
+          .from('fantasy_matchups')
           .select(`
             id,
             week_number,
             fantasy_team1_id,
             fantasy_team2_id,
-            fantasy_team1_score,
-            fantasy_team2_score,
+            team1_score,
+            team2_score,
             status,
-            season_type,
-            matchup_date,
-            is_preseason
+            is_playoff_matchup,
+            matchup_start_date,
+            matchup_end_date
           `)
           .or(`fantasy_team1_id.eq.${teamId},fantasy_team2_id.eq.${teamId}`)
           .order('week_number', { ascending: true });
@@ -81,7 +81,7 @@ export function useTeamSchedule(teamId: string) {
 
         const { data: teams, error: teamsError } = await supabase
           .from('fantasy_teams')
-          .select('id, team_name, user_id, wins, losses, points_for, points_against, division_id')
+          .select('id, team_name, user_id, wins, losses, points_for, points_against')
           .in('id', teamIds);
 
         if (teamsError) {
@@ -102,12 +102,7 @@ export function useTeamSchedule(teamId: string) {
           throw weeksError;
         }
 
-        // Get the current team's division for checking division games
-        const { data: currentTeam } = await supabase
-          .from('fantasy_teams')
-          .select('division_id')
-          .eq('id', teamId)
-          .single();
+        // Note: Division logic removed since division_id column doesn't exist in fantasy_teams
 
         // Transform the data
         const schedule: TeamMatchup[] = matchups.map(matchup => {
@@ -118,13 +113,11 @@ export function useTeamSchedule(teamId: string) {
           // Get week info from fantasy_season_weeks
           const weekInfo = weeks?.find(w => w.week_number === matchup.week_number);
           const weekName = weekInfo?.week_name || `Week ${matchup.week_number}`;
-          const startDate = weekInfo?.start_date || matchup.matchup_date;
-          const endDate = weekInfo?.end_date || matchup.matchup_date;
+          const startDate = weekInfo?.start_date || matchup.matchup_start_date;
+          const endDate = weekInfo?.end_date || matchup.matchup_end_date;
           
-          // Check if this is a division game
-          const isDivisionGame = !!(currentTeam?.division_id && 
-                                     opponent?.division_id && 
-                                     currentTeam.division_id === opponent.division_id);
+          // Division games not supported yet (no division_id column)
+          const isDivisionGame = false;
           
           return {
             id: matchup.id,
@@ -150,12 +143,12 @@ export function useTeamSchedule(teamId: string) {
               points_against: 0,
             },
             is_home: isHome,
-            team_score: isHome ? (matchup.fantasy_team1_score || 0) : (matchup.fantasy_team2_score || 0),
-            opponent_score: isHome ? (matchup.fantasy_team2_score || 0) : (matchup.fantasy_team1_score || 0),
+            team_score: isHome ? (matchup.team1_score || 0) : (matchup.team2_score || 0),
+            opponent_score: isHome ? (matchup.team2_score || 0) : (matchup.team1_score || 0),
             status: matchup.status as 'scheduled' | 'live' | 'completed',
-            matchup_type: matchup.season_type as 'regular' | 'playoff' | 'championship',
+            matchup_type: matchup.is_playoff_matchup ? 'playoff' : 'regular',
             division_game: isDivisionGame,
-            is_preseason: matchup.is_preseason || false,
+            is_preseason: matchup.week_number === 0 // Week 0 is preseason
           };
         });
 

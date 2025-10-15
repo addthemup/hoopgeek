@@ -8,8 +8,9 @@ export function useTeamRoster(teamId: string) {
     queryFn: async () => {
       console.log(`🏀 Fetching roster for team ${teamId}...`)
       
-      const { data, error } = await supabase
-        .from('fantasy_team_players')
+      // Get roster spots for this team with player data and salary information
+      const { data: rosterSpots, error: spotsError } = await supabase
+        .from('fantasy_roster_spots')
         .select(`
           *,
           player:player_id (
@@ -21,57 +22,69 @@ export function useTeamRoster(teamId: string) {
             team_abbreviation,
             jersey_number,
             salary,
-            salary_2025_26,
-            espn_player_projections (
-              proj_2026_pts,
-              proj_2026_reb,
-              proj_2026_ast,
-              proj_2026_stl,
-              proj_2026_blk,
-              proj_2026_to,
-              proj_2026_gp,
-              proj_2026_min,
-              proj_2026_fg_pct,
-              proj_2026_ft_pct,
-              proj_2026_3pm,
-              stats_2025_pts,
-              stats_2025_reb,
-              stats_2025_ast,
-              stats_2025_stl,
-              stats_2025_blk,
-              stats_2025_to,
-              stats_2025_gp,
-              stats_2025_min,
-              stats_2025_fg_pct,
-              stats_2025_ft_pct,
-              stats_2025_3pm
+            height,
+            weight,
+            age,
+            years_pro,
+            college,
+            draft_year,
+            draft_round,
+            draft_number,
+            birth_city,
+            birth_state,
+            birth_country,
+            country,
+            is_active,
+            is_rookie,
+            roster_status,
+            team_city,
+            team_slug,
+            player_slug,
+            nba_hoopshype_salaries (
+              salary_2025_26,
+              salary_2026_27,
+              salary_2027_28,
+              salary_2028_29,
+              contract_years_remaining
             )
-          ),
-          roster_spot:roster_spot_id (
-            id,
-            position,
-            position_order,
-            is_starter,
-            is_bench,
-            is_injured_reserve
           )
         `)
         .eq('fantasy_team_id', teamId)
+        .order('created_at', { ascending: true })
 
-      if (error) {
-        console.error('❌ Error fetching team roster:', error)
-        throw new Error(`Error fetching team roster: ${error.message}`)
+      if (spotsError) {
+        console.error('❌ Error fetching roster spots:', spotsError)
+        throw new Error(`Error fetching roster spots: ${spotsError.message}`)
       }
 
-      // Sort by roster spot position order on the client side
-      const sortedData = data?.sort((a, b) => {
-        const orderA = a.roster_spot?.position_order || 999;
-        const orderB = b.roster_spot?.position_order || 999;
-        return orderA - orderB;
-      });
+      // Transform the data to match the expected interface
+      const transformedRoster = rosterSpots?.map(spot => {
+        return {
+          id: spot.id,
+          roster_spot_id: spot.id,
+          fantasy_team_id: teamId,
+          player: spot.player || null,
+          roster_spot: {
+            id: spot.id,
+            is_injured_reserve: spot.is_injured_reserve,
+            assigned_at: spot.assigned_at,
+            assigned_by: spot.assigned_by,
+            draft_round: spot.draft_round,
+            draft_pick: spot.draft_pick
+          },
+          is_starter: false, // This will be determined by lineup logic later
+          is_bench: !spot.is_injured_reserve, // Non-IR spots are bench by default
+          is_injured_reserve: spot.is_injured_reserve,
+          position: spot.player?.position || null,
+          assigned_at: spot.assigned_at,
+          assigned_by: spot.assigned_by,
+          draft_round: spot.draft_round,
+          draft_pick: spot.draft_pick
+        };
+      }) || [];
 
-      console.log(`✅ Successfully fetched ${sortedData?.length || 0} roster spots`)
-      return sortedData as FantasyTeamPlayer[]
+      console.log(`✅ Successfully fetched ${transformedRoster.length} roster spots (${transformedRoster.filter(r => r.player).length} with players)`)
+      return transformedRoster as FantasyTeamPlayer[]
     },
     enabled: !!teamId,
     staleTime: 1000 * 60 * 5, // 5 minutes
@@ -84,11 +97,29 @@ export function useLeagueRosterSpots(leagueId: string) {
     queryFn: async () => {
       console.log(`🏀 Fetching roster spots for league ${leagueId}...`)
       
-      const { data, error } = await supabase
-        .from('roster_spots')
-        .select('*')
+      // Get all teams in the league first
+      const { data: teams, error: teamsError } = await supabase
+        .from('fantasy_teams')
+        .select('id')
         .eq('league_id', leagueId)
-        .order('position_order', { ascending: true })
+
+      if (teamsError) {
+        console.error('❌ Error fetching teams:', teamsError)
+        throw new Error(`Error fetching teams: ${teamsError.message}`)
+      }
+
+      if (!teams || teams.length === 0) {
+        return []
+      }
+
+      const teamIds = teams.map(t => t.id)
+
+      // Get all roster spots for teams in this league
+      const { data, error } = await supabase
+        .from('fantasy_roster_spots')
+        .select('*')
+        .in('fantasy_team_id', teamIds)
+        .order('created_at', { ascending: true })
 
       if (error) {
         console.error('❌ Error fetching roster spots:', error)

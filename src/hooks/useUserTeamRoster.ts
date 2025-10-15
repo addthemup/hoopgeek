@@ -3,7 +3,7 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from './useAuth';
 
 export interface RosterPlayer {
-  id: number;
+  id: string; // This is now fantasy_team_players.id (UUID)
   name: string;
   position: string;
   team_abbreviation: string;
@@ -42,6 +42,7 @@ export function useUserTeamRoster(leagueId: string) {
       const { data, error } = await supabase
         .from('fantasy_team_players')
         .select(`
+          id,
           roster_spot_id,
           fantasy_team_id,
           player:player_id (
@@ -62,7 +63,7 @@ export function useUserTeamRoster(leagueId: string) {
       }
 
       const rosterPlayers = data.map(item => ({
-        id: item.player.id,
+        id: item.id, // This is now fantasy_team_players.id (UUID)
         name: item.player.name,
         position: item.player.position,
         team_abbreviation: item.player.team_abbreviation,

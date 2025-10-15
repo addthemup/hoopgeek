@@ -41,10 +41,10 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
 
       // Get all draft picks for this team that haven't been completed yet
       // This includes:
-      // 1. Original picks (fantasy_team_id IS NULL and team_position matches)
+      // 1. Original picks (fantasy_team_id matches this team and team_position matches)
       // 2. Traded picks (fantasy_team_id matches this team)
       const { data, error } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .select(`
           pick_number,
           round,
@@ -54,7 +54,7 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
         `)
         .eq('league_id', leagueId)
         .eq('is_completed', false) // Only get picks that haven't been used
-        .or(`and(fantasy_team_id.is.null,team_position.eq.${teamPosition}),fantasy_team_id.eq.${teamId}`)
+        .eq('fantasy_team_id', teamId) // Get picks that belong to this team
         .order('pick_number');
 
       if (error) {

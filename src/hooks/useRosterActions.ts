@@ -11,7 +11,7 @@ export function useAddPlayerToRoster() {
       position = 'BENCH' 
     }: { 
       fantasyTeamId: string; 
-      playerId: number; 
+      playerId: string; 
       position?: string 
     }) => {
       // Find an available roster spot
@@ -69,7 +69,7 @@ export function useRemovePlayerFromRoster() {
   })
 }
 
-export function useIsPlayerOnRoster(fantasyTeamId: string, playerId: number) {
+export function useIsPlayerOnRoster(fantasyTeamId: string, playerId: string) {
   return useQuery({
     queryKey: ['player-roster-check', fantasyTeamId, playerId],
     queryFn: async () => {
@@ -87,7 +87,7 @@ export function useIsPlayerOnRoster(fantasyTeamId: string, playerId: number) {
   })
 }
 
-export function useGetPlayerRosterInfo(playerId: number) {
+export function useGetPlayerRosterInfo(playerId: string) {
   return useQuery({
     queryKey: ['player-roster-info', playerId],
     queryFn: async () => {

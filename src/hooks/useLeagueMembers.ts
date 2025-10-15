@@ -18,7 +18,7 @@ export function useLeagueMembers(leagueId: string) {
     queryFn: async () => {
       // Get all league members
       const { data: members, error: membersError } = await supabase
-        .from('league_members')
+        .from('fantasy_teams')
         .select(`
           id,
           user_id,
@@ -63,6 +63,14 @@ export function useLeagueMembers(leagueId: string) {
         console.error('Error fetching lobby participants:', lobbyError)
         // Don't throw error here, just continue without online status
       }
+
+      console.log('🔍 useLeagueMembers Debug:', {
+        leagueId,
+        members: members?.map(m => ({ userId: m.user_id, teamName: m.team_name })),
+        lobbyParticipants: lobbyParticipants?.map(p => ({ userId: p.user_id, isOnline: p.is_online })),
+        membersCount: members?.length,
+        lobbyParticipantsCount: lobbyParticipants?.length
+      });
 
       // Combine the data
       const membersWithStatus: LeagueMember[] = members.map(member => {

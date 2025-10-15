@@ -16,14 +16,45 @@ export interface League {
   draft_status: 'scheduled' | 'in_progress' | 'completed'
   created_at: string
   updated_at: string
+  // League branding
+  logo_url?: string
+  logo_upload_id?: string
+  colors?: {
+    primary: string
+    secondary: string
+  }
+  // League type and configuration
+  league_type?: 'redraft' | 'dynasty' | 'keeper'
+  draft_type?: 'snake' | 'linear' | 'auction'
+  draft_rounds?: number
+  // League settings
+  scoring_type?: string
+  fantasy_scoring_format?: string
+  lineup_frequency?: string
+  salary_cap_enabled?: boolean
+  salary_cap_amount?: number
+  trades_enabled?: boolean
+  public_league?: boolean
+  invite_code?: string
   // Additional fields for display
   team_name?: string
   is_commissioner?: boolean
   joined_at?: string
-  scoring_type?: string
-  lineup_frequency?: string
-  salary_cap_enabled?: boolean
-  salary_cap_amount?: number
+  // Season-specific fields (from fantasy_league_seasons)
+  season_year?: number
+  season_status?: 'upcoming' | 'active' | 'completed' | 'cancelled'
+  current_teams?: number
+  trade_deadline?: string
+  roster_positions?: Record<string, number>
+  starters_count?: number
+  starters_multiplier?: number
+  rotation_count?: number
+  rotation_multiplier?: number
+  bench_count?: number
+  bench_multiplier?: number
+  position_unit_assignments?: Record<string, any>
+  playoff_teams?: number
+  playoff_weeks?: number
 }
 
 // Re-export league settings types
@@ -39,7 +70,7 @@ export interface LeagueMember {
 }
 
 export interface Player {
-  id: number
+  id: string
   nba_player_id: number
   name: string
   first_name?: string
@@ -144,24 +175,30 @@ export interface LeagueMember {
 
 export interface RosterSpot {
   id: string
-  league_id: string
-  position: string
-  position_order: number
-  is_starter: boolean
-  is_bench: boolean
+  fantasy_team_id: string
+  season_id: string
   is_injured_reserve: boolean
+  player_id?: string
+  assigned_at?: string
+  assigned_by?: string
+  draft_round?: number
+  draft_pick?: number
   created_at: string
+  updated_at: string
 }
 
 export interface FantasyTeamPlayer {
   id: string
   fantasy_team_id: string
-  roster_spot_id: string
-  player_id?: number
-  position: string
-  is_starter: boolean
-  is_injured: boolean
-  added_at: string
+  season_id: string
+  is_injured_reserve: boolean
+  player_id?: string
+  assigned_at?: string
+  assigned_by?: string
+  draft_round?: number
+  draft_pick?: number
+  created_at: string
+  updated_at: string
   player?: Player // Joined player data
   roster_spot?: RosterSpot // Joined roster spot data
 }
@@ -169,19 +206,20 @@ export interface FantasyTeamPlayer {
 export interface FantasyTeam {
   id: string
   league_id: string
-  division_id?: string
+  season_id: string
   user_id?: string
   team_name: string
-  team_abbreviation?: string
   draft_position?: number
   is_commissioner: boolean
+  is_active: boolean
+  // Season-specific stats
   wins: number
   losses: number
   ties: number
   points_for: number
   points_against: number
-  salary_cap_used: number
-  salary_cap_max: number
+  current_streak: string
+  current_standing: number
   created_at: string
   updated_at: string
   user?: {

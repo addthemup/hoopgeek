@@ -20,6 +20,7 @@ export interface TeamDraftedPlayer {
   jersey_number?: number;
   pick_number: number;
   round: number;
+  salary_2025_26?: number;
 }
 
 export function useTeamDraftPicks(leagueId: string, teamId: string) {
@@ -27,14 +28,14 @@ export function useTeamDraftPicks(leagueId: string, teamId: string) {
     queryKey: ['team-draft-picks', leagueId, teamId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .select(`
           pick_number,
           round,
           is_completed,
-          draft_picks!left (
+          fantasy_draft_picks!left (
             player_id,
-            players!left (
+            nba_players!left (
               name,
               position,
               team_abbreviation
@@ -42,18 +43,7 @@ export function useTeamDraftPicks(leagueId: string, teamId: string) {
           )
         `)
         .eq('league_id', leagueId)
-        .eq('team_position', 
-          // Get team position by finding the team's index in the league
-          supabase
-            .from('fantasy_teams')
-            .select('id')
-            .eq('league_id', leagueId)
-            .order('id')
-            .then(teams => {
-              const teamIndex = teams.data?.findIndex(t => t.id === teamId);
-              return teamIndex !== undefined ? teamIndex + 1 : 1;
-            })
-        )
+        .eq('fantasy_team_id', teamId)
         .order('pick_number');
 
       if (error) {
@@ -65,10 +55,10 @@ export function useTeamDraftPicks(leagueId: string, teamId: string) {
         pick_number: pick.pick_number,
         round: pick.round,
         is_completed: pick.is_completed,
-        player_id: pick.draft_picks?.player_id,
-        player_name: pick.draft_picks?.players?.name,
-        position: pick.draft_picks?.players?.position,
-        team_abbreviation: pick.draft_picks?.players?.team_abbreviation,
+        player_id: pick.fantasy_draft_picks?.player_id,
+        player_name: pick.fantasy_draft_picks?.nba_players?.name,
+        position: pick.fantasy_draft_picks?.nba_players?.position,
+        team_abbreviation: pick.fantasy_draft_picks?.nba_players?.team_abbreviation,
       })) as TeamDraftPick[];
     },
     enabled: !!leagueId && !!teamId,
@@ -81,17 +71,20 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
     queryKey: ['team-drafted-players', leagueId, teamId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_picks')
+        .from('fantasy_draft_picks')
         .select(`
           pick_number,
           round,
-          players!inner (
+          nba_players!inner (
             id,
             name,
             position,
             team_abbreviation,
             nba_player_id,
             jersey_number
+          ),
+          nba_hoopshype_salaries!left (
+            salary_2025_26
           )
         `)
         .eq('league_id', leagueId)
@@ -104,14 +97,15 @@ export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
       }
 
       return data.map(pick => ({
-        id: pick.players.id,
-        name: pick.players.name,
-        position: pick.players.position,
-        team_abbreviation: pick.players.team_abbreviation,
-        nba_player_id: pick.players.nba_player_id,
-        jersey_number: pick.players.jersey_number,
+        id: pick.nba_players.id,
+        name: pick.nba_players.name,
+        position: pick.nba_players.position,
+        team_abbreviation: pick.nba_players.team_abbreviation,
+        nba_player_id: pick.nba_players.nba_player_id,
+        jersey_number: pick.nba_players.jersey_number,
         pick_number: pick.pick_number,
         round: pick.round,
+        salary_2025_26: pick.nba_hoopshype_salaries?.salary_2025_26,
       })) as TeamDraftedPlayer[];
     },
     enabled: !!leagueId && !!teamId,

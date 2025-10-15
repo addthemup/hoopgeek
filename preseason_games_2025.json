@@ -1,0 +1,326 @@
+[
+  {
+    "game_id": "0012500008",
+    "game_code": "20251002/PHINYK",
+    "date": "10/02/2025",
+    "away_team": "PHI",
+    "home_team": "NYK",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500001",
+    "game_code": "20251003/PHXLAL",
+    "date": "10/03/2025",
+    "away_team": "PHX",
+    "home_team": "LAL",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500009",
+    "game_code": "20251003/MELNOP",
+    "date": "10/03/2025",
+    "away_team": "MEL",
+    "home_team": "NOP",
+    "status": "Final               ",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500010",
+    "game_code": "20251004/NYKPHI",
+    "date": "10/04/2025",
+    "away_team": "NYK",
+    "home_team": "PHI",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500011",
+    "game_code": "20251004/SEMNOP",
+    "date": "10/04/2025",
+    "away_team": "SEM",
+    "home_team": "NOP",
+    "status": "Final               ",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500026",
+    "game_code": "20251004/HAPBKN",
+    "date": "10/04/2025",
+    "away_team": "HAP",
+    "home_team": "BKN",
+    "status": "Final               ",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500027",
+    "game_code": "20251004/ORLMIA",
+    "date": "10/04/2025",
+    "away_team": "ORL",
+    "home_team": "MIA",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500028",
+    "game_code": "20251004/MINDEN",
+    "date": "10/04/2025",
+    "away_team": "MIN",
+    "home_team": "DEN",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500029",
+    "game_code": "20251005/OKCCHA",
+    "date": "10/05/2025",
+    "away_team": "OKC",
+    "home_team": "CHA",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500030",
+    "game_code": "20251005/LALGSW",
+    "date": "10/05/2025",
+    "away_team": "LAL",
+    "home_team": "GSW",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500002",
+    "game_code": "20251006/MILMIA",
+    "date": "10/06/2025",
+    "away_team": "MIL",
+    "home_team": "MIA",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500014",
+    "game_code": "20251006/ATLHOU",
+    "date": "10/06/2025",
+    "away_team": "ATL",
+    "home_team": "HOU",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500031",
+    "game_code": "20251006/DETMEM",
+    "date": "10/06/2025",
+    "away_team": "DET",
+    "home_team": "MEM",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500032",
+    "game_code": "20251006/GUASAS",
+    "date": "10/06/2025",
+    "away_team": "GUA",
+    "home_team": "SAS",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500033",
+    "game_code": "20251006/OKCDAL",
+    "date": "10/06/2025",
+    "away_team": "OKC",
+    "home_team": "DAL",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500034",
+    "game_code": "20251006/DENTOR",
+    "date": "10/06/2025",
+    "away_team": "DEN",
+    "home_team": "TOR",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500035",
+    "game_code": "20251007/CHICLE",
+    "date": "10/07/2025",
+    "away_team": "CHI",
+    "home_team": "CLE",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500036",
+    "game_code": "20251007/INDMIN",
+    "date": "10/07/2025",
+    "away_team": "IND",
+    "home_team": "MIN",
+    "status": "Final/OT",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500003",
+    "game_code": "20251008/SASMIA",
+    "date": "10/08/2025",
+    "away_team": "SAS",
+    "home_team": "MIA",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500015",
+    "game_code": "20251008/PORGSW",
+    "date": "10/08/2025",
+    "away_team": "POR",
+    "home_team": "GSW",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500016",
+    "game_code": "20251008/TORSAC",
+    "date": "10/08/2025",
+    "away_team": "TOR",
+    "home_team": "SAC",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500037",
+    "game_code": "20251008/UTAHOU",
+    "date": "10/08/2025",
+    "away_team": "UTA",
+    "home_team": "HOU",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500038",
+    "game_code": "20251008/BOSMEM",
+    "date": "10/08/2025",
+    "away_team": "BOS",
+    "home_team": "MEM",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500039",
+    "game_code": "20251009/MINNYK",
+    "date": "10/09/2025",
+    "away_team": "MIN",
+    "home_team": "NYK",
+    "status": "Final/OT",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500040",
+    "game_code": "20251009/CLECHI",
+    "date": "10/09/2025",
+    "away_team": "CLE",
+    "home_team": "CHI",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500041",
+    "game_code": "20251009/DETMIL",
+    "date": "10/09/2025",
+    "away_team": "DET",
+    "home_team": "MIL",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500042",
+    "game_code": "20251009/CHAOKC",
+    "date": "10/09/2025",
+    "away_team": "CHA",
+    "home_team": "OKC",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500043",
+    "game_code": "20251009/GUALAC",
+    "date": "10/09/2025",
+    "away_team": "GUA",
+    "home_team": "LAC",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500012",
+    "game_code": "20251010/PHXBKN",
+    "date": "10/10/2025",
+    "away_team": "PHX",
+    "home_team": "BKN",
+    "status": "Final/OT",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500017",
+    "game_code": "20251010/SACPOR",
+    "date": "10/10/2025",
+    "away_team": "SAC",
+    "home_team": "POR",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500044",
+    "game_code": "20251010/BOSTOR",
+    "date": "10/10/2025",
+    "away_team": "BOS",
+    "home_team": "TOR",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500045",
+    "game_code": "20251010/UTASAS",
+    "date": "10/10/2025",
+    "away_team": "UTA",
+    "home_team": "SAS",
+    "status": "Final/OT",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500070",
+    "game_code": "20251010/ORLPHI",
+    "date": "10/10/2025",
+    "away_team": "ORL",
+    "home_team": "PHI",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500018",
+    "game_code": "20251011/ATLMEM",
+    "date": "10/11/2025",
+    "away_team": "ATL",
+    "home_team": "MEM",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500046",
+    "game_code": "20251011/OKCIND",
+    "date": "10/11/2025",
+    "away_team": "OKC",
+    "home_team": "IND",
+    "status": "Final",
+    "label": "Preseason"
+  },
+  {
+    "game_id": "0012500047",
+    "game_code": "20251011/CHADAL",
+    "date": "10/11/2025",
+    "away_team": "CHA",
+    "home_team": "DAL",
+    "status": "Final",
+    "label": "Preseason"
+  }
+]

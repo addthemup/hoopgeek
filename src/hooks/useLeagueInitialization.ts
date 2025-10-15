@@ -41,7 +41,7 @@ export function useCreateLeague() {
       console.log('📝 League data to insert:', leagueData)
       
       const { data: league, error: leagueError } = await supabase
-        .from('leagues')
+        .from('fantasy_leagues')
         .insert(leagueData)
         .select()
         .single()
@@ -89,7 +89,7 @@ export function useCreateLeague() {
       // Step 4: Create league member record for commissioner
       console.log('👤 Creating commissioner league member record...')
       const { error: memberError } = await supabase
-        .from('league_members')
+        .from('fantasy_teams')
         .insert({
           league_id: league.id,
           user_id: settings.commissioner_id,
@@ -256,18 +256,13 @@ export function getDefaultLeagueSettings(commissionerId: string): LeagueSettings
     draft_type: 'snake',
     draft_rounds: 15,
     roster_positions: {
-      PG: 1,
-      SG: 1,
-      SF: 1,
-      PF: 1,
+      G: 2,
+      F: 2,
       C: 1,
-      G: 1,
-      F: 1,
-      UTIL: 1,
-      BENCH: 3,
-      IR: 1,
+      UTIL: 3,
     },
-    scoring_type: 'H2H_Points',
+    scoring_type: 'H2H_Weekly',
+    fantasy_scoring_format: 'FanDuel',
     scoring_categories: {
       points: 1,
       rebounds: 1,
@@ -298,6 +293,11 @@ export function getDefaultLeagueSettings(commissionerId: string): LeagueSettings
     rotation_multiplier: 0.75,
     bench_count: 3,
     bench_multiplier: 0.5,
+    position_unit_assignments: {
+      starters: {},
+      rotation: {},
+      bench: {}
+    },
     public_league: false,
     allow_duplicate_players: false,
     lineup_deadline: 'daily',

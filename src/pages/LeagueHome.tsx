@@ -106,34 +106,44 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
     queryFn: async () => {
       if (!teams || teams.length === 0) return {};
 
+      console.log('💰 Fetching salary cap data for teams:', teams.map(t => ({ id: t.id, name: t.team_name })));
+
       const salaryData: Record<string, number> = {};
 
       // Fetch salary data for all teams in parallel
       const promises = teams.map(async (team) => {
         try {
+          // Only fetch roster spots that have actual players assigned
           const { data: rosterData, error } = await supabase
-            .from('fantasy_team_players')
+            .from('fantasy_roster_spots')
             .select(`
+              player_id,
               player:player_id (
                 salary_2025_26
               )
             `)
-            .eq('fantasy_team_id', team.id);
+            .eq('fantasy_team_id', team.id)
+            .not('player_id', 'is', null); // Only include spots with actual players
 
           if (error) {
-            console.error(`Error fetching roster for team ${team.id}:`, error);
+            console.error(`❌ Error fetching roster for team ${team.id}:`, error);
             return { teamId: team.id, salary: 0 };
           }
+
+          console.log(`📊 Team ${team.team_name} roster data:`, rosterData);
 
           const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
             const player = rosterSpot.player as any; // Type assertion for player
             const playerSalary = player?.salary_2025_26 || 0;
+            console.log(`  Player salary: ${playerSalary}`);
             return sum + playerSalary;
           }, 0) || 0;
 
+          console.log(`💰 Team ${team.team_name} total salary: $${(totalSalary / 1000000).toFixed(1)}M`);
+
           return { teamId: team.id, salary: totalSalary };
         } catch (error) {
-          console.error(`Error calculating salary for team ${team.id}:`, error);
+          console.error(`❌ Error calculating salary for team ${team.id}:`, error);
           return { teamId: team.id, salary: 0 };
         }
       });
@@ -144,6 +154,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
         salaryData[teamId] = salary;
       });
 
+      console.log('💰 Final salary data:', salaryData);
       return salaryData;
     },
     enabled: !!teams && teams.length > 0,
@@ -155,7 +166,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
     queryKey: ['recent-trades', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_trade_offers')
+        .from('fantasy_draft_trade_offers')
         .select(`
           id,
           created_at,
@@ -187,7 +198,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
       let playersMap: Record<number, any> = {};
       if (allPlayerIds.size > 0) {
         const { data: playersData, error: playersError } = await supabase
-          .from('players')
+          .from('nba_players')
           .select('id, name, position, team_abbreviation, nba_player_id, salary_2025_26')
           .in('id', Array.from(allPlayerIds));
 
@@ -208,7 +219,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
       let picksMap: Record<number, any> = {};
       if (allPickNumbers.size > 0) {
         const { data: picksData, error: picksError } = await supabase
-          .from('draft_order')
+          .from('fantasy_draft_order')
           .select('pick_number, round, team_position')
           .eq('league_id', leagueId)
           .in('pick_number', Array.from(allPickNumbers));
@@ -360,10 +371,10 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
           </Avatar>
           <Box sx={{ flex: 1 }}>
             <Typography level="h2" sx={{ fontWeight: 'bold', mb: 1 }}>
-              {league.name}
+              {league.name || 'Unnamed League'}
             </Typography>
             <Typography level="body-md" sx={{ opacity: 0.9 }}>
-              {league.description}
+              {league.description || 'No description available'}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -397,7 +408,12 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
           </Grid>
           <Grid xs={12} sm={6} md={2.4}>
             <Box sx={{ textAlign: 'center' }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold' }}>${(league.salary_cap_amount || 100000000) / 1000000}M</Typography>
+              <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                {league.salary_cap_enabled 
+                  ? `$${(league.salary_cap_amount || 200000000) / 1000000}M`
+                  : 'Disabled'
+                }
+              </Typography>
               <Typography level="body-sm" sx={{ opacity: 0.8 }}>Salary Cap</Typography>
             </Box>
           </Grid>
@@ -990,8 +1006,13 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                   
                   <Box sx={{ mb: 2 }}>
                     <Typography level="body-sm" color="neutral" sx={{ mb: 1 }}>
-                      League Cap: ${(league.salary_cap_amount || 100000000) / 1000000}M
+                      League Cap: ${(league.salary_cap_amount || 200000000) / 1000000}M
                     </Typography>
+                    {teamSalaryData && Object.keys(teamSalaryData).length > 0 && (
+                      <Typography level="body-xs" color="neutral">
+                        {Object.keys(teamSalaryData).length} teams with salary data
+                      </Typography>
+                    )}
                   </Box>
                   
                   <Table size="sm" hoverRow>
@@ -1012,7 +1033,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                             return bSalary - aSalary; // Sort by salary used (highest first)
                           })
                           .map((team) => {
-                            const salaryCapMax = league.salary_cap_amount || 100000000;
+                            const salaryCapMax = league.salary_cap_amount || 200000000;
                             const used = teamSalaryData?.[team.id] || 0;
                             const available = salaryCapMax - used;
                             const percentUsed = (used / salaryCapMax) * 100;

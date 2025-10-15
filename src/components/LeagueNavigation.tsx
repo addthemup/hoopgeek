@@ -41,6 +41,14 @@ interface LeagueNavigationProps {
 
 export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false, defaultTab = 0, onTabChange }: LeagueNavigationProps) {
   const [activeTab, setActiveTab] = useState(defaultTab)
+  
+  // Debug logging for navigation props
+  console.log('LeagueNavigation: Props debug:', {
+    leagueId,
+    isCommissioner,
+    userHasTeam,
+    defaultTab
+  });
 
   const tabs = [
     {
@@ -130,6 +138,14 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
               }
             ] : [])
   ]
+  
+  // Debug logging for tabs
+  console.log('LeagueNavigation: Generated tabs:', {
+    totalTabs: tabs.length,
+    tabIds: tabs.map(t => t.id),
+    commissionerTabs: tabs.filter(t => t.id === 'settings' || t.id === 'commissioner'),
+    isCommissioner
+  });
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue)

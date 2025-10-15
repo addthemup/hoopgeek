@@ -26,7 +26,6 @@ import { useTeams } from '../../hooks/useTeams';
 import { useJoinDraftLobby, useUpdateLobbyStatus } from '../../hooks/useDraftLobby';
 import { useNextPick } from '../../hooks/useNextPick';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
-import PostDraftModal from '../PostDraftModal';
 import { supabase } from '../../utils/supabase';
 
 export default function DraftComponent() {
@@ -42,7 +41,6 @@ export default function DraftComponent() {
   const [timeUntilDraft, setTimeUntilDraft] = useState<string>('');
   const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
-  const [showPostDraftModal, setShowPostDraftModal] = useState(false);
   const [tradeContext, setTradeContext] = useState<{
     teamId: string;
     teamName: string;
@@ -150,19 +148,17 @@ export default function DraftComponent() {
     if (!draftStartTime) return false;
     return new Date() >= draftStartTime;
   }, [draftStartTime]);
+
+  const isDraftComplete = useMemo(() => {
+    // Check if all picks are completed
+    return currentPickInfo.currentPick > currentPickInfo.totalPicks;
+  }, [currentPickInfo.currentPick, currentPickInfo.totalPicks]);
   
-  // Determine if we should show the carousel (within 1 hour of draft or draft started)
-  const shouldShowCarousel = useMemo(() => {
-    if (!draftStartTime) return false;
-    
-    const now = new Date();
-    const timeDiff = draftStartTime.getTime() - now.getTime();
-    const hoursUntilDraft = timeDiff / (1000 * 60 * 60);
-    
-    return hoursUntilDraft <= 1 || isDraftStarted;
-  }, [draftStartTime, isDraftStarted]);
+  // Always show carousel
+  const shouldShowCarousel = true;
 
   // Poll draft-manager edge function every 10 seconds when draft is active
+  // TODO: Remove this once cron job is properly configured
   useEffect(() => {
     // Only poll if draft has started and is not in lobby
     if (!isDraftStarted || isLobbyOpen || !leagueId) {
@@ -258,14 +254,7 @@ export default function DraftComponent() {
 
   // Check if draft is complete (no more picks available)
   useEffect(() => {
-    if (nextPick === null && leagueId) {
-      // Draft is complete, show modal after a short delay
-      const timer = setTimeout(() => {
-        setShowPostDraftModal(true);
-      }, 2000);
-      
-      return () => clearTimeout(timer);
-    }
+    // Draft completion is now handled by the header status
   }, [nextPick, leagueId]);
 
   if (leagueLoading) {
@@ -330,41 +319,77 @@ export default function DraftComponent() {
       pb: '100px', // Space for fixed bottom nav
       bgcolor: 'background.body'
     }}>
-      {/* Draft Header - Only show when draft is more than 1 hour away */}
-      {!shouldShowCarousel && (
-        <Card variant="outlined" sx={{ mb: 2, borderRadius: 0 }}>
-          <CardContent sx={{ textAlign: 'center', py: 2 }}>
-            <Typography level="h4" sx={{ fontWeight: 'bold', mb: 1 }}>
-              🏀 {league.name} Draft
+      {/* Compact Draft Status Bar - Always visible */}
+      <Box 
+        sx={{ 
+          position: 'sticky',
+          top: 0,
+          zIndex: 1000,
+          bgcolor: 'background.surface',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          py: 1,
+          px: 2,
+          mb: 2
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '100%' }}>
+          {/* Left: League name and draft info */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, minWidth: 0, flex: 1 }}>
+            <Typography level="title-sm" sx={{ fontWeight: 'bold', color: 'primary.600' }}>
+              🏀 {league.name}
             </Typography>
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mb: 1 }}>
-              <Typography level="body-sm" color="neutral">
-                Round {currentPickInfo.currentRound} • Pick {currentPickInfo.currentPick} of {currentPickInfo.totalPicks} • {currentPickInfo.timeRemaining} remaining
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
-              <Typography level="body-sm" color="neutral">
-                {draftStartTime ? 'Draft starts in:' : 'Draft date:'}
-              </Typography>
-              <Chip 
-                color={draftStartTime ? "primary" : "warning"} 
-                variant="soft" 
-                size="sm"
-                sx={{ fontWeight: 'bold' }}
-              >
-                {draftStartTime ? timeUntilDraft : 'Not scheduled'}
-              </Chip>
-            </Box>
-            {draftStartTime && (
-              <Typography level="body-xs" color="neutral" sx={{ mt: 1 }}>
-                Scheduled for: {draftStartTime.toLocaleString()}
+            <Typography level="body-xs" color="neutral" sx={{ whiteSpace: 'nowrap' }}>
+              Round {currentPickInfo.currentRound} • Pick {currentPickInfo.currentPick} of {currentPickInfo.totalPicks}
+            </Typography>
+            {isDraftStarted && !isDraftComplete && (
+              <Typography level="body-xs" color="warning.600" sx={{ whiteSpace: 'nowrap' }}>
+                • {currentPickInfo.timeRemaining} remaining
               </Typography>
             )}
-          </CardContent>
-        </Card>
-      )}
+          </Box>
 
-      {/* Draft Picks Carousel - Show when within 1 hour of draft or draft started */}
+          {/* Right: Draft timing info */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            {draftStartTime ? (
+              <>
+                <Typography level="body-xs" color="neutral">
+                  {isDraftComplete ? 'Draft complete' : isDraftStarted ? 'Draft in progress' : 'Starts in:'}
+                </Typography>
+                <Chip 
+                  color={isDraftComplete ? "success" : isDraftStarted ? "success" : "primary"} 
+                  variant="soft" 
+                  size="sm"
+                  sx={{ 
+                    fontWeight: 'bold',
+                    fontSize: '0.75rem',
+                    height: '20px',
+                    px: 1
+                  }}
+                >
+                  {isDraftComplete ? 'COMPLETE' : isDraftStarted ? 'LIVE' : timeUntilDraft}
+                </Chip>
+              </>
+            ) : (
+              <Chip 
+                color="warning" 
+                variant="soft" 
+                size="sm"
+                sx={{ 
+                  fontWeight: 'bold',
+                  fontSize: '0.75rem',
+                  height: '20px',
+                  px: 1
+                }}
+              >
+                Not scheduled
+              </Chip>
+            )}
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Draft Picks Carousel - Always visible */}
       {shouldShowCarousel && (
         <Box sx={{ mb: 2 }}>
           <DraftPicksCarousel
@@ -391,12 +416,6 @@ export default function DraftComponent() {
         userTeamId={userTeam?.id}
       />
 
-      {/* Post-Draft Modal */}
-      <PostDraftModal
-        open={showPostDraftModal}
-        onClose={() => setShowPostDraftModal(false)}
-        leagueId={leagueId || ''}
-      />
     </Box>
   );
 }

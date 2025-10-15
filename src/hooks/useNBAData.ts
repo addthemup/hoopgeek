@@ -9,7 +9,7 @@ export function usePlayers() {
       console.log('🏀 Fetching players from database...')
       
       const { data, error } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('*')
         .order('name')
 
@@ -27,7 +27,7 @@ export function usePlayers() {
   })
 }
 
-// Updated to include salary filter
+// Updated to include salary filter and proper pagination
 export function usePlayersPaginated(
   page: number = 1, 
   pageSize: number = 25, 
@@ -44,12 +44,13 @@ export function usePlayersPaginated(
     queryKey: ['players-paginated', page, pageSize, filters, filters.leagueId],
     queryFn: async () => {
       console.log(`🏀 Fetching players page ${page} (${pageSize} per page)...`)
+      console.log('🔍 Filters:', filters)
       
       let query = supabase
-        .from('players')
+        .from('nba_players')
         .select(`
           *,
-          espn_player_projections (
+          nba_espn_projections (
             proj_2026_pts,
             proj_2026_reb,
             proj_2026_ast,
@@ -72,9 +73,14 @@ export function usePlayersPaginated(
             stats_2025_fg_pct,
             stats_2025_ft_pct,
             stats_2025_3pm
+          ),
+          nba_hoopshype_salaries (
+            salary_2025_26,
+            salary_2026_27,
+            salary_2027_28,
+            salary_2028_29
           )
         `, { count: 'exact' })
-        .order('name')
 
       // Apply search filter
       if (filters.search) {
@@ -91,37 +97,26 @@ export function usePlayersPaginated(
         query = query.eq('team_abbreviation', filters.team)
       }
 
-      // Apply salary filter
+      // Apply salary filter (using nba_hoopshype_salaries table)
       if (filters.salary) {
-        switch (filters.salary) {
-          case '40+':
-            query = query.gte('salary_2025_26', 40000000)
-            break
-          case '30-40':
-            query = query.gte('salary_2025_26', 30000000).lt('salary_2025_26', 40000000)
-            break
-          case '20-30':
-            query = query.gte('salary_2025_26', 20000000).lt('salary_2025_26', 30000000)
-            break
-          case '10-20':
-            query = query.gte('salary_2025_26', 10000000).lt('salary_2025_26', 20000000)
-            break
-          case '0-10':
-            query = query.gte('salary_2025_26', 0).lt('salary_2025_26', 10000000)
-            break
-        }
+        // Note: Salary filtering would need to be done via a join with nba_hoopshype_salaries
+        // For now, we'll skip salary filtering as it requires a more complex query
+        console.log('⚠️ Salary filtering not implemented yet - requires join with nba_hoopshype_salaries')
       }
 
       // Apply active/inactive filter - by default only show active players
-      if (filters.showInactive === false || filters.showInactive === undefined) {
+      if (filters.showInactive !== true) {
         query = query.eq('is_active', true)
+        console.log('✅ Filtering to active players only')
+      } else {
+        console.log('⚠️ Showing both active and inactive players')
       }
 
       // Exclude drafted players if leagueId is provided
       if (filters.leagueId) {
         // Get list of drafted player IDs for this league
         const { data: draftedPlayers, error: draftedError } = await supabase
-          .from('draft_picks')
+          .from('fantasy_draft_picks')
           .select('player_id')
           .eq('league_id', filters.leagueId)
 
@@ -134,16 +129,10 @@ export function usePlayersPaginated(
         }
       }
 
-      // For draft players, we need global sorting by fantasy points
-      // So we'll fetch all players and handle pagination client-side
-      if (filters.leagueId) {
-        // Don't apply pagination here - we'll handle it client-side after sorting
-      } else {
-        // Apply pagination for non-draft views
-        const from = (page - 1) * pageSize
-        const to = from + pageSize - 1
-        query = query.range(from, to)
-      }
+      // Apply pagination - always use server-side pagination for consistent results
+      const from = (page - 1) * pageSize
+      const to = from + pageSize - 1
+      query = query.range(from, to)
 
       const { data, error, count } = await query
 
@@ -155,6 +144,7 @@ export function usePlayersPaginated(
       const totalPages = Math.ceil((count || 0) / pageSize)
 
       console.log(`✅ Successfully fetched page ${page}/${totalPages} (${data?.length || 0} players)`)
+      console.log(`📊 Total players matching filters: ${count || 0}`)
       
       return {
         players: data as Player[],

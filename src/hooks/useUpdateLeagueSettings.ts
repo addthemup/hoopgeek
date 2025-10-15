@@ -11,7 +11,7 @@ export function useUpdateLeagueSettings() {
       
       // Update the league with the new settings
       const { data, error } = await supabase
-        .from('leagues')
+        .from('fantasy_leagues')
         .update(settings)
         .eq('id', leagueId)
         .select()

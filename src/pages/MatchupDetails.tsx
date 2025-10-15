@@ -96,7 +96,7 @@ export default function MatchupDetails() {
   const team2Colors = getTeamColors(matchup.team2.team_name);
 
   const renderJersey = (player: MatchupPlayer, colors: any) => {
-    return (
+  return (
       <Box
         sx={{
           display: 'flex',
@@ -132,7 +132,7 @@ export default function MatchupDetails() {
             }}
           >
             {player.jersey_number || '??'}
-          </Typography>
+            </Typography>
 
           {/* Position Badge */}
           <Box
@@ -160,7 +160,7 @@ export default function MatchupDetails() {
         {/* Player Name */}
         <Typography
           level="body-xs"
-          sx={{
+                    sx={{
             fontWeight: 'bold',
             textAlign: 'center',
             maxWidth: 70,
@@ -170,7 +170,7 @@ export default function MatchupDetails() {
           }}
         >
           {player.name.split(' ').pop()}
-        </Typography>
+                    </Typography>
       </Box>
     );
   };
@@ -180,7 +180,7 @@ export default function MatchupDetails() {
       <Box>
         <Typography level="h4" sx={{ mb: 2, fontWeight: 'bold', color: teamColors.primary }}>
           {teamName} Roster
-        </Typography>
+                    </Typography>
         <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'hidden' }}>
           <Table>
             <thead>
@@ -210,7 +210,7 @@ export default function MatchupDetails() {
                         </Typography>
                         <Typography level="body-xs" color="neutral">
                           #{player.jersey_number || '--'}
-                        </Typography>
+                      </Typography>
                       </Box>
                     </Stack>
                   </td>
@@ -251,7 +251,7 @@ export default function MatchupDetails() {
             </tbody>
           </Table>
         </Sheet>
-      </Box>
+                  </Box>
     );
   };
 
@@ -291,29 +291,29 @@ export default function MatchupDetails() {
                     <EmojiEvents sx={{ fontSize: 40, color: 'success.500' }} />
                   )}
                 </Stack>
-              </Stack>
-            </Grid>
+                </Stack>
+              </Grid>
 
-            {/* VS Section */}
-            <Grid xs={12} md={2}>
-              <Box sx={{ textAlign: 'center' }}>
+              {/* VS Section */}
+              <Grid xs={12} md={2}>
+                <Box sx={{ textAlign: 'center' }}>
                 <Chip color={getStatusColor(matchup.status)} variant="soft" size="sm" sx={{ mb: 1 }}>
                   {getStatusText(matchup.status)}
                 </Chip>
                 <Typography level="h2" sx={{ fontWeight: 'bold', color: 'neutral.500' }}>
-                  VS
-                </Typography>
+                    VS
+                  </Typography>
                 <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
                   {matchup.week_info.week_name}
-                </Typography>
+                  </Typography>
                 <Typography level="body-xs" color="neutral">
                   {formatDate(matchup.week_info.start_date)} - {formatDate(matchup.week_info.end_date)}
-                </Typography>
-              </Box>
-            </Grid>
+                  </Typography>
+                </Box>
+              </Grid>
 
             {/* Team 2 */}
-            <Grid xs={12} md={5}>
+              <Grid xs={12} md={5}>
               <Stack spacing={1} sx={{ textAlign: 'right' }}>
                 <Typography level="h3" sx={{ fontWeight: 'bold' }}>
                   {matchup.team2.team_name}
@@ -433,7 +433,7 @@ export default function MatchupDetails() {
                       {team2Starters.map((player) => renderJersey(player, team2Colors))}
                     </Box>
                   </Box>
-                </Box>
+      </Box>
 
                 {/* Vertical Divider */}
                 <Box sx={{ width: 2, bgcolor: 'white', opacity: 0.5 }} />
@@ -451,20 +451,20 @@ export default function MatchupDetails() {
                     }}
                   >
                     ROTATION
-                  </Typography>
+          </Typography>
 
                   {/* Team 1 Bench */}
                   <Box>
                     <Typography
                       level="body-sm"
-                      sx={{
+                  sx={{ 
                         fontWeight: 'bold',
                         color: team1Colors.primary,
                         textShadow: '1px 1px 2px rgba(255,255,255,0.8)',
                         mb: 1,
-                        textAlign: 'center',
-                      }}
-                    >
+                    textAlign: 'center',
+                  }}
+                >
                       {matchup.team1.team_name}
                     </Typography>
                     <Box
@@ -509,8 +509,8 @@ export default function MatchupDetails() {
                   </Box>
                 </Box>
               </Box>
-            </CardContent>
-          </Card>
+                  </CardContent>
+                </Card>
         </TabPanel>
 
         {/* Box Score Tab */}
@@ -525,17 +525,17 @@ export default function MatchupDetails() {
         {/* Matchup Stats Tab */}
         <TabPanel value={2}>
           <Grid container spacing={3} sx={{ mt: 2 }}>
-            <Grid xs={12} md={6}>
-              <Card variant="outlined">
-                <CardContent>
+        <Grid xs={12} md={6}>
+          <Card variant="outlined">
+            <CardContent>
                   <Typography level="h4" sx={{ mb: 2 }}>
                     {matchup.team1.team_name} Stats
-                  </Typography>
-                  <Stack spacing={2}>
-                    <Box>
+              </Typography>
+              <Stack spacing={2}>
+                        <Box>
                       <Typography level="body-sm" color="neutral">
                         Total Salary
-                      </Typography>
+                          </Typography>
                       <Typography level="h4">
                         $
                         {(
@@ -543,8 +543,8 @@ export default function MatchupDetails() {
                           1000000
                         ).toFixed(1)}
                         M
-                      </Typography>
-                    </Box>
+                          </Typography>
+                        </Box>
                     <Box>
                       <Typography level="body-sm" color="neutral">
                         Players Active
@@ -554,27 +554,27 @@ export default function MatchupDetails() {
                     <Box>
                       <Typography level="body-sm" color="neutral">
                         Record
-                      </Typography>
+                          </Typography>
                       <Typography level="h4">
                         {matchup.team1.wins}-{matchup.team1.losses}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </CardContent>
-              </Card>
-            </Grid>
+                          </Typography>
+                        </Box>
+              </Stack>
+            </CardContent>
+          </Card>
+        </Grid>
 
-            <Grid xs={12} md={6}>
-              <Card variant="outlined">
-                <CardContent>
+        <Grid xs={12} md={6}>
+          <Card variant="outlined">
+            <CardContent>
                   <Typography level="h4" sx={{ mb: 2 }}>
                     {matchup.team2.team_name} Stats
-                  </Typography>
-                  <Stack spacing={2}>
-                    <Box>
+              </Typography>
+              <Stack spacing={2}>
+                        <Box>
                       <Typography level="body-sm" color="neutral">
                         Total Salary
-                      </Typography>
+                          </Typography>
                       <Typography level="h4">
                         $
                         {(
@@ -582,8 +582,8 @@ export default function MatchupDetails() {
                           1000000
                         ).toFixed(1)}
                         M
-                      </Typography>
-                    </Box>
+                          </Typography>
+                        </Box>
                     <Box>
                       <Typography level="body-sm" color="neutral">
                         Players Active
@@ -593,14 +593,14 @@ export default function MatchupDetails() {
                     <Box>
                       <Typography level="body-sm" color="neutral">
                         Record
-                      </Typography>
+                          </Typography>
                       <Typography level="h4">
                         {matchup.team2.wins}-{matchup.team2.losses}
-                      </Typography>
-                    </Box>
-                  </Stack>
-                </CardContent>
-              </Card>
+                          </Typography>
+                        </Box>
+              </Stack>
+            </CardContent>
+          </Card>
             </Grid>
           </Grid>
         </TabPanel>

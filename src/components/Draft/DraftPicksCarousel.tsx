@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -25,7 +25,6 @@ import { getTeamColors } from '../../utils/nbaTeamColors';
 interface DraftPicksCarouselProps {
   leagueId: string;
   currentPickNumber: number;
-  timeRemaining?: string;
   isDraftStarted: boolean;
   isCommissioner?: boolean;
   onInitiateTrade: (pick: any) => void;
@@ -34,7 +33,6 @@ interface DraftPicksCarouselProps {
 export default function DraftPicksCarousel({ 
   leagueId, 
   currentPickNumber, 
-  timeRemaining,
   isDraftStarted,
   isCommissioner = false,
   onInitiateTrade
@@ -43,7 +41,10 @@ export default function DraftPicksCarousel({
   const [scrollPosition, setScrollPosition] = useState(0);
   const [countdown, setCountdown] = useState<number | null>(null);
   const [togglingAutodraft, setTogglingAutodraft] = useState<string | null>(null);
+  const [isIdle, setIsIdle] = useState(false);
+  const [userInteracting, setUserInteracting] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
+  const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const cardWidth = 180; // Width of each card (compact size)
   const visibleCards = 4; // Number of cards visible at once
 
@@ -73,10 +74,29 @@ export default function DraftPicksCarousel({
     return ((pickNumber - 1) % numberOfTeams) + 1;
   };
 
-  const scrollToPick = (pickIndex: number) => {
+  const scrollToPick = (pickIndex: number, center = false) => {
     if (!carouselRef.current) return;
     
-    const newPosition = pickIndex * cardWidth;
+    let newPosition;
+    if (center) {
+      // Center the pick in the viewport
+      const containerWidth = carouselRef.current.clientWidth;
+      const gap = 16; // 2 * 8px gap between cards (gap: 2 in sx)
+      const padding = 8; // px: 1 in sx = 8px
+      
+      // Calculate the position of the card's center
+      const cardLeft = padding + (pickIndex * (cardWidth + gap));
+      const cardCenter = cardLeft + (cardWidth / 2);
+      
+      // Center the card in the viewport
+      newPosition = Math.max(0, cardCenter - (containerWidth / 2));
+    } else {
+      // Position at the left edge (original behavior)
+      const gap = 16; // 2 * 8px gap between cards
+      const padding = 8; // px: 1 in sx = 8px
+      newPosition = padding + (pickIndex * (cardWidth + gap));
+    }
+    
     carouselRef.current.scrollTo({
       left: newPosition,
       behavior: 'smooth'
@@ -86,7 +106,10 @@ export default function DraftPicksCarousel({
 
   const scrollLeft = () => {
     if (!carouselRef.current) return;
-    const newPosition = Math.max(0, scrollPosition - cardWidth);
+    setUserInteracting(true);
+    resetIdleTimer();
+    const gap = 16; // 2 * 8px gap between cards
+    const newPosition = Math.max(0, scrollPosition - (cardWidth + gap));
     carouselRef.current.scrollTo({
       left: newPosition,
       behavior: 'smooth'
@@ -96,8 +119,11 @@ export default function DraftPicksCarousel({
 
   const scrollRight = () => {
     if (!carouselRef.current) return;
-    const maxScroll = Math.max(0, (visiblePicks.length - visibleCards) * cardWidth);
-    const newPosition = Math.min(maxScroll, scrollPosition + cardWidth);
+    setUserInteracting(true);
+    resetIdleTimer();
+    const gap = 16; // 2 * 8px gap between cards
+    const maxScroll = Math.max(0, (visiblePicks.length - visibleCards) * (cardWidth + gap));
+    const newPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
     carouselRef.current.scrollTo({
       left: newPosition,
       behavior: 'smooth'
@@ -105,25 +131,68 @@ export default function DraftPicksCarousel({
     setScrollPosition(newPosition);
   };
 
+  // Idle detection functions
+  const resetIdleTimer = () => {
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+    }
+    
+    setIsIdle(false);
+    setUserInteracting(true);
+    
+    // Set new timeout for 15 seconds
+    idleTimeoutRef.current = setTimeout(() => {
+      setIsIdle(true);
+      setUserInteracting(false);
+    }, 15000);
+  };
+
+  const handleUserInteraction = () => {
+    setUserInteracting(true);
+    resetIdleTimer();
+  };
+
   // Handle scroll events to update position
   const handleScroll = () => {
     if (carouselRef.current) {
       setScrollPosition(carouselRef.current.scrollLeft);
+      handleUserInteraction();
     }
   };
 
-  // Auto-scroll to current pick when it changes - position it at the far left
+  // Auto-scroll to current pick when it changes
   useEffect(() => {
     if (currentPickIndex >= 0 && carouselRef.current) {
-      // Position current pick at the far left of the viewport
-      const newPosition = currentPickIndex * cardWidth;
-      carouselRef.current.scrollTo({
-        left: newPosition,
-        behavior: 'smooth'
-      });
-      setScrollPosition(newPosition);
+      // If user is idle, center the current pick; otherwise position at left edge
+      scrollToPick(currentPickIndex, isIdle);
     }
-  }, [currentPickNumber, currentPickIndex]);
+  }, [currentPickNumber, currentPickIndex, isIdle]);
+
+  // Auto-center when entering idle state
+  useEffect(() => {
+    if (isIdle && currentPickIndex >= 0 && carouselRef.current) {
+      scrollToPick(currentPickIndex, true);
+    }
+  }, [isIdle, currentPickIndex]);
+
+  // Initialize idle timer on mount
+  useEffect(() => {
+    resetIdleTimer();
+    
+    // Cleanup on unmount
+    return () => {
+      if (idleTimeoutRef.current) {
+        clearTimeout(idleTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Reset idle timer when draft starts
+  useEffect(() => {
+    if (isDraftStarted) {
+      resetIdleTimer();
+    }
+  }, [isDraftStarted]);
 
   // Format seconds to "M:SS" format
   const formatTime = (totalSeconds: number): string => {
@@ -184,19 +253,6 @@ export default function DraftPicksCarousel({
     return position;
   };
 
-  const getPositionColor = (position: string) => {
-    const shortPos = shortenPosition(position);
-    switch (shortPos) {
-      case 'G':
-      case 'PG': return 'primary';
-      case 'SG': return 'success';
-      case 'F':
-      case 'SF': return 'warning';
-      case 'PF': return 'danger';
-      case 'C': return 'neutral';
-      default: return 'neutral';
-    }
-  };
 
   // Toggle autodraft for a team (commissioner only)
   const handleToggleAutodraft = async (pick: any, currentAutodraftStatus: boolean) => {
@@ -249,6 +305,33 @@ export default function DraftPicksCarousel({
 
   return (
     <Box sx={{ position: 'relative', width: '100%' }}>
+      {/* Idle State Indicator */}
+      {isIdle && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: -8,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 3,
+            bgcolor: 'primary.500',
+            color: 'white',
+            px: 2,
+            py: 0.5,
+            borderRadius: 'md',
+            fontSize: '0.75rem',
+            fontWeight: 'bold',
+            animation: 'fadeInOut 2s ease-in-out infinite',
+            '@keyframes fadeInOut': {
+              '0%, 100%': { opacity: 0.7 },
+              '50%': { opacity: 1 }
+            }
+          }}
+        >
+          🎯 Auto-Centered
+        </Box>
+      )}
+
       {/* Navigation Buttons */}
       <IconButton
         variant="outlined"
@@ -273,7 +356,7 @@ export default function DraftPicksCarousel({
         variant="outlined"
         size="sm"
         onClick={scrollRight}
-        disabled={scrollPosition >= (visiblePicks.length - visibleCards) * cardWidth}
+        disabled={scrollPosition >= (visiblePicks.length - visibleCards) * (cardWidth + 16)}
         sx={{
           position: 'absolute',
           right: -20,
@@ -292,6 +375,10 @@ export default function DraftPicksCarousel({
       <Box
         ref={carouselRef}
         onScroll={handleScroll}
+        onMouseMove={handleUserInteraction}
+        onTouchStart={handleUserInteraction}
+        onTouchMove={handleUserInteraction}
+        onMouseEnter={handleUserInteraction}
         sx={{
           display: 'flex',
           gap: 2,
@@ -303,7 +390,11 @@ export default function DraftPicksCarousel({
             display: 'none'
           },
           px: 1,
-          py: 2
+          py: 2,
+          cursor: userInteracting ? 'grab' : 'default',
+          '&:active': {
+            cursor: 'grabbing'
+          }
         }}
       >
         {visiblePicks.map((pick) => {
@@ -322,20 +413,25 @@ export default function DraftPicksCarousel({
                   minHeight: 65,
                   maxHeight: 65,
                   border: isCurrentPick ? '2px solid' : '1px solid',
-                  borderColor: isCurrentPick ? 'warning.500' : status === 'forfeited' ? 'danger.500' : 'divider',
+                  borderColor: isCurrentPick ? (isIdle ? 'primary.500' : 'warning.500') : status === 'forfeited' ? 'danger.500' : 'divider',
                   bgcolor: status === 'completed' 
                     ? 'success.50' 
                     : status === 'forfeited'
                       ? 'danger.50'
                       : status === 'current' 
-                        ? 'warning.50' 
+                        ? (isIdle ? 'primary.50' : 'warning.50')
                         : 'background.body',
                   opacity: status === 'forfeited' ? 0.7 : 1,
-                  animation: isCurrentPick && isDraftStarted ? 'pulse 2s infinite' : 'none',
+                  animation: isCurrentPick && isDraftStarted ? (isIdle ? 'idlePulse 3s infinite' : 'pulse 2s infinite') : 'none',
                   '@keyframes pulse': {
                     '0%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0.7)' },
                     '70%': { boxShadow: '0 0 0 10px rgba(251, 191, 36, 0)' },
                     '100%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0)' }
+                  },
+                  '@keyframes idlePulse': {
+                    '0%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0.7)' },
+                    '50%': { boxShadow: '0 0 0 8px rgba(25, 118, 210, 0.3)' },
+                    '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
                   }
                 }}
               >
@@ -523,7 +619,11 @@ export default function DraftPicksCarousel({
                     size="sm"
                     variant="soft"
                     color={pick.autodraft_enabled ? 'success' : 'neutral'}
-                    onClick={() => handleToggleAutodraft(pick, pick.autodraft_enabled || false)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleUserInteraction();
+                      handleToggleAutodraft(pick, pick.autodraft_enabled || false);
+                    }}
                     loading={togglingAutodraft === pick.team_id}
                     disabled={togglingAutodraft === pick.team_id}
                     sx={{ 
@@ -543,7 +643,11 @@ export default function DraftPicksCarousel({
                   size="sm"
                   variant="soft"
                   color="primary"
-                  onClick={() => onInitiateTrade(pick)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUserInteraction();
+                    onInitiateTrade(pick);
+                  }}
                   sx={{ 
                     minWidth: 24,
                     minHeight: 24,

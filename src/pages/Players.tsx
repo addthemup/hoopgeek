@@ -29,13 +29,14 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { usePlayersPaginated } from '../hooks/useNBAData';
-// import { useTeams } from '../hooks/useTeams';
+import { useTeams } from '../hooks/useTeams';
 import { useAddPlayerToRoster } from '../hooks/useRosterManagement';
 import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
 import { usePlayerUpcomingGames } from '../hooks/usePlayerUpcomingGames';
+import { usePlayerRosterStatus } from '../hooks/usePlayerRosterStatus';
 import { Player as DatabasePlayer } from '../types';
 import PlayerActionButtons from '../components/PlayerActionButtons';
-import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday } from '@mui/icons-material';
+import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday, PersonRemove, SwapHoriz } from '@mui/icons-material';
 
 interface Player {
   id: string;
@@ -65,6 +66,84 @@ interface PlayersProps {
   leagueId: string;
 }
 
+// Component for player action buttons based on roster status
+const PlayerActionButton = ({ 
+  playerId, 
+  playerName, 
+  leagueId, 
+  userTeamId, 
+  onAddToRoster, 
+  addPlayerMutation 
+}: {
+  playerId: string;
+  playerName: string;
+  leagueId: string;
+  userTeamId?: string;
+  onAddToRoster: (playerId: string, playerName: string) => void;
+  addPlayerMutation: any;
+}) => {
+  const { data: rosterStatus, isLoading } = usePlayerRosterStatus(playerId, leagueId, userTeamId);
+
+  if (isLoading) {
+    return (
+      <Button size="sm" variant="outlined" disabled>
+        Loading...
+      </Button>
+    );
+  }
+
+  if (!rosterStatus?.isOnRoster) {
+    return (
+      <Button
+        size="sm"
+        variant="outlined"
+        startDecorator={<Add />}
+        onClick={(e) => {
+          e.stopPropagation();
+          onAddToRoster(playerId, playerName);
+        }}
+        loading={addPlayerMutation.isPending}
+      >
+        Add
+      </Button>
+    );
+  }
+
+  if (rosterStatus.isOnUserTeam) {
+    return (
+      <Button
+        size="sm"
+        variant="outlined"
+        color="danger"
+        startDecorator={<PersonRemove />}
+        onClick={(e) => {
+          e.stopPropagation();
+          // TODO: Implement cut player functionality
+          console.log('Cut player:', playerId);
+        }}
+      >
+        Cut
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      size="sm"
+      variant="outlined"
+      color="warning"
+      startDecorator={<SwapHoriz />}
+      onClick={(e) => {
+        e.stopPropagation();
+        // TODO: Implement trade player functionality
+        console.log('Trade player:', playerId, 'from team:', rosterStatus.teamName);
+      }}
+    >
+      Trade
+    </Button>
+  );
+};
+
 // Memoized PlayersTable component to prevent unnecessary re-renders
 const PlayersTable = memo(({ 
   players, 
@@ -73,7 +152,9 @@ const PlayersTable = memo(({
   onPlayerClick, 
   onAddToRoster,
   paginatedData,
-  addPlayerMutation
+  addPlayerMutation,
+  leagueId,
+  userTeamId
 }: {
   players: Player[];
   playersLoading: boolean;
@@ -82,6 +163,8 @@ const PlayersTable = memo(({
   onAddToRoster: (playerId: string, playerName: string) => void;
   paginatedData: any;
   addPlayerMutation: any;
+  leagueId: string;
+  userTeamId?: string;
 }) => {
   if (playersLoading) {
     return (
@@ -202,18 +285,14 @@ const PlayersTable = memo(({
                     </Typography>
                   </td>
                   <td>
-                    <Button
-                      size="sm"
-                      variant="outlined"
-                      startDecorator={<Add />}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onAddToRoster(player.id, player.name);
-                      }}
-                      loading={addPlayerMutation.isPending}
-                    >
-                      Add
-                    </Button>
+                    <PlayerActionButton
+                      playerId={player.id}
+                      playerName={player.name}
+                      leagueId={leagueId}
+                      userTeamId={userTeamId}
+                      onAddToRoster={onAddToRoster}
+                      addPlayerMutation={addPlayerMutation}
+                    />
                   </td>
                 </tr>
               ))}
@@ -229,8 +308,11 @@ const PlayersTable = memo(({
 export default function Players({ leagueId }: PlayersProps) {
   const { user } = useAuth();
   const { data: league, isLoading: leagueLoading, error: leagueError } = useLeague(leagueId);
-  // const { data: teams } = useTeams(leagueId || '');
+  const { data: teams } = useTeams(leagueId || '');
   const addPlayerMutation = useAddPlayerToRoster();
+  
+  // Find the user's team in this league
+  const userTeam = teams?.find(team => team.user_id === user?.id);
   
   const [activeTab, setActiveTab] = useState(0);
   const [compareMode, setCompareMode] = useState(false);
@@ -302,6 +384,8 @@ export default function Players({ leagueId }: PlayersProps) {
   }, [paginatedData?.players]);
 
   const handleAddPlayer = async (playerId: string, playerName: string) => {
+    console.log('🔍 handleAddPlayer called with:', { playerId, playerName, userTeam: userTeam?.id });
+    
     if (!user) {
       setSnackbarMessage('Please sign in to add players');
       setSnackbarColor('danger');
@@ -309,10 +393,27 @@ export default function Players({ leagueId }: PlayersProps) {
       return;
     }
 
+    if (!userTeam) {
+      setSnackbarMessage('You need to join a team in this league first');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    console.log('🔍 Using player ID:', playerId);
+    
+    if (!playerId || playerId.trim() === '') {
+      console.error('❌ Invalid player ID:', playerId);
+      setSnackbarMessage(`Invalid player ID: ${playerId}`);
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
     try {
       await addPlayerMutation.mutateAsync({
-        playerId: parseInt(playerId),
-        fantasyTeamId: 'temp-team-id', // This should be the user's team ID
+        playerId: playerId,
+        fantasyTeamId: userTeam.id, // Use the actual user's team ID
       });
       setSnackbarMessage(`Added ${playerName} to your roster!`);
       setSnackbarColor('success');
@@ -523,6 +624,8 @@ export default function Players({ leagueId }: PlayersProps) {
             onAddToRoster={handleAddPlayer}
             paginatedData={paginatedData}
             addPlayerMutation={addPlayerMutation}
+            leagueId={leagueId}
+            userTeamId={userTeam?.id}
           />
 
           {/* Pagination */}

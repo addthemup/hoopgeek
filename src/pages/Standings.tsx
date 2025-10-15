@@ -145,7 +145,7 @@ export default function Standings({ leagueId }: StandingsProps) {
             Standings
           </Typography>
           <Typography level="h4" sx={{ color: 'text.secondary' }}>
-            {league.name}
+            {league.name || 'Unnamed League'}
           </Typography>
         </Box>
         

@@ -2,11 +2,11 @@ import React from 'react';
 import { Box, Typography, Card, CardContent, Avatar } from '@mui/joy';
 import { getTeamColors } from '../utils/nbaTeamColors';
 
-interface Player {
-  id: number;
+interface CourtPlayer {
+  id: string;
   name: string;
   position: string;
-  jersey_number?: number | string;
+  jersey_number?: string;
   team_abbreviation: string;
 }
 
@@ -14,14 +14,14 @@ interface BasketballCourtMatchupProps {
   homeTeam: {
     name: string;
     abbreviation: string;
-    starters: Player[];
-    bench: Player[];
+    starters: CourtPlayer[];
+    bench: CourtPlayer[];
   };
   awayTeam: {
     name: string;
     abbreviation: string;
-    starters: Player[];
-    bench: Player[];
+    starters: CourtPlayer[];
+    bench: CourtPlayer[];
   };
   weekNumber: number;
 }
@@ -35,7 +35,7 @@ export default function BasketballCourtMatchup({
   const homeColors = getTeamColors(homeTeam.abbreviation);
   const awayColors = getTeamColors(awayTeam.abbreviation);
 
-  const renderJersey = (player: Player, colors: any, side: 'home' | 'away') => {
+  const renderJersey = (player: CourtPlayer, colors: any, side: 'home' | 'away') => {
     return (
       <Box
         sx={{

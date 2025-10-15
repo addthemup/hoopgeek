@@ -61,10 +61,10 @@ export function useMatchupDetails(matchupId: string) {
 
       // Fetch the matchup
       const { data: matchup, error: matchupError } = await supabase
-        .from('weekly_matchups')
+        .from('fantasy_matchups')
         .select(`
           id,
-          week_number,
+          fantasy_week,
           matchup_date,
           status,
           season_type,
@@ -90,7 +90,7 @@ export function useMatchupDetails(matchupId: string) {
         .from('fantasy_season_weeks')
         .select('week_name, start_date, end_date')
         .eq('season_year', matchup.season_year)
-        .eq('week_number', matchup.week_number)
+        .eq('fantasy_week', matchup.fantasy_week)
         .single();
 
       // Fetch team1 roster

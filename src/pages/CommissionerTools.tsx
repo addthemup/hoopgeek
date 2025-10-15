@@ -11,6 +11,7 @@ import {
   Alert,
 } from '@mui/joy';
 import { useLeague } from '../hooks/useLeagues';
+import { useAuth } from '../hooks/useAuth';
 import {
   People,
   Settings,
@@ -129,7 +130,7 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
       title: 'Edit Roster Settings',
       description: 'Edit the positional makeup of rosters in your league.',
       icon: <SportsBasketball />,
-      action: () => console.log('Edit roster settings'),
+      action: () => navigate(`/league/${leagueId}/roster-settings`),
       color: 'primary' as const,
     },
     {
@@ -261,8 +262,22 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
     );
   }
 
-  // Check if user is commissioner (mock check - in production this would be from league data)
-  const isCommissioner = true; // This would be: league.commissioner_id === user?.id
+  // Check if user is commissioner
+  const { user } = useAuth();
+  // Note: league data is nested under 'league' property from get_league_data function
+  const leagueData = league?.league || league;
+  const isCommissioner = user?.id === leagueData?.commissioner_id;
+  
+  // Debug logging for commissioner check
+  console.log('CommissionerTools: Commissioner debug:', {
+    userId: user?.id,
+    commissionerId: leagueData?.commissioner_id,
+    isCommissioner,
+    leagueId: leagueData?.id,
+    leagueName: leagueData?.name,
+    rawLeague: league,
+    leagueData: leagueData
+  });
 
   if (!isCommissioner) {
     return (
@@ -282,7 +297,7 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
           League Manager Tools
         </Typography>
         <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-          {league.name}
+          {leagueData?.name || league.name}
         </Typography>
       </Box>
 

@@ -31,49 +31,48 @@ export function useDraftOrder(leagueId: string) {
   return useQuery({
     queryKey: ['draft-order', leagueId],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .rpc('get_draft_order', { league_id_param: leagueId })
-
-      if (error) {
-        console.error('Error fetching draft order:', error)
-        throw new Error(`Failed to fetch draft order: ${error.message}`)
-      }
-
-      // Get additional draft order data (time_expires, auto_pick_reason, fantasy_team_id for trades)
+      // Get draft order data directly from fantasy_draft_order table
       const { data: draftOrderData, error: orderError } = await supabase
-        .from('draft_order')
-        .select('pick_number, time_expires, time_started, auto_pick_reason, is_completed, fantasy_team_id')
+        .from('fantasy_draft_order')
+        .select(`
+          pick_number,
+          round,
+          team_position,
+          fantasy_team_id,
+          is_completed,
+          is_traded,
+          time_expires,
+          time_started,
+          auto_pick_reason,
+          fantasy_teams!inner (
+            id,
+            team_name
+          )
+        `)
         .eq('league_id', leagueId)
+        .order('pick_number')
 
       if (orderError) {
         console.error('Error fetching draft order data:', orderError)
+        throw new Error(`Failed to fetch draft order: ${orderError.message}`)
       }
 
-      // Get team autodraft status and team names
-      const { data: teamsData, error: teamsError } = await supabase
-        .from('fantasy_teams')
-        .select('id, autodraft_enabled, team_name')
-        .eq('league_id', leagueId)
-        .order('id')
-
-      if (teamsError) {
-        console.error('Error fetching teams data:', teamsError)
-      }
-
-      // Get completed picks with player data AND current owner (fantasy_team_id tracks player trades)
+      // Get completed picks with player data and salary information
       const { data: completedPicks, error: picksError } = await supabase
-        .from('draft_picks')
+        .from('fantasy_draft_picks')
         .select(`
           pick_number,
           player_id,
           fantasy_team_id,
           created_at,
-          players!inner (
+          nba_players!inner (
             id,
             nba_player_id,
             name,
             position,
-            team_abbreviation,
+            team_abbreviation
+          ),
+          nba_hoopshype_salaries!left (
             salary_2025_26
           )
         `)
@@ -84,64 +83,33 @@ export function useDraftOrder(leagueId: string) {
         // Don't throw error, just continue without player data
       }
 
-      // Merge draft order with completed picks, time data, and team data
-      const picksWithPlayers: DraftOrderPick[] = data.map((pick: any) => {
+      // Transform the data to match the expected interface
+      const picksWithPlayers: DraftOrderPick[] = (draftOrderData || []).map((pick: any) => {
         const completedPick = completedPicks?.find(p => p.pick_number === pick.pick_number)
-        const orderData = draftOrderData?.find(d => d.pick_number === pick.pick_number)
-        
-        // Original team (based on team_position from get_draft_order RPC)
-        const originalTeamData = teamsData?.find(t => t.id === pick.team_id)
-        
-        // Determine current owner:
-        // - fantasy_team_id = NULL means "belongs to original owner" (no trade)
-        // - fantasy_team_id = set means "has been traded to this team"
-        let currentOwnerId: string;
-        let isTraded: boolean;
-        
-        if (completedPick && completedPick.player_id) {
-          // Pick is completed - check if PLAYER was traded
-          // NULL fantasy_team_id means player belongs to original owner
-          if (completedPick.fantasy_team_id && completedPick.fantasy_team_id !== pick.team_id) {
-            currentOwnerId = completedPick.fantasy_team_id;
-            isTraded = true;
-          } else {
-            currentOwnerId = pick.team_id;
-            isTraded = false;
-          }
-        } else {
-          // Pick is not completed - check if PICK was traded
-          // NULL fantasy_team_id means pick belongs to original owner
-          if (orderData?.fantasy_team_id && orderData.fantasy_team_id !== pick.team_id) {
-            currentOwnerId = orderData.fantasy_team_id;
-            isTraded = true;
-          } else {
-            currentOwnerId = pick.team_id;
-            isTraded = false;
-          }
-        }
-        
-        const currentOwnerData = teamsData?.find(t => t.id === currentOwnerId)
         
         return {
-          ...pick,
+          pick_number: pick.pick_number,
+          round: pick.round,
+          team_position: pick.team_position,
+          team_id: pick.fantasy_team_id,
+          team_name: pick.fantasy_teams?.team_name || 'Unknown Team',
+          is_completed: pick.is_completed,
           player_id: completedPick?.player_id,
-          nba_player_id: completedPick?.players?.nba_player_id,
-          player_name: completedPick?.players?.name,
-          position: completedPick?.players?.position,
-          team_abbreviation: completedPick?.players?.team_abbreviation,
-          salary_2025_26: completedPick?.players?.salary_2025_26,
-          is_completed: orderData?.is_completed || !!completedPick,
-          time_expires: orderData?.time_expires,
-          time_started: orderData?.time_started,
-          auto_pick_reason: orderData?.auto_pick_reason,
-          autodraft_enabled: currentOwnerData?.autodraft_enabled,
-          pick_made_at: completedPick?.created_at, // NEW: When pick was actually made
+          nba_player_id: completedPick?.nba_players?.nba_player_id,
+          player_name: completedPick?.nba_players?.name,
+          position: completedPick?.nba_players?.position,
+          team_abbreviation: completedPick?.nba_players?.team_abbreviation,
+          salary_2025_26: completedPick?.nba_hoopshype_salaries?.salary_2025_26,
+          time_expires: pick.time_expires,
+          time_started: pick.time_started,
+          auto_pick_reason: pick.auto_pick_reason,
+          pick_made_at: completedPick?.created_at,
           // Trade information
-          original_team_id: pick.team_id,
-          original_team_name: pick.team_name,
-          current_owner_id: currentOwnerId,
-          current_owner_name: currentOwnerData?.team_name || pick.team_name,
-          is_traded: isTraded
+          original_team_id: pick.fantasy_team_id,
+          original_team_name: pick.fantasy_teams?.team_name || 'Unknown Team',
+          current_owner_id: pick.fantasy_team_id,
+          current_owner_name: pick.fantasy_teams?.team_name || 'Unknown Team',
+          is_traded: pick.is_traded || false
         }
       })
 

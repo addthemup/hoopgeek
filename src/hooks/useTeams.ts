@@ -12,7 +12,7 @@ export function useTeams(leagueId: string) {
         .from('fantasy_teams')
         .select('*')
         .eq('league_id', leagueId)
-        .order('draft_position', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) {
         console.error('❌ Error fetching teams:', error)

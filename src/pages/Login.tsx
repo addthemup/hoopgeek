@@ -10,9 +10,12 @@ import {
   Alert,
   Stack,
   Card,
-  CardContent
+  CardContent,
+  Divider
 } from '@mui/joy'
+import { Google } from '@mui/icons-material'
 import { useAuth } from '../hooks/useAuth'
+import { supabase } from '../utils/supabase'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -54,6 +57,29 @@ export default function Login() {
     }
   }
 
+  const handleGoogleSignIn = async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      })
+
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+      }
+      // If successful, user will be redirected by Supabase
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in with Google')
+      setLoading(false)
+    }
+  }
+
   return (
     <Box sx={{ 
       display: 'flex', 
@@ -79,6 +105,27 @@ export default function Login() {
               {message}
             </Alert>
           )}
+
+          {/* Google Sign In Button */}
+          <Stack spacing={2} sx={{ mb: 3 }}>
+            <Button
+              size="lg"
+              variant="outlined"
+              color="neutral"
+              startDecorator={<Google />}
+              onClick={handleGoogleSignIn}
+              loading={loading}
+              fullWidth
+            >
+              Continue with Google
+            </Button>
+            
+            <Divider>
+              <Typography level="body-xs" color="neutral">
+                or continue with email
+              </Typography>
+            </Divider>
+          </Stack>
 
           <form onSubmit={handleSubmit}>
             <Stack spacing={2}>

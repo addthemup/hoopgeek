@@ -156,7 +156,13 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
     console.log('🏀 DraftTrade - Their Team Players:', theirPlayers.length, theirPlayers);
     console.log('🏀 DraftTrade - My Picks:', myPicks.length, myPicks);
     console.log('🏀 DraftTrade - Their Picks:', theirPicks.length, theirPicks);
-  }, [myPlayers, theirPlayers, myPicks, theirPicks]);
+    console.log('🏀 DraftTrade - Pending Trades:', pendingTrades.length, pendingTrades);
+    if (pendingTrades.length > 0) {
+      console.log('🏀 DraftTrade - First Trade Data:', pendingTrades[0]);
+      console.log('🏀 DraftTrade - Offered Players Type:', typeof pendingTrades[0].offered_players);
+      console.log('🏀 DraftTrade - Offered Players Value:', pendingTrades[0].offered_players);
+    }
+  }, [myPlayers, theirPlayers, myPicks, theirPicks, pendingTrades]);
 
   // Add item to trade
   const addToTrade = (item: Player | DraftPick, type: 'player' | 'pick', isMyTeam: boolean) => {
@@ -260,15 +266,30 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
         .filter(item => item.type === 'pick')
         .map(item => (item.item as DraftPick).pick_number);
       
-      // Call the create_trade_offer function
-      const { data, error } = await supabase.rpc('create_trade_offer', {
-        league_id_param: leagueId,
-        from_team_id_param: userTeam.id,
-        to_team_id_param: selectedTeam,
-        offered_players_param: offeredPlayerIds,
-        offered_picks_param: offeredPickNumbers,
-        requested_players_param: requestedPlayerIds,
-        requested_picks_param: requestedPickNumbers,
+      // Get the season ID for this league
+      const { data: seasonData, error: seasonError } = await supabase
+        .from('fantasy_league_seasons')
+        .select('id')
+        .eq('league_id', leagueId)
+        .eq('season_year', 2025)
+        .single();
+
+      if (seasonError || !seasonData) {
+        console.error('Error fetching season data:', seasonError);
+        setSubmitError('Failed to find league season data');
+        return;
+      }
+
+      // Call the create_draft_trade_offer function
+      const { data, error } = await supabase.rpc('create_draft_trade_offer', {
+        p_league_id: leagueId,
+        p_season_id: seasonData.id,
+        p_from_team_id: userTeam.id,
+        p_to_team_id: selectedTeam,
+        p_offered_players: JSON.stringify(offeredPlayerIds),
+        p_offered_picks: JSON.stringify(offeredPickNumbers),
+        p_requested_players: JSON.stringify(requestedPlayerIds),
+        p_requested_picks: JSON.stringify(requestedPickNumbers),
       });
       
       if (error) {
@@ -455,7 +476,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                             </Typography>
                             
                             {/* Offered Players */}
-                            {trade.offered_players && trade.offered_players.length > 0 && (
+                            {trade.offered_players && Array.isArray(trade.offered_players) && trade.offered_players.length > 0 && (
                               <Box sx={{ mb: 1 }}>
                                 <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                   Players ({trade.offered_players.length})
@@ -484,7 +505,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                                           {player.name}
                                         </Typography>
                                         <Typography level="body-xs" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
-                                          {player.position} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
+                                          {player.position} • ${player.salary_2025_26 ? (player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
                                         </Typography>
                                       </Box>
                                     </Box>
@@ -494,7 +515,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                             )}
 
                             {/* Offered Picks */}
-                            {trade.offered_picks && trade.offered_picks.length > 0 && (
+                            {trade.offered_picks && Array.isArray(trade.offered_picks) && trade.offered_picks.length > 0 && (
                               <Box>
                                 <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                   Draft Picks ({trade.offered_picks.length})
@@ -543,7 +564,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                             </Typography>
                             
                             {/* Requested Players */}
-                            {trade.requested_players && trade.requested_players.length > 0 && (
+                            {trade.requested_players && Array.isArray(trade.requested_players) && trade.requested_players.length > 0 && (
                               <Box sx={{ mb: 1 }}>
                                 <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                   Players ({trade.requested_players.length})
@@ -572,7 +593,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                                           {player.name}
                                         </Typography>
                                         <Typography level="body-xs" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
-                                          {player.position} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
+                                          {player.position} • ${player.salary_2025_26 ? (player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
                                         </Typography>
                                       </Box>
                                     </Box>
@@ -582,7 +603,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                             )}
 
                             {/* Requested Picks */}
-                            {trade.requested_picks && trade.requested_picks.length > 0 && (
+                            {trade.requested_picks && Array.isArray(trade.requested_picks) && trade.requested_picks.length > 0 && (
                               <Box>
                                 <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                                   Draft Picks ({trade.requested_picks.length})

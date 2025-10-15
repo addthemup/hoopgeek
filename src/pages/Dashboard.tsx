@@ -153,7 +153,7 @@ export default function Dashboard() {
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                     <Typography level="h4" sx={{ mb: 1 }}>
-                      {league.name}
+                      {league.name || 'Unnamed League'}
                     </Typography>
                     <Stack direction="row" spacing={1} alignItems="center">
                       {league.is_commissioner && (
@@ -219,7 +219,7 @@ export default function Dashboard() {
                           Salary Cap:
                         </Typography>
                         <Typography level="body-sm">
-                          ${((league.salary_cap_amount || 0) / 1000000).toFixed(0)}M
+                          ${((league.salary_cap_amount || 200000000) / 1000000).toFixed(0)}M
                         </Typography>
                       </Box>
                     )}
@@ -274,7 +274,7 @@ export default function Dashboard() {
               </Typography>
               <Button 
                 size="lg" 
-                onClick={() => navigate('/create-league')}
+                onClick={() => setShowCreateLeague(true)}
               >
                 Create Your First League
               </Button>

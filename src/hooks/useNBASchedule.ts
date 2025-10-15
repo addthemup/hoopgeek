@@ -87,31 +87,59 @@ export function useWeekSchedule(weekNumber: number) {
   return useQuery({
     queryKey: ['nba-week-schedule', weekNumber],
     queryFn: async () => {
-      // Get games for specific week
-      const { data: games, error: gamesError } = await supabase
-        .from('nba_games')
-        .select('*')
-        .eq('season_year', 2026)
-        .eq('week_number', weekNumber)
-        .order('game_date', { ascending: true });
-
-      if (gamesError) throw gamesError;
-
-      // Get week info
-      const { data: week, error: weekError } = await supabase
-        .from('nba_season_weeks')
-        .select('*')
-        .eq('season_year', 2026)
+      console.log(`🔍 useWeekSchedule called with weekNumber: ${weekNumber}`);
+      let games: NBAGame[] = [];
+      let startDate = '';
+      let endDate = '';
+      let weekName = weekNumber === 0 ? 'Preseason' : `Week ${weekNumber}`;
+      
+      // Get week info from fantasy_season_weeks table
+      const { data: weekData, error: weekError } = await supabase
+        .from('fantasy_season_weeks')
+        .select('start_date, end_date, week_name')
         .eq('week_number', weekNumber)
         .single();
-
-      if (weekError) throw weekError;
+      
+      if (weekError) {
+        console.log(`No fantasy week found for week ${weekNumber}, using fallback dates`);
+        if (weekNumber === 0) {
+          startDate = '2025-10-02';
+          endDate = '2025-10-20';
+        } else {
+          // Fallback: calculate date range for the week
+          const weekStartDate = new Date('2025-10-21'); // Start of regular season
+          const weekStart = new Date(weekStartDate);
+          weekStart.setDate(weekStart.getDate() + (weekNumber - 1) * 7);
+          
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekEnd.getDate() + 6);
+          
+          startDate = weekStart.toISOString().split('T')[0];
+          endDate = weekEnd.toISOString().split('T')[0];
+        }
+      } else {
+        startDate = weekData.start_date;
+        endDate = weekData.end_date;
+        weekName = weekData.week_name;
+      }
+      
+      // Get games for the week using the date range
+      const { data, error } = await supabase
+        .from('nba_games')
+        .select('*')
+        .eq('season_year', 2025)
+        .gte('game_date', startDate)
+        .lte('game_date', endDate)
+        .order('game_date', { ascending: true });
+      
+      if (error) throw error;
+      games = data as NBAGame[];
 
       // Group games by day of week (Monday first)
       const gamesByDay: { [dayName: string]: NBAGame[] } = {};
       const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-      (games as NBAGame[]).forEach(game => {
+      games.forEach(game => {
         const gameDate = new Date(game.game_date);
         const dayIndex = gameDate.getDay(); // 0=Sunday, 1=Monday, etc.
         // Convert to Monday-first: Sunday (0) becomes 6, Monday (1) becomes 0, etc.
@@ -133,16 +161,39 @@ export function useWeekSchedule(weekNumber: number) {
         });
       });
 
-      return {
-        weekNumber: week.week_number,
-        weekName: week.week_name,
-        startDate: week.start_date,
-        endDate: week.end_date,
-        games: games as NBAGame[],
+      // If no games found and not already trying preseason, try preseason as fallback
+      if (games.length === 0 && weekNumber !== 0) {
+        console.log(`No games found for week ${weekNumber}, trying preseason as fallback`);
+        const { data: preseasonGames, error: preseasonError } = await supabase
+          .from('nba_games')
+          .select('*')
+          .eq('season_year', 2025)
+          .gte('game_date', '2025-10-02')
+          .lte('game_date', '2025-10-20')
+          .order('game_date', { ascending: true });
+        
+        if (!preseasonError && preseasonGames && preseasonGames.length > 0) {
+          games = preseasonGames as NBAGame[];
+          startDate = '2025-10-02';
+          endDate = '2025-10-20';
+          weekName = 'Preseason';
+          console.log(`Using ${games.length} preseason games as fallback`);
+        }
+      }
+
+      const result = {
+        weekNumber,
+        weekName,
+        startDate,
+        endDate,
+        games,
         gamesByDay
       } as WeekSchedule;
+      
+      console.log(`🔍 useWeekSchedule returning:`, result);
+      return result;
     },
-    enabled: !!weekNumber,
+    enabled: weekNumber >= 0,
   });
 }
 

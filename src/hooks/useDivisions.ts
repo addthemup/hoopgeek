@@ -31,7 +31,7 @@ export function useDivisions(leagueId: string) {
     queryKey: ['divisions', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('divisions')
+        .from('league_divisions')
         .select('*')
         .eq('league_id', leagueId)
         .order('division_order', { ascending: true })
@@ -50,7 +50,7 @@ export function useCreateDivision() {
   return useMutation({
     mutationFn: async (data: CreateDivisionData) => {
       const { data: result, error } = await supabase
-        .from('divisions')
+        .from('league_divisions')
         .insert([data])
         .select()
         .single()
@@ -72,7 +72,7 @@ export function useUpdateDivision() {
     mutationFn: async (data: UpdateDivisionData) => {
       const { id, ...updateData } = data
       const { data: result, error } = await supabase
-        .from('divisions')
+        .from('league_divisions')
         .update(updateData)
         .eq('id', id)
         .select()
@@ -94,7 +94,7 @@ export function useDeleteDivision() {
   return useMutation({
     mutationFn: async ({ id, leagueId }: { id: string; leagueId: string }) => {
       const { error } = await supabase
-        .from('divisions')
+        .from('league_divisions')
         .delete()
         .eq('id', id)
 

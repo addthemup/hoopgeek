@@ -70,14 +70,27 @@ export default function League() {
   }
 
   // Check if current user is commissioner
-  const isCommissioner = user?.id === league.commissioner_id
+  // Note: league data is nested under 'league' property from get_league_data function
+  const leagueData = league?.league || league;
+  const isCommissioner = user?.id === leagueData?.commissioner_id
+  
+  // Debug logging for commissioner check
+  console.log('League: Commissioner debug:', {
+    userId: user?.id,
+    commissionerId: leagueData?.commissioner_id,
+    isCommissioner,
+    leagueId: leagueData?.id,
+    leagueName: leagueData?.name,
+    rawLeague: league,
+    leagueData: leagueData
+  });
 
 
   const renderSettings = () => (
     <LeagueSettingsManager
       league={{
         id: league.id,
-        name: league.name,
+        name: league.name || 'Unnamed League',
         description: league.description,
         commissioner_id: league.commissioner_id,
         max_teams: league.max_teams,
@@ -228,7 +241,7 @@ export default function League() {
         console.log('League: Rendering LeagueHome component with leagueId:', id);
         return (
           <LeagueHome 
-            leagueId={id || ''} 
+            leagueId={leagueData?.id || id || ''} 
             onTeamClick={setSelectedTeamId}
             onNavigateToTransactions={() => {
               // Dispatch custom event to change tab
@@ -306,7 +319,7 @@ export default function League() {
   return (
     <Box sx={{ maxWidth: 1400, mx: 'auto', px: 2 }}>
       <LeagueNavigation 
-        leagueId={league.id} 
+        leagueId={leagueData?.id || id} 
         isCommissioner={isCommissioner}
         userHasTeam={!!userTeam}
       >

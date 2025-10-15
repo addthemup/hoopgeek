@@ -3,10 +3,10 @@ import { supabase } from '../utils/supabase';
 
 export interface WeeklyMatchup {
   id: string;
-  week_number: number;
+  fantasy_week: number;
   matchup_date: string;
   status: 'scheduled' | 'live' | 'completed';
-  season_type: 'regular' | 'playoff' | 'championship';
+  matchup_type: 'regular' | 'playoff' | 'championship';
   fantasy_team1_id: string;
   fantasy_team2_id: string;
   fantasy_team1_score: number | null;
@@ -34,13 +34,13 @@ export function useWeeklyMatchups(leagueId: string, weekNumber?: number) {
       if (!leagueId) return [];
 
       let query = supabase
-        .from('weekly_matchups')
+        .from('fantasy_matchups')
         .select(`
           id,
-          week_number,
+          fantasy_week,
           matchup_date,
           status,
-          season_type,
+          matchup_type,
           fantasy_team1_id,
           fantasy_team2_id,
           fantasy_team1_score,
@@ -52,7 +52,7 @@ export function useWeeklyMatchups(leagueId: string, weekNumber?: number) {
         .order('matchup_date', { ascending: true });
 
       if (weekNumber !== undefined) {
-        query = query.eq('week_number', weekNumber);
+        query = query.eq('fantasy_week', weekNumber);
       }
 
       const { data, error } = await query;
@@ -64,10 +64,10 @@ export function useWeeklyMatchups(leagueId: string, weekNumber?: number) {
 
       return (data || []).map((matchup: any) => ({
         id: matchup.id,
-        week_number: matchup.week_number,
+        fantasy_week: matchup.fantasy_week,
         matchup_date: matchup.matchup_date,
         status: matchup.status,
-        season_type: matchup.season_type,
+        matchup_type: matchup.matchup_type,
         fantasy_team1_id: matchup.fantasy_team1_id,
         fantasy_team2_id: matchup.fantasy_team2_id,
         fantasy_team1_score: matchup.fantasy_team1_score,
@@ -89,7 +89,7 @@ export function useCurrentWeek(leagueId: string) {
 
       // Get the league's season year
       const { data: league } = await supabase
-        .from('leagues')
+        .from('fantasy_leagues')
         .select('season_year')
         .eq('id', leagueId)
         .single();
@@ -123,14 +123,14 @@ export function useCurrentWeek(leagueId: string) {
 
       // If no current week found, return the first week with scheduled matchups
       const { data: matchups } = await supabase
-        .from('weekly_matchups')
-        .select('week_number')
+        .from('fantasy_matchups')
+        .select('fantasy_week')
         .eq('league_id', leagueId)
         .eq('status', 'scheduled')
-        .order('week_number', { ascending: true })
+        .order('fantasy_week', { ascending: true })
         .limit(1);
 
-      return matchups?.[0]?.week_number || 1;
+      return matchups?.[0]?.fantasy_week || 1;
     },
     enabled: !!leagueId,
   });

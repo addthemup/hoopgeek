@@ -133,7 +133,7 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
               League Scoreboard
             </Typography>
             <Typography level="body-lg" color="neutral">
-              {league.name}
+              {league.name || 'Unnamed League'}
             </Typography>
           </Box>
           <Stack direction="row" spacing={2} alignItems="center">

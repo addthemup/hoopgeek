@@ -33,6 +33,8 @@ import RecentTransactions from '../components/Team/RecentTransactions';
 import TradingBlock from '../components/Team/TradingBlock';
 import FuturePicks from '../components/Team/FuturePicks';
 import TeamPerformanceRadial from '../components/Team/TeamPerformanceRadial';
+import { useCurrentFantasyWeek } from '../hooks/useCurrentFantasyWeek';
+import { useMatchups } from '../hooks/useMatchups';
 
 interface TeamRosterProps {
   leagueId: string;
@@ -59,6 +61,15 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
 
   const { data: roster, isLoading, error } = useTeamRoster(selectedTeam?.id || '');
 
+  // Get current fantasy week
+  const { currentWeek: fantasyWeek, seasonPhase, isLoading: weekLoading } = useCurrentFantasyWeek();
+  
+  // Get current week matchups
+  const { data: currentWeekMatchups, isLoading: matchupsLoading } = useMatchups(
+    leagueId, 
+    fantasyWeek?.week_number
+  );
+
   // Calculate actual salary from roster
   const { data: actualSalary } = useQuery({
     queryKey: ['team-salary-usage', selectedTeam?.id],
@@ -67,13 +78,16 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
 
       try {
         const { data: rosterData, error } = await supabase
-          .from('fantasy_team_players')
+          .from('fantasy_roster_spots')
           .select(`
             player:player_id (
-              salary_2025_26
+              nba_hoopshype_salaries (
+                salary_2025_26
+              )
             )
           `)
-          .eq('fantasy_team_id', selectedTeam.id);
+          .eq('fantasy_team_id', selectedTeam.id)
+          .not('player_id', 'is', null);
 
         if (error) {
           console.error(`Error fetching roster for salary calculation:`, error);
@@ -82,7 +96,8 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
 
         const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
           const player = rosterSpot.player as any;
-          const playerSalary = player?.salary_2025_26 || 0;
+          const salaryData = player?.nba_hoopshype_salaries?.[0];
+          const playerSalary = salaryData?.salary_2025_26 || 0;
           return sum + playerSalary;
         }, 0) || 0;
 
@@ -282,6 +297,43 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       {/* Roster Table */}
       <Card variant="outlined">
         <CardContent>
+          {/* Roster Progress Summary in Header */}
+          {league?.roster_positions && (
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {Object.entries(league.roster_positions).map(([position, requiredCount]) => {
+                  const filledCount = roster?.filter(rosterSpot => {
+                    const player = rosterSpot.player;
+                    if (!player) return false;
+                    
+                    return (position === 'G' && (player.position === 'PG' || player.position === 'SG' || player.position === 'G')) ||
+                           (position === 'F' && (player.position === 'SF' || player.position === 'PF' || player.position === 'F')) ||
+                           (position === 'C' && (player.position === 'C' || player.position === 'Center')) ||
+                           (position === 'UTIL' && (player.position === 'UTIL' || player.position === 'G' || player.position === 'F' || player.position === 'C'));
+                  }).length || 0;
+                  
+                  const isComplete = filledCount >= (requiredCount as number);
+                  const positionName = position === 'G' ? 'Guard' : 
+                                     position === 'F' ? 'Forward' : 
+                                     position === 'C' ? 'Center' : 
+                                     position === 'UTIL' ? 'Utility' : position;
+                  
+                  return (
+                    <Chip
+                      key={position}
+                      size="sm"
+                      variant="soft"
+                      color={isComplete ? 'success' : 'warning'}
+                      sx={{ fontWeight: 'bold' }}
+                    >
+                      {positionName}: {filledCount}/{requiredCount as number}
+                    </Chip>
+                  );
+                })}
+              </Stack>
+            </Box>
+          )}
+          
           <Box sx={{ overflowX: 'auto' }}>
             <Table hoverRow>
               <thead>
@@ -317,10 +369,10 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
                       <td>
                         <Chip 
                           size="sm" 
-                          color={getPositionColor(player?.position || rosterSpot.position)} 
+                          color={getPositionColor(player?.position || 'UTIL')} 
                           variant="soft"
                         >
-                          {player?.position || getPositionLabel(rosterSpot.position, rosterSpot.roster_spot?.position_order || 0)}
+                          {player?.position || (rosterSpot.is_injured_reserve ? 'IR' : 'Empty')}
                         </Chip>
                       </td>
                       <td>
@@ -367,7 +419,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                          {isEmpty ? '--' : formatSalary(player?.salary_2025_26 || 0)}
+                          {isEmpty ? '--' : formatSalary((player as any)?.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0)}
                         </Typography>
                       </td>
                       <td>
@@ -435,21 +487,15 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography level="body-sm">Starters:</Typography>
+                  <Typography level="body-sm">Regular Spots:</Typography>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {roster?.filter(spot => spot.is_starter && spot.player).length || 0} / 10
+                    {roster?.filter(spot => !spot.is_injured_reserve && spot.player).length || 0} / {roster?.filter(spot => !spot.is_injured_reserve).length || 0}
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography level="body-sm">Bench:</Typography>
+                  <Typography level="body-sm">IR Spots:</Typography>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {roster?.filter(spot => !spot.is_starter && !spot.roster_spot?.is_injured_reserve && spot.player).length || 0} / 3
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography level="body-sm">IR:</Typography>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {roster?.filter(spot => spot.roster_spot?.is_injured_reserve && spot.player).length || 0} / 1
+                    {roster?.filter(spot => spot.is_injured_reserve && spot.player).length || 0} / {roster?.filter(spot => spot.is_injured_reserve).length || 0}
                   </Typography>
                 </Box>
               </Stack>
@@ -540,33 +586,81 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       </Grid>
 
       {/* Current Matchup - Basketball Court Visualization */}
-      <BasketballCourtMatchup
-        homeTeam={{
-          name: selectedTeam.team_name,
-          abbreviation: selectedTeam.team_name.substring(0, 3).toUpperCase(),
-          starters: roster?.filter(r => r.is_starter && r.player).map(r => ({
-            id: r.player!.id,
-            name: r.player!.name,
-            position: r.player!.position || 'N/A',
-            jersey_number: r.player!.jersey_number,
-            team_abbreviation: r.player!.team_abbreviation || '',
-          })) || [],
-          bench: roster?.filter(r => !r.is_starter && r.player).map(r => ({
-            id: r.player!.id,
-            name: r.player!.name,
-            position: r.player!.position || 'N/A',
-            jersey_number: r.player!.jersey_number,
-            team_abbreviation: r.player!.team_abbreviation || '',
-          })) || [],
-        }}
-        awayTeam={{
-          name: 'Opponent Team',
-          abbreviation: 'OPP',
-          starters: [],
-          bench: [],
-        }}
-        weekNumber={1}
-      />
+      {(() => {
+        // Find current week matchup for this team
+        const currentMatchup = currentWeekMatchups?.find(matchup => 
+          matchup.fantasy_team1_id === selectedTeam?.id || matchup.fantasy_team2_id === selectedTeam?.id
+        );
+        
+        // Get opponent team
+        const opponentTeam = currentMatchup ? (
+          currentMatchup.fantasy_team1_id === selectedTeam?.id ? currentMatchup.team2 : currentMatchup.team1
+        ) : null;
+        
+        // Determine if this team is home or away
+        const isHome = currentMatchup?.fantasy_team1_id === selectedTeam?.id;
+        
+        // Get team roster data for display
+        const teamStarters = roster?.filter(r => r.player && !r.is_injured_reserve).slice(0, 5).map(r => ({
+          id: r.player!.id as string,
+          name: r.player!.name,
+          position: r.player!.position || 'N/A',
+          jersey_number: r.player!.jersey_number,
+          team_abbreviation: r.player!.team_abbreviation || '',
+        })) || [];
+        
+        const teamBench = roster?.filter(r => r.player && !r.is_injured_reserve).slice(5).map(r => ({
+          id: r.player!.id as string,
+          name: r.player!.name,
+          position: r.player!.position || 'N/A',
+          jersey_number: r.player!.jersey_number,
+          team_abbreviation: r.player!.team_abbreviation || '',
+        })) || [];
+        
+        // If no current matchup, show a placeholder
+        if (!currentMatchup || !opponentTeam) {
+          return (
+            <Card variant="outlined" sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
+                  🏀 Week {fantasyWeek?.week_number || 'TBD'} Matchup
+                </Typography>
+                <Typography color="neutral">
+                  {seasonPhase === 'offseason' ? 'Season has not started yet' : 'No matchup scheduled for this week'}
+                </Typography>
+              </CardContent>
+            </Card>
+          );
+        }
+        
+        return (
+          <BasketballCourtMatchup
+            homeTeam={isHome ? {
+              name: selectedTeam.team_name,
+              abbreviation: selectedTeam.team_name.substring(0, 3).toUpperCase(),
+              starters: teamStarters,
+              bench: teamBench,
+            } : {
+              name: opponentTeam.team_name,
+              abbreviation: opponentTeam.team_name.substring(0, 3).toUpperCase(),
+              starters: [], // Opponent roster not available in this context
+              bench: [],
+            }}
+            awayTeam={isHome ? {
+              name: opponentTeam.team_name,
+              abbreviation: opponentTeam.team_name.substring(0, 3).toUpperCase(),
+              starters: [], // Opponent roster not available in this context
+              bench: [],
+            } : {
+              name: selectedTeam.team_name,
+              abbreviation: selectedTeam.team_name.substring(0, 3).toUpperCase(),
+              starters: teamStarters,
+              bench: teamBench,
+            }}
+            weekNumber={fantasyWeek?.week_number || 0}
+          />
+        );
+      })()}
 
       {/* Additional Modules Grid */}
       <Grid container spacing={3} sx={{ mt: 3 }}>
@@ -713,7 +807,7 @@ function EnhancedPlayerDetail({
                 zIndex: 2
               }}>
                 <PlayerActionButtons
-                  playerId={parseInt(playerId)}
+                  playerId={playerId}
                   playerName={playerName}
                   leagueId={leagueId}
                 />
@@ -812,7 +906,7 @@ function EnhancedPlayerDetail({
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Salary</Typography>
                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                      {formatSalary(playerData.player.salary_2025_26)}
+                      {formatSalary((playerData.player as any)?.nba_hoopshype_salaries?.[0]?.salary_2025_26)}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1219,7 +1313,7 @@ function EnhancedPlayerDetail({
                         <Grid xs={12} sm={6}>
                           <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                             <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
-                              ${playerData.player.salary_2025_26 ? (playerData.player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
+                              ${(playerData.player as any)?.nba_hoopshype_salaries?.[0]?.salary_2025_26 ? ((playerData.player as any).nba_hoopshype_salaries[0].salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
                             </Typography>
                             <Typography level="body-sm" color="neutral">Current Salary (2025-26)</Typography>
                           </Box>

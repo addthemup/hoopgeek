@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -27,7 +27,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useCreateLeagueMinimal as useCreateLeague } from '../hooks/useLeagueInitializationMinimal';
 import { validateLeagueSettings, getDefaultLeagueSettings } from '../hooks/useLeagueInitialization';
 import { LeagueSettings, LeagueCreationData } from '../types/leagueSettings';
-import { Add, Remove } from '@mui/icons-material';
+import { Add, Remove, ContentCopy, Check, Link as LinkIcon, People } from '@mui/icons-material';
 
 interface LeagueCreationFormProps {
   open: boolean;
@@ -49,6 +49,21 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     };
   });
 
+  // Update settings when user becomes available
+  useEffect(() => {
+    if (user?.id && !settings.commissioner_id) {
+      const defaults = getDefaultLeagueSettings(user.id);
+      setSettings(prev => ({
+        ...defaults,
+        ...prev,
+        commissioner_id: user.id,
+        salary_cap_amount: prev.salary_cap_amount || 200000000
+      }));
+    }
+  }, [user?.id, settings.commissioner_id]);
+  const [createdLeague, setCreatedLeague] = useState<{id: string, inviteCode: string, name: string} | null>(null);
+  const [copied, setCopied] = useState(false);
+
   // Update settings when user changes
   React.useEffect(() => {
     if (user?.id) {
@@ -57,7 +72,6 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
   }, [user?.id]);
   const [commissionerTeamName, setCommissionerTeamName] = useState('');
   const [autoFillTeams, setAutoFillTeams] = useState(true);
-  const [inviteEmails, setInviteEmails] = useState<string[]>(['']);
   const [errors, setErrors] = useState<string[]>([]);
 
   const handleSettingsChange = (field: keyof LeagueSettings, value: any) => {
@@ -74,17 +88,6 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     }));
   };
 
-  const addInviteEmail = () => {
-    setInviteEmails(prev => [...prev, '']);
-  };
-
-  const removeInviteEmail = (index: number) => {
-    setInviteEmails(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const updateInviteEmail = (index: number, value: string) => {
-    setInviteEmails(prev => prev.map((email, i) => i === index ? value : email));
-  };
 
   const validateCurrentStep = (): boolean => {
     const newErrors = validateLeagueSettings(settings);
@@ -120,6 +123,30 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
       }
     }
     
+    if (step === 4) {
+      const positionUnitAssignments = settings.position_unit_assignments || {
+        starters: {},
+        rotation: {},
+        bench: {}
+      };
+      
+      const startersCount = Object.values(positionUnitAssignments.starters || {}).reduce((sum: number, count: any) => sum + count, 0);
+      const rotationCount = Object.values(positionUnitAssignments.rotation || {}).reduce((sum: number, count: any) => sum + count, 0);
+      const benchCount = Object.values(positionUnitAssignments.bench || {}).reduce((sum: number, count: any) => sum + count, 0);
+      
+      if (startersCount !== settings.starters_count) {
+        newErrors.push(`Starters must have exactly ${settings.starters_count} players assigned`);
+      }
+      
+      if (rotationCount !== settings.rotation_count) {
+        newErrors.push(`Rotation must have exactly ${settings.rotation_count} players assigned`);
+      }
+      
+      if (benchCount !== settings.bench_count) {
+        newErrors.push(`Bench must have exactly ${settings.bench_count} players assigned`);
+      }
+    }
+    
     setErrors(newErrors);
     return newErrors.length === 0;
   };
@@ -143,20 +170,89 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     }
 
     try {
+      // COMPREHENSIVE LOGGING FOR DEBUGGING
+      console.log('🔧 ===== LEAGUE CREATION FORM DEBUG =====');
+      console.log('🔧 User ID:', user.id);
+      console.log('🔧 Commissioner Team Name:', commissionerTeamName);
+      console.log('🔧 Auto Fill Teams:', autoFillTeams);
+      console.log('🔧 Current Step:', step);
+      console.log('🔧 Settings Object:', JSON.stringify(settings, null, 2));
+      console.log('🔧 Roster Positions:', settings.roster_positions);
+      console.log('🔧 Position Unit Assignments:', settings.position_unit_assignments);
+      console.log('🔧 Starters Count:', settings.starters_count);
+      console.log('🔧 Rotation Count:', settings.rotation_count);
+      console.log('🔧 Bench Count:', settings.bench_count);
+      console.log('🔧 Starters Multiplier:', settings.starters_multiplier);
+      console.log('🔧 Rotation Multiplier:', settings.rotation_multiplier);
+      console.log('🔧 Bench Multiplier:', settings.bench_multiplier);
+      console.log('🔧 Salary Cap Amount:', settings.salary_cap_amount);
+      console.log('🔧 Max Teams:', settings.max_teams);
+      console.log('🔧 Draft Type:', settings.draft_type);
+      console.log('🔧 Draft Rounds:', settings.draft_rounds);
+      console.log('🔧 Draft Date:', settings.draft_date);
+      console.log('🔧 Trade Deadline:', settings.trade_deadline);
+      console.log('🔧 Playoff Teams:', settings.playoff_teams);
+      console.log('🔧 Playoff Weeks:', settings.playoff_weeks);
+      console.log('🔧 Scoring Type:', settings.scoring_type);
+      console.log('🔧 Fantasy Scoring Format:', settings.fantasy_scoring_format);
+      console.log('🔧 Public League:', settings.public_league);
+      console.log('🔧 Keeper League:', settings.keeper_league);
+      console.log('🔧 ======================================');
+      
+      console.log('🔧 LeagueCreationForm: Current settings before submission:', settings);
+      console.log('🔧 LeagueCreationForm: scoring_type:', settings.scoring_type);
+      console.log('🔧 LeagueCreationForm: fantasy_scoring_format:', settings.fantasy_scoring_format);
+      
       const creationData: LeagueCreationData = {
         settings: { ...settings, commissioner_id: user.id }, // Ensure user ID is set
         commissioner_team_name: commissionerTeamName,
         auto_fill_teams: autoFillTeams,
-        invite_emails: inviteEmails.filter(email => email.trim()),
+        invite_emails: [], // No longer using email invites
       };
+      
+      console.log('🔧 LeagueCreationForm: Final creation data:', creationData);
+      
+      // LOG WHAT WILL BE SENT TO EDGE FUNCTION
+      console.log('🔧 ===== DATA BEING SENT TO EDGE FUNCTION =====');
+      console.log('🔧 name:', settings.name);
+      console.log('🔧 description:', settings.description);
+      console.log('🔧 maxTeams:', settings.max_teams);
+      console.log('🔧 scoringType:', settings.scoring_type);
+      console.log('🔧 teamName:', commissionerTeamName);
+      console.log('🔧 rosterConfig:', settings.roster_positions);
+      console.log('🔧 draftDate:', settings.draft_date);
+      console.log('🔧 tradeDeadline:', settings.trade_deadline);
+      console.log('🔧 salaryCapAmount:', settings.salary_cap_amount);
+      console.log('🔧 startersCount:', settings.starters_count);
+      console.log('🔧 startersMultiplier:', settings.starters_multiplier);
+      console.log('🔧 rotationCount:', settings.rotation_count);
+      console.log('🔧 rotationMultiplier:', settings.rotation_multiplier);
+      console.log('🔧 benchCount:', settings.bench_count);
+      console.log('🔧 benchMultiplier:', settings.bench_multiplier);
+      console.log('🔧 positionUnitAssignments:', settings.position_unit_assignments);
+      console.log('🔧 fantasyScoringFormat:', settings.fantasy_scoring_format);
+      console.log('🔧 ===========================================');
 
       const result = await createLeague.mutateAsync(creationData);
       
-      if (onSuccess) {
-        onSuccess(result.league.id);
-      }
+      console.log('🏀 League creation result:', result);
+      console.log('🏀 League object:', result.league);
+      console.log('🏀 Invite code:', result.league.invite_code);
       
-      onClose();
+      // Set the created league data to show invite link
+      setCreatedLeague({
+        id: result.league.id,
+        inviteCode: result.league.invite_code,
+        name: result.league.name
+      });
+      
+      // Don't call onSuccess yet - let user see the invite link first
+      // if (onSuccess) {
+      //   onSuccess(result.league.id);
+      // }
+      
+      // Don't close the modal yet - show the invite link
+      // onClose();
     } catch (error) {
       console.error('Failed to create league:', error);
     }
@@ -240,14 +336,31 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
         </FormHelperText>
       </FormControl>
 
-      <FormControl>
-        <FormLabel>Draft Date & Time</FormLabel>
-        <Input
-          type="datetime-local"
-          value={settings.draft_date || ''}
-          onChange={(e) => handleSettingsChange('draft_date', e.target.value)}
-        />
-      </FormControl>
+      <Grid container spacing={2}>
+        <Grid xs={6}>
+          <FormControl>
+            <FormLabel>Draft Date & Time</FormLabel>
+            <Input
+              type="datetime-local"
+              value={settings.draft_date || ''}
+              onChange={(e) => handleSettingsChange('draft_date', e.target.value)}
+            />
+          </FormControl>
+        </Grid>
+        <Grid xs={6}>
+          <FormControl>
+            <FormLabel>Trade Deadline</FormLabel>
+            <Input
+              type="date"
+              value={settings.trade_deadline || ''}
+              onChange={(e) => handleSettingsChange('trade_deadline', e.target.value)}
+            />
+            <FormHelperText>
+              Last day teams can make trades (optional)
+            </FormHelperText>
+          </FormControl>
+        </Grid>
+      </Grid>
     </Stack>
   );
 
@@ -474,7 +587,258 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     );
   };
 
-  const renderStep4 = () => (
+  const renderStep4 = () => {
+    const rosterPositions = settings.roster_positions;
+    const positionUnitAssignments = settings.position_unit_assignments || {
+      starters: {},
+      rotation: {},
+      bench: {}
+    };
+
+    const getAvailablePositions = () => {
+      const allPositions = ['G', 'F', 'C', 'UTIL'];
+      return allPositions.filter(pos => rosterPositions[pos] > 0);
+    };
+
+    const getAssignedCount = (unit: string) => {
+      return Object.values(positionUnitAssignments[unit] || {}).reduce((sum: number, count: any) => sum + count, 0);
+    };
+
+    const getMaxForUnit = (unit: string) => {
+      switch (unit) {
+        case 'starters': return settings.starters_count;
+        case 'rotation': return settings.rotation_count;
+        case 'bench': return settings.bench_count;
+        default: return 0;
+      }
+    };
+
+    const getRemainingPositions = () => {
+      const assigned = {};
+      getAvailablePositions().forEach(pos => {
+        assigned[pos] = rosterPositions[pos];
+      });
+      
+      ['starters', 'rotation', 'bench'].forEach(unit => {
+        Object.keys(positionUnitAssignments[unit] || {}).forEach(pos => {
+          assigned[pos] -= (positionUnitAssignments[unit][pos] || 0);
+        });
+      });
+      
+      return Object.entries(assigned)
+        .filter(([pos, count]) => count > 0)
+        .map(([pos, count]) => ({ position: pos, count }));
+    };
+
+    const getUnitPositions = (unit: string) => {
+      return Object.entries(positionUnitAssignments[unit] || {})
+        .filter(([pos, count]) => count > 0)
+        .map(([pos, count]) => ({ position: pos, count }));
+    };
+
+    const addPositionToUnit = (unit: string, position: string) => {
+      if (getAssignedCount(unit) >= getMaxForUnit(unit)) {
+        return; // Unit is full
+      }
+      
+      const currentCount = positionUnitAssignments[unit]?.[position] || 0;
+      const availableCount = rosterPositions[position] - 
+        (positionUnitAssignments.starters?.[position] || 0) -
+        (positionUnitAssignments.rotation?.[position] || 0) -
+        (positionUnitAssignments.bench?.[position] || 0) +
+        currentCount;
+      
+      if (availableCount <= 0) {
+        return; // No more available
+      }
+      
+      const newAssignments = {
+        ...positionUnitAssignments,
+        [unit]: {
+          ...positionUnitAssignments[unit],
+          [position]: currentCount + 1
+        }
+      };
+      setSettings(prev => ({ ...prev, position_unit_assignments: newAssignments }));
+    };
+
+    const removePositionFromUnit = (unit: string, position: string) => {
+      const currentCount = positionUnitAssignments[unit]?.[position] || 0;
+      if (currentCount <= 0) return;
+      
+      const newAssignments = {
+        ...positionUnitAssignments,
+        [unit]: {
+          ...positionUnitAssignments[unit],
+          [position]: currentCount - 1
+        }
+      };
+      setSettings(prev => ({ ...prev, position_unit_assignments: newAssignments }));
+    };
+
+    const unitColors = {
+      starters: 'primary',
+      rotation: 'warning', 
+      bench: 'neutral'
+    };
+
+    const unitIcons = {
+      starters: '⭐',
+      rotation: '🔄',
+      bench: '📋'
+    };
+
+    return (
+      <Stack spacing={3}>
+        <Typography level="h4" sx={{ mb: 2 }}>
+          Position Unit Assignment
+        </Typography>
+        
+        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+          Use the plus/minus buttons to assign positions to each unit. Players in unassigned positions won't accrue points.
+        </Typography>
+
+        {/* Available Positions Summary */}
+        <Card variant="outlined" sx={{ bgcolor: 'background.level1' }}>
+          <CardContent>
+            <Typography level="title-md" sx={{ mb: 2 }}>
+              📊 Available Positions
+            </Typography>
+            <Stack direction="row" spacing={2} flexWrap="wrap">
+              {getRemainingPositions().map(({ position, count }) => (
+                <Chip
+                  key={position}
+                  variant="soft"
+                  color="success"
+                  size="lg"
+                >
+                  {position}: {count} available
+                </Chip>
+              ))}
+              {getRemainingPositions().length === 0 && (
+                <Typography level="body-sm" color="text.secondary">
+                  All positions have been assigned to units
+                </Typography>
+              )}
+            </Stack>
+          </CardContent>
+        </Card>
+
+        {/* Unit Assignment Cards */}
+        <Grid container spacing={3}>
+          {['starters', 'rotation', 'bench'].map(unit => (
+            <Grid xs={12} md={4} key={unit}>
+              <Card 
+                variant="outlined" 
+                sx={{ 
+                  height: '100%',
+                  borderColor: getAssignedCount(unit) >= getMaxForUnit(unit) ? 'success.500' : 'neutral.300',
+                  bgcolor: getAssignedCount(unit) >= getMaxForUnit(unit) ? 'success.50' : 'background.surface'
+                }}
+              >
+                <CardContent>
+                  <Stack spacing={3}>
+                    {/* Unit Header */}
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography level="title-lg" sx={{ color: `${unitColors[unit]}.700`, mb: 1 }}>
+                        {unitIcons[unit]} {unit.charAt(0).toUpperCase() + unit.slice(1)}
+                      </Typography>
+                      <Typography level="body-sm" color="text.secondary">
+                        {getAssignedCount(unit)}/{getMaxForUnit(unit)} players assigned
+                      </Typography>
+                    </Box>
+                    
+                    {/* Position Controls */}
+                    <Stack spacing={2}>
+                      {getAvailablePositions().map(position => {
+                        const currentCount = positionUnitAssignments[unit]?.[position] || 0;
+                        const maxAvailable = rosterPositions[position] - 
+                          (positionUnitAssignments.starters?.[position] || 0) -
+                          (positionUnitAssignments.rotation?.[position] || 0) -
+                          (positionUnitAssignments.bench?.[position] || 0) +
+                          currentCount;
+                        const canAdd = getAssignedCount(unit) < getMaxForUnit(unit) && maxAvailable > 0;
+                        const canRemove = currentCount > 0;
+                        
+                        return (
+                          <Card key={position} variant="soft" size="sm">
+                            <CardContent sx={{ py: 1.5 }}>
+                              <Stack direction="row" alignItems="center" justifyContent="space-between">
+                                <Box>
+                                  <Typography level="body-md" sx={{ fontWeight: 'bold' }}>
+                                    {position}
+                                  </Typography>
+                                  <Typography level="body-xs" color="text.secondary">
+                                    {currentCount} assigned
+                                  </Typography>
+                                </Box>
+                                
+                                <Stack direction="row" alignItems="center" spacing={1}>
+                                  <IconButton
+                                    size="sm"
+                                    variant="outlined"
+                                    color="danger"
+                                    onClick={() => removePositionFromUnit(unit, position)}
+                                    disabled={!canRemove}
+                                  >
+                                    <Remove />
+                                  </IconButton>
+                                  
+                                  <Typography level="body-lg" sx={{ minWidth: '24px', textAlign: 'center', fontWeight: 'bold' }}>
+                                    {currentCount}
+                                  </Typography>
+                                  
+                                  <IconButton
+                                    size="sm"
+                                    variant="outlined"
+                                    color="success"
+                                    onClick={() => addPositionToUnit(unit, position)}
+                                    disabled={!canAdd}
+                                  >
+                                    <Add />
+                                  </IconButton>
+                                </Stack>
+                              </Stack>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
+                    </Stack>
+                    
+                    {/* Unit Status */}
+                    {getAssignedCount(unit) >= getMaxForUnit(unit) && (
+                      <Alert color="success" variant="soft" size="sm">
+                        <Typography level="body-xs">
+                          ✅ Unit is complete!
+                        </Typography>
+                      </Alert>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
+          ))}
+        </Grid>
+
+        {/* Assignment Summary */}
+        <Alert color="info">
+          <Typography level="body-sm">
+            <strong>Assignment Summary:</strong>
+          </Typography>
+          <Typography level="body-sm">
+            ⭐ Starters: {getAssignedCount('starters')}/{settings.starters_count} | 
+            🔄 Rotation: {getAssignedCount('rotation')}/{settings.rotation_count} | 
+            📋 Bench: {getAssignedCount('bench')}/{settings.bench_count}
+          </Typography>
+          <Typography level="body-sm" sx={{ mt: 1 }}>
+            Unassigned: {getRemainingPositions().reduce((sum, { count }) => sum + count, 0)} players
+          </Typography>
+        </Alert>
+      </Stack>
+    );
+  };
+
+  const renderStep5 = () => (
     <Stack spacing={3}>
       <Typography level="h4" sx={{ mb: 2 }}>
         League Settings
@@ -486,12 +850,49 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
           value={settings.scoring_type}
           onChange={(_, value) => handleSettingsChange('scoring_type', value)}
         >
-          <Option value="H2H_Points">Head-to-Head Points</Option>
-          <Option value="H2H_Category">Head-to-Head Category</Option>
-          <Option value="H2H_Most_Categories">Head-to-Head Most Categories</Option>
-          <Option value="Roto">Rotisserie</Option>
-          <Option value="Season_Points">Season Points</Option>
+          <Option value="H2H_Weekly">Weekly Head-to-Head</Option>
         </Select>
+        <FormHelperText>All leagues use weekly head-to-head matchups</FormHelperText>
+      </FormControl>
+
+      <FormControl>
+        <FormLabel>Fantasy Scoring Format</FormLabel>
+        <Select
+          value={settings.fantasy_scoring_format || 'FanDuel'}
+          onChange={(_, value) => handleSettingsChange('fantasy_scoring_format', value)}
+        >
+          <Option value="FanDuel">
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>FanDuel</Typography>
+              <Typography level="body-xs" color="neutral">FanDuel DFS scoring system</Typography>
+            </Box>
+          </Option>
+          <Option value="DraftKings">
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>DraftKings</Typography>
+              <Typography level="body-xs" color="neutral">DraftKings DFS scoring system</Typography>
+            </Box>
+          </Option>
+          <Option value="Yahoo">
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>Yahoo</Typography>
+              <Typography level="body-xs" color="neutral">Yahoo Fantasy Basketball scoring system</Typography>
+            </Box>
+          </Option>
+          <Option value="ESPN">
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>ESPN</Typography>
+              <Typography level="body-xs" color="neutral">ESPN Fantasy Basketball scoring system</Typography>
+            </Box>
+          </Option>
+          <Option value="Custom">
+            <Box>
+              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>Custom</Typography>
+              <Typography level="body-xs" color="neutral">Customizable scoring system</Typography>
+            </Box>
+          </Option>
+        </Select>
+        <FormHelperText>Choose how fantasy points are calculated for your league</FormHelperText>
       </FormControl>
 
       <FormControl>
@@ -577,56 +978,162 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
     </Stack>
   );
 
-  const renderStep5 = () => (
-    <Stack spacing={3}>
-      <Typography level="h4" sx={{ mb: 2 }}>
-        Invite Members
-      </Typography>
+  const renderStep6 = () => {
+    // If league was just created, show invite link
+    if (createdLeague) {
+      const inviteUrl = `${window.location.origin}/join/${createdLeague.inviteCode}`;
       
-      <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-        Send invitations to friends to join your league. You can also invite them later.
+      const handleCopy = () => {
+        navigator.clipboard.writeText(inviteUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      };
+
+      return (
+    <Stack spacing={3}>
+          <Box sx={{ textAlign: 'center' }}>
+            <Typography level="h4" sx={{ mb: 1, color: 'success.600' }}>
+              🎉 League Created Successfully!
+            </Typography>
+            <Typography level="h5" sx={{ mb: 2 }}>
+              {createdLeague.name}
+            </Typography>
+          </Box>
+
+          <Card variant="outlined" sx={{ bgcolor: 'background.level1' }}>
+            <CardContent>
+              <Stack spacing={2}>
+                {/* Header */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <LinkIcon color="primary" />
+                    <Typography level="title-md" sx={{ fontWeight: 'bold' }}>
+                      Invite Link
+      </Typography>
+                  </Stack>
+                  <Chip size="sm" color="success" variant="soft">
+                    Ready to Share
+                  </Chip>
+                </Box>
+
+                {/* Description */}
+                <Typography level="body-sm" color="neutral">
+                  Share this link with anyone you want to invite to <strong>{createdLeague.name}</strong>. 
+                  First {settings.max_teams} people to join get a team!
       </Typography>
 
-      <Stack spacing={2}>
-        {inviteEmails.map((email, index) => (
-          <Stack key={index} direction="row" spacing={1} alignItems="center">
+                {/* URL Display with Copy Button */}
+                <Box sx={{ display: 'flex', gap: 1 }}>
             <Input
-              type="email"
-              value={email}
-              onChange={(e) => updateInviteEmail(index, e.target.value)}
-              placeholder="Enter email address"
+                    value={inviteUrl}
+                    readOnly
               sx={{ flex: 1 }}
-            />
-            {inviteEmails.length > 1 && (
+                    endDecorator={
               <IconButton
-                color="danger"
-                variant="outlined"
-                onClick={() => removeInviteEmail(index)}
-              >
-                <Remove />
+                        size="sm"
+                        variant="plain"
+                        onClick={handleCopy}
+                        sx={{ minWidth: 32 }}
+                      >
+                        {copied ? <Check color="success" /> : <ContentCopy />}
               </IconButton>
-            )}
+                    }
+                  />
+                </Box>
+
+                {copied && (
+                  <Alert color="success" variant="soft" size="sm">
+                    <Typography level="body-xs">
+                      ✓ Link copied to clipboard!
+                    </Typography>
+                  </Alert>
+                )}
+
+                {/* Stats */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1 }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <People sx={{ fontSize: 18, color: 'neutral.500' }} />
+                    <Typography level="body-sm" color="neutral">
+                      1 / {settings.max_teams} teams joined (you're the commissioner)
+                    </Typography>
           </Stack>
-        ))}
-        
+                  <Typography level="body-xs" color="neutral">
+                    Code: <strong>{createdLeague.inviteCode}</strong>
+                  </Typography>
+                </Box>
+
+                {/* Share Buttons */}
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    size="sm"
+                    variant="outlined"
+                    onClick={handleCopy}
+                    fullWidth
+                  >
+                    {copied ? 'Copied!' : 'Copy Link'}
+                  </Button>
         <Button
+                    size="sm"
           variant="outlined"
-          startDecorator={<Add />}
-          onClick={addInviteEmail}
-        >
-          Add Another Email
+                    onClick={() => {
+                      // Open email client with pre-filled invite
+                      const subject = encodeURIComponent(`Join my fantasy basketball league: ${createdLeague.name}`);
+                      const body = encodeURIComponent(
+                        `Hey! I created a fantasy basketball league and I'd love for you to join.\n\n` +
+                        `League: ${createdLeague.name}\n` +
+                        `Join here: ${inviteUrl}\n\n` +
+                        `First ${settings.max_teams} people to join get a spot. Hope to see you there!`
+                      );
+                      window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                    }}
+                    fullWidth
+                  >
+                    Email Invite
         </Button>
       </Stack>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          <Alert color="primary" variant="soft">
+            <Typography level="body-sm">
+              💡 <strong>Pro tip:</strong> Share this link on social media, group chats, or email. 
+              The first {settings.max_teams} people to join automatically get team spots!
+            </Typography>
+          </Alert>
     </Stack>
   );
+    }
+
+    // Default invite step (before league creation)
+    return (
+      <Stack spacing={3}>
+        <Typography level="h4" sx={{ mb: 2 }}>
+          Ready to Create League
+        </Typography>
+        
+        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+          Your league is ready! After creation, you'll get a shareable invite link to send to friends.
+        </Typography>
+
+        <Alert color="primary" variant="soft">
+          <Typography level="body-sm">
+            🎯 <strong>How it works:</strong> Once created, you'll get a unique invite link. 
+            Share it with as many people as you want - the first {settings.max_teams} to join get team spots!
+          </Typography>
+        </Alert>
+      </Stack>
+    );
+  };
 
   const renderStepContent = () => {
     switch (step) {
       case 1: return renderStep1();
       case 2: return renderStep2();
       case 3: return renderStep3(); // Weekly Lineup Config
-      case 4: return renderStep4(); // League Settings
-      case 5: return renderStep5(); // Invite Members
+      case 4: return renderStep4(); // Position Unit Assignment
+      case 5: return renderStep5(); // League Settings
+      case 6: return renderStep6(); // Invite Members
       default: return null;
     }
   };
@@ -636,8 +1143,9 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
       case 1: return 'Basic Information';
       case 2: return 'Roster Setup';
       case 3: return 'Weekly Lineup Configuration';
-      case 4: return 'League Rules';
-      case 5: return 'Invite Members';
+      case 4: return 'Position Assignment';
+      case 5: return 'League Rules';
+      case 6: return 'Invite Members';
       default: return '';
     }
   };
@@ -690,7 +1198,7 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
             ))}
           </Stack>
           <Typography level="body-sm" sx={{ textAlign: 'center', mt: 1, color: 'text.secondary' }}>
-            Step {step} of 5: {getStepTitle()}
+            Step {step} of 6: {getStepTitle()}
           </Typography>
         </Box>
 
@@ -725,11 +1233,16 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
           
           <Button
             variant="solid"
-            onClick={step === 5 ? handleSubmit : handleNext}
+            onClick={step === 6 ? (createdLeague ? () => {
+              if (onSuccess) {
+                onSuccess(createdLeague.id);
+              }
+              onClose();
+            } : handleSubmit) : handleNext}
             loading={createLeague.isPending}
             disabled={createLeague.isPending}
           >
-            {step === 5 ? 'Create League' : 'Next'}
+            {step === 6 ? (createdLeague ? 'Done' : 'Create League') : 'Next'}
           </Button>
         </Stack>
       </ModalDialog>

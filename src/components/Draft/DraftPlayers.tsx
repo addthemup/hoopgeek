@@ -102,7 +102,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
 
   // Calculate projected fantasy points for a player
   const calculateProjectedFantasyPoints = (player: any) => {
-    const projections = (player as any).espn_player_projections?.[0];
+    const projections = (player as any).nba_espn_projections?.[0];
     if (!projections) return 0;
 
     const {
@@ -509,31 +509,31 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                     <td>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
-                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')
-                          : ((player as any).espn_player_projections?.[0]?.stats_2025_pts?.toFixed(1) || 'N/A')
+                          ? ((player as any).nba_espn_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')
+                          : ((player as any).nba_espn_projections?.[0]?.stats_2025_pts?.toFixed(1) || 'N/A')
                         }
                       </Typography>
                     </td>
                     <td>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
-                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')
-                          : ((player as any).espn_player_projections?.[0]?.stats_2025_reb?.toFixed(1) || 'N/A')
+                          ? ((player as any).nba_espn_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')
+                          : ((player as any).nba_espn_projections?.[0]?.stats_2025_reb?.toFixed(1) || 'N/A')
                         }
                       </Typography>
                     </td>
                     <td>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
-                          ? ((player as any).espn_player_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')
-                          : ((player as any).espn_player_projections?.[0]?.stats_2025_ast?.toFixed(1) || 'N/A')
+                          ? ((player as any).nba_espn_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')
+                          : ((player as any).nba_espn_projections?.[0]?.stats_2025_ast?.toFixed(1) || 'N/A')
                         }
                       </Typography>
                     </td>
                     <td>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                        {player.salary_2025_26 
-                          ? `$${(player.salary_2025_26 / 1000000).toFixed(1)}M`
+                        {(player as any).nba_hoopshype_salaries?.[0]?.salary_2025_26 
+                          ? `$${((player as any).nba_hoopshype_salaries[0].salary_2025_26 / 1000000).toFixed(1)}M`
                           : 'N/A'
                         }
                       </Typography>

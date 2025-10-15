@@ -4,18 +4,19 @@ import Layout from './components/Layout'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
-import CreateLeague from './pages/CreateLeague'
 import League from './pages/League'
 import Draft from './pages/Draft'
 import Players from './pages/Players'
 import MatchupDetails from './pages/MatchupDetails'
-import TeamPage from './pages/TeamPage'
 import DeleteLeague from './pages/DeleteLeague'
 import TeamManagement from './pages/TeamManagement'
 import TeamsAndDivisions from './pages/TeamsAndDivisions'
 import DraftSettings from './pages/DraftSettings'
 import DraftOrder from './pages/DraftOrder'
 import Betting from './pages/Betting'
+import JoinLeague from './pages/JoinLeague'
+import EditRosterSettings from './pages/EditRosterSettings'
+import CommissionerTools from './pages/CommissionerTools'
 
 // Placeholder components for new routes
 const Highlights = () => (
@@ -69,10 +70,25 @@ const DraftOrderWrapper = () => {
   return <DraftOrder leagueId={id || ''} />
 }
 
+// Wrapper component for EditRosterSettings to extract leagueId from URL params
+const EditRosterSettingsWrapper = () => {
+  const { id } = useParams<{ id: string }>()
+  return <EditRosterSettings />
+}
+
+// Wrapper component for CommissionerTools to extract leagueId from URL params
+const CommissionerToolsWrapper = () => {
+  const { id } = useParams<{ id: string }>()
+  return <CommissionerTools leagueId={id || ''} />
+}
+
 function App() {
   return (
     <Box sx={{ minHeight: '100vh' }}>
       <Routes>
+        {/* Public routes without layout */}
+        <Route path="/join/:inviteCode" element={<JoinLeague />} />
+        
         <Route path="/" element={<Layout />}>
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
@@ -80,16 +96,16 @@ function App() {
           {/* Fantasy Routes */}
           <Route path="fantasy" element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="create-league" element={<CreateLeague />} />
           <Route path="players" element={<Players leagueId="" />} />
           <Route path="league/:id" element={<League />} />
           <Route path="league/:id/matchup/:matchupId" element={<MatchupDetails />} />
-          <Route path="league/:id/team/:teamId" element={<TeamPage />} />
           <Route path="league/:id/delete" element={<DeleteLeagueWrapper />} />
           <Route path="league/:id/teams" element={<TeamManagementWrapper />} />
           <Route path="league/:id/teams-and-divisions" element={<TeamsAndDivisionsWrapper />} />
           <Route path="league/:id/draft-settings" element={<DraftSettingsWrapper />} />
           <Route path="league/:id/draft-order" element={<DraftOrderWrapper />} />
+          <Route path="league/:id/roster-settings" element={<EditRosterSettingsWrapper />} />
+          <Route path="league/:id/commissioner-tools" element={<CommissionerToolsWrapper />} />
           <Route path="draft/:id" element={<Draft />} />
           
           {/* New Feature Routes */}

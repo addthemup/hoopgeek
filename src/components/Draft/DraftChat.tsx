@@ -15,7 +15,7 @@ import {
 } from '@mui/joy';
 import { Send, Chat } from '@mui/icons-material';
 import { useDraftChatMessages, useSendDraftChatMessage } from '../../hooks/useDraftChat';
-import { useDraftLobbyParticipants, useUpdateLobbyStatus } from '../../hooks/useDraftLobby';
+import { useDraftLobbyParticipants, useUpdateLobbyStatus, useJoinDraftLobby } from '../../hooks/useDraftLobby';
 import { useAuth } from '../../hooks/useAuth';
 import { useTeams } from '../../hooks/useTeams';
 import { useLeagueMembers } from '../../hooks/useLeagueMembers';
@@ -37,20 +37,47 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   const { data: leagueMembers } = useLeagueMembers(leagueId);
   const sendMessage = useSendDraftChatMessage();
   const updateLobbyStatus = useUpdateLobbyStatus();
+  const joinLobby = useJoinDraftLobby();
 
   // Find user's team
   const userTeam = teams?.find(team => team.user_id === user?.id);
+  const isUserInLobby = participants?.some(p => p.user_id === user?.id);
 
-  // Update lobby status periodically to show as online (lobby join is handled by parent)
+  // Debug logging
+  console.log('🔍 DraftChat Debug:', {
+    userId: user?.id,
+    userTeam: userTeam?.id,
+    userTeamName: userTeam?.team_name,
+    participants: participants?.map(p => ({ userId: p.user_id, teamName: p.fantasy_team?.team_name })),
+    isUserInLobby,
+    leagueMembers: leagueMembers?.map(m => ({ userId: m.user_id, teamName: m.team_name, isOnline: m.is_online }))
+  });
+
+  // Auto-join lobby when component mounts if user has a team but isn't in lobby
   useEffect(() => {
-    if (userTeam) {
+    console.log('🔍 DraftChat Auto-join check:', {
+      userTeam: !!userTeam,
+      isUserInLobby,
+      joinLobbyPending: joinLobby.isPending,
+      shouldJoin: userTeam && !isUserInLobby && !joinLobby.isPending
+    });
+    
+    if (userTeam && !isUserInLobby && !joinLobby.isPending) {
+      console.log('🚀 Auto-joining draft lobby for user:', user?.id, 'team:', userTeam.id);
+      joinLobby.mutate({ leagueId, fantasyTeamId: userTeam.id });
+    }
+  }, [userTeam, isUserInLobby, leagueId, joinLobby]);
+
+  // Update lobby status periodically to show as online
+  useEffect(() => {
+    if (userTeam && isUserInLobby) {
       const interval = setInterval(() => {
         updateLobbyStatus.mutate({ leagueId });
       }, 30000); // Update every 30 seconds
 
       return () => clearInterval(interval);
     }
-  }, [userTeam, leagueId]);
+  }, [userTeam, isUserInLobby, leagueId]);
 
   // Count online members from league members data instead of participants
   const onlineCount = leagueMembers?.filter(member => member.is_online).length || 0;

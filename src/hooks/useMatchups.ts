@@ -14,7 +14,6 @@ export interface Matchup {
   matchup_date?: string;
   fantasy_team1_score: number;
   fantasy_team2_score: number;
-  winner_fantasy_team_id?: string;
   status: 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
   is_manual_override: boolean;
   notes?: string;
@@ -23,7 +22,6 @@ export interface Matchup {
   // Joined team data
   team1?: FantasyTeam;
   team2?: FantasyTeam;
-  winner_team?: FantasyTeam;
 }
 
 export function useMatchups(leagueId: string, week?: number) {
@@ -33,13 +31,12 @@ export function useMatchups(leagueId: string, week?: number) {
       console.log(`🏀 Fetching matchups for league ${leagueId}, week ${week || 'all'}...`);
       
       let query = supabase
-        .from('weekly_matchups')
+        .from('fantasy_matchups')
         .select(`
           *,
           team1:fantasy_team1_id (
             id,
             team_name,
-            team_abbreviation,
             wins,
             losses,
             ties,
@@ -50,18 +47,6 @@ export function useMatchups(leagueId: string, week?: number) {
           team2:fantasy_team2_id (
             id,
             team_name,
-            team_abbreviation,
-            wins,
-            losses,
-            ties,
-            points_for,
-            points_against,
-            user_id
-          ),
-          winner_team:winner_fantasy_team_id (
-            id,
-            team_name,
-            team_abbreviation,
             wins,
             losses,
             ties,

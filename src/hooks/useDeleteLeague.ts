@@ -10,7 +10,7 @@ export function useDeleteLeague() {
       
       // Delete the league - this will cascade delete all related data due to foreign key constraints
       const { error } = await supabase
-        .from('leagues')
+        .from('fantasy_leagues')
         .delete()
         .eq('id', leagueId)
 

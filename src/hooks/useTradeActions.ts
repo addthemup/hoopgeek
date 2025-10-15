@@ -20,10 +20,9 @@ export function useAcceptTrade() {
     mutationFn: async ({ tradeId, acceptingTeamId, isCommissioner = false }: AcceptTradeParams) => {
       console.log('✅ Accepting trade:', { tradeId, acceptingTeamId, isCommissioner });
 
-      const { data, error } = await supabase.rpc('accept_trade_offer', {
-        trade_id_param: tradeId,
-        accepting_team_id_param: acceptingTeamId,
-        is_commissioner_param: isCommissioner,
+      const { data, error } = await supabase.rpc('accept_draft_trade_offer', {
+        p_trade_id: tradeId,
+        p_accepting_team_id: acceptingTeamId,
       });
 
       if (error) {
@@ -61,10 +60,9 @@ export function useRejectTrade() {
     mutationFn: async ({ tradeId, rejectingTeamId, isCommissioner = false }: RejectTradeParams) => {
       console.log('❌ Rejecting trade:', { tradeId, rejectingTeamId, isCommissioner });
 
-      const { data, error } = await supabase.rpc('reject_trade_offer', {
-        trade_id_param: tradeId,
-        rejecting_team_id_param: rejectingTeamId,
-        is_commissioner_param: isCommissioner,
+      const { data, error } = await supabase.rpc('reject_draft_trade_offer', {
+        p_trade_id: tradeId,
+        p_rejecting_team_id: rejectingTeamId,
       });
 
       if (error) {

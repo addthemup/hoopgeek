@@ -38,6 +38,8 @@ export function useJoinDraftLobby() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('User not authenticated')
 
+      console.log('🚀 Joining draft lobby:', { leagueId, userId: user.id, fantasyTeamId });
+
       const { data, error } = await supabase
         .from('draft_lobby_participants')
         .upsert({
@@ -53,10 +55,11 @@ export function useJoinDraftLobby() {
         .single()
 
       if (error) {
-        console.error('Error joining draft lobby:', error)
+        console.error('❌ Error joining draft lobby:', error)
         throw new Error(`Failed to join draft lobby: ${error.message}`)
       }
 
+      console.log('✅ Successfully joined draft lobby:', data);
       return data
     },
     onSuccess: (data, variables) => {

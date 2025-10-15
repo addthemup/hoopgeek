@@ -34,17 +34,10 @@ export function useLeagueMembers(leagueId: string) {
       console.log(`👥 Fetching members for league ${leagueId}...`)
       
       const { data, error } = await supabase
-        .from('league_members')
-        .select(`
-          *,
-          user:user_id (
-            id,
-            email,
-            name
-          )
-        `)
+        .from('fantasy_teams')
+        .select('*')
         .eq('league_id', leagueId)
-        .order('joined_at', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (error) {
         console.error('❌ Error fetching league members:', error)
@@ -147,7 +140,7 @@ export function useRemoveMember() {
       console.log(`👋 Removing member ${memberId} from league ${leagueId}...`)
       
       const { error } = await supabase
-        .from('league_members')
+        .from('fantasy_teams')
         .delete()
         .eq('id', memberId)
 
