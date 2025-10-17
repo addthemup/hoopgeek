@@ -387,23 +387,10 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Avatar 
                             size="sm" 
-                            src={!isEmpty && player?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
                             sx={{ 
                               bgcolor: isEmpty ? 'neutral.300' : 'primary.500',
                               width: 32,
-                              height: 32,
-                              '& img': {
-                                objectFit: 'cover'
-                              }
-                            }}
-                            onError={(e) => {
-                              // Fallback to initials if image fails to load
-                              const target = e.target as HTMLImageElement;
-                              target.style.display = 'none';
-                              const parent = target.parentElement;
-                              if (parent) {
-                                parent.textContent = isEmpty ? '?' : player?.name?.charAt(0) || '?';
-                              }
+                              height: 32
                             }}
                           >
                             {isEmpty ? '?' : player?.name?.charAt(0)}
