@@ -30,7 +30,7 @@ export class NBAApiClient {
     try {
       // Option 1: Direct Supabase query
       const { data, error } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('*')
         .order('name')
 
@@ -58,7 +58,7 @@ export class NBAApiClient {
   async getPlayerStats(playerId: string): Promise<NBAPlayer> {
     try {
       const { data, error } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('*')
         .eq('id', playerId)
         .single()

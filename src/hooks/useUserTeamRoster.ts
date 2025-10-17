@@ -3,7 +3,7 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from './useAuth';
 
 export interface RosterPlayer {
-  id: string; // This is now fantasy_team_players.id (UUID)
+  id: string; // This is now fantasy_roster_spots.id (UUID)
   name: string;
   position: string;
   team_abbreviation: string;
@@ -38,12 +38,11 @@ export function useUserTeamRoster(leagueId: string) {
         throw new Error('User team not found in this league');
       }
 
-      // Get the roster for this team
+      // Get the roster for this team from fantasy_roster_spots
       const { data, error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select(`
           id,
-          roster_spot_id,
           fantasy_team_id,
           player:player_id (
             id,
@@ -63,13 +62,13 @@ export function useUserTeamRoster(leagueId: string) {
       }
 
       const rosterPlayers = data.map(item => ({
-        id: item.id, // This is now fantasy_team_players.id (UUID)
+        id: item.id, // This is now fantasy_roster_spots.id (UUID)
         name: item.player.name,
         position: item.player.position,
         team_abbreviation: item.player.team_abbreviation,
         jersey_number: item.player.jersey_number,
         nba_player_id: item.player.nba_player_id,
-        roster_spot_id: item.roster_spot_id,
+        roster_spot_id: item.id, // Use the roster spot id as the roster_spot_id
         fantasy_team_id: item.fantasy_team_id,
       })) as RosterPlayer[];
 

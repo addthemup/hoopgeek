@@ -3,24 +3,30 @@ import { supabase } from '../utils/supabase';
 
 interface PlayerGameLog {
   id: string;
-  player_id: number;
+  player_id: string;
   nba_player_id: number;
   game_id: string;
   game_date: string;
+  season_year: string;
   player_name: string;
   team_abbreviation: string;
   matchup: string;
-  wl: string;
-  min: number;
+  jersey_num: number | null;
+  position: string;
+  team_id: number;
+  team_name: string;
+  team_city: string;
+  team_tricode: string;
+  min: string | number;
   fgm: number;
   fga: number;
-  fg_pct: number;
+  fg_pct: string | number;
   fg3m: number;
   fg3a: number;
-  fg3_pct: number;
+  fg3_pct: string | number;
   ftm: number;
   fta: number;
-  ft_pct: number;
+  ft_pct: string | number;
   oreb: number;
   dreb: number;
   reb: number;
@@ -28,14 +34,17 @@ interface PlayerGameLog {
   stl: number;
   blk: number;
   tov: number;
-  pf: number;
+  fouls_personal: number;
   pts: number;
-  plus_minus: number;
-  jersey_num: number;
-  position: string;
-  team_city: string;
-  team_tricode: string;
-  team_name: string;
+  plus_minus_points: number;
+  true_shooting_pct: string | number | null;
+  effective_fg_pct: string | number | null;
+  usage_rate: string | number | null;
+  player_efficiency_rating: string | number | null;
+  game_score: string | number | null;
+  is_starter: boolean;
+  is_home_game: boolean | null;
+  game_type: string;
   created_at: string;
   updated_at: string;
 }
@@ -52,7 +61,7 @@ export function usePlayerGameLogs(params: UsePlayerGameLogsParams = {}) {
     queryKey: ['playerGameLogs', params],
     queryFn: async (): Promise<PlayerGameLog[]> => {
       let query = supabase
-        .from('player_game_logs')
+        .from('nba_boxscores')
         .select('*')
         .order('game_date', { ascending: true });
 
@@ -94,7 +103,7 @@ export function usePlayerStatsForGames(gameIds: string[]) {
       if (gameIds.length === 0) return {};
 
       const { data, error } = await supabase
-        .from('player_game_logs')
+        .from('nba_boxscores')
         .select('*')
         .in('game_id', gameIds)
         .order('game_date', { ascending: true });
@@ -128,7 +137,7 @@ export function usePlayerStatsForPlayer(playerId: number, gameIds: string[]) {
       if (gameIds.length === 0) return {};
 
       const { data, error } = await supabase
-        .from('player_game_logs')
+        .from('nba_boxscores')
         .select('*')
         .eq('nba_player_id', playerId)
         .in('game_id', gameIds)

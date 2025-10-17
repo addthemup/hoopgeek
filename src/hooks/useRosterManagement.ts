@@ -1,9 +1,11 @@
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 import { FantasyTeamPlayer } from '../types';
+import { useAuth } from './useAuth';
 
 export function useAddPlayerToRoster() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ 
@@ -18,7 +20,7 @@ export function useAddPlayerToRoster() {
       // First, check if the team has any roster spots at all
       const { data: teamData, error: teamError } = await supabase
         .from('fantasy_teams')
-        .select('league_id')
+        .select('league_id, season_id')
         .eq('id', fantasyTeamId)
         .single();
 
@@ -29,7 +31,7 @@ export function useAddPlayerToRoster() {
 
       // Check if roster spots exist for this team
       const { data: rosterSpots, error: rosterSpotsError } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select('id')
         .eq('fantasy_team_id', fantasyTeamId)
         .limit(1);
@@ -55,37 +57,40 @@ export function useAddPlayerToRoster() {
           throw new Error('League roster configuration not found');
         }
 
-        // Get roster spots for this league
-        const { data: leagueRosterSpots, error: leagueRosterSpotsError } = await supabase
-          .from('roster_spots')
-          .select('id, position, position_order')
-          .eq('league_id', teamData.league_id)
-          .order('position_order');
+        // Get roster spots for this league - we'll create default roster spots
+        // For now, create a standard 13-player roster
+        const defaultRosterSpots = [
+          { position: 'PG', position_order: 1 },
+          { position: 'SG', position_order: 2 },
+          { position: 'SF', position_order: 3 },
+          { position: 'PF', position_order: 4 },
+          { position: 'C', position_order: 5 },
+          { position: 'G', position_order: 6 },
+          { position: 'F', position_order: 7 },
+          { position: 'UTIL', position_order: 8 },
+          { position: 'UTIL', position_order: 9 },
+          { position: 'UTIL', position_order: 10 },
+          { position: 'BENCH', position_order: 11 },
+          { position: 'BENCH', position_order: 12 },
+          { position: 'BENCH', position_order: 13 }
+        ];
 
-        if (leagueRosterSpotsError || !leagueRosterSpots || leagueRosterSpots.length === 0) {
-          console.error('❌ No roster spots configured for this league:', leagueRosterSpotsError);
-          throw new Error('No roster spots configured for this league. Please contact the commissioner.');
-        }
-
-        // Create fantasy_team_players entries for each roster spot
-        const rosterEntries = leagueRosterSpots.map(spot => ({
-          league_id: teamData.league_id,
+        // Create fantasy_roster_spots entries for each roster spot
+        const rosterEntries = defaultRosterSpots.map(() => ({
           fantasy_team_id: fantasyTeamId,
-          roster_spot_id: spot.id,
+          season_id: teamData.season_id,
           player_id: null,
-          is_starter: false,
-          is_bench: false,
           is_injured_reserve: false,
-          is_taxi_squad: false,
-          acquired_via: 'draft',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          assigned_at: null,
+          assigned_by: null,
+          draft_round: null,
+          draft_pick: null
         }));
 
         console.log('🔧 Creating roster entries:', rosterEntries);
 
         const { data: createdEntries, error: createError } = await supabase
-          .from('fantasy_team_players')
+          .from('fantasy_roster_spots')
           .insert(rosterEntries)
           .select();
 
@@ -101,8 +106,8 @@ export function useAddPlayerToRoster() {
       console.log('🔍 Looking for available roster spots for team:', fantasyTeamId);
       
       const { data: availableSpot, error: spotError } = await supabase
-        .from('fantasy_team_players')
-        .select('id, roster_spot_id, player_id, fantasy_team_id')
+        .from('fantasy_roster_spots')
+        .select('id, player_id, fantasy_team_id')
         .eq('fantasy_team_id', fantasyTeamId)
         .is('player_id', null)
         .limit(1)
@@ -111,7 +116,6 @@ export function useAddPlayerToRoster() {
       console.log('🔍 Available spot query result:', { availableSpot, spotError });
       console.log('🔍 Available spot details:', {
         id: availableSpot?.id,
-        roster_spot_id: availableSpot?.roster_spot_id,
         player_id: availableSpot?.player_id,
         fantasy_team_id: availableSpot?.fantasy_team_id,
         type: typeof availableSpot?.id,
@@ -141,7 +145,7 @@ export function useAddPlayerToRoster() {
       // First, verify the player exists
       console.log('🔍 Verifying player exists:', playerId);
       const { data: playerData, error: playerError } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('id, name')
         .eq('id', playerId)
         .single();
@@ -162,7 +166,7 @@ export function useAddPlayerToRoster() {
       // Test if we can read the roster spot with full details
       console.log('🔧 Testing read permissions...');
       const { data: testRead, error: testReadError } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select('*')
         .eq('id', availableSpot.id)
         .single();
@@ -185,9 +189,10 @@ export function useAddPlayerToRoster() {
         
         // Try a direct update with select to get immediate feedback
         const updateResult = await supabase
-          .from('fantasy_team_players')
+          .from('fantasy_roster_spots')
           .update({ 
-            player_id: playerId
+            player_id: playerId,
+            assigned_at: new Date().toISOString()
           })
           .eq('id', availableSpot.id)
           .eq('fantasy_team_id', fantasyTeamId) // Double-check team ownership
@@ -237,7 +242,7 @@ export function useAddPlayerToRoster() {
         // Try to verify the spot still exists
         console.log('🔍 Verifying spot still exists...');
         const { data: spotCheck, error: spotCheckError } = await supabase
-          .from('fantasy_team_players')
+          .from('fantasy_roster_spots')
           .select('id, player_id')
           .eq('id', availableSpot.id)
           .single();
@@ -248,13 +253,36 @@ export function useAddPlayerToRoster() {
       }
 
       console.log('✅ Successfully added player to roster:', updateData);
+
+      // Create a transaction record for the add move
+      console.log('📝 Creating transaction record for add move...');
+      const { data: transactionResult, error: transactionError } = await supabase
+        .rpc('create_fantasy_transaction', {
+          league_id_param: teamData.league_id,
+          season_id_param: teamData.season_id,
+          transaction_type_param: 'add',
+          fantasy_team_id_param: fantasyTeamId,
+          player_id_param: playerId,
+          notes_param: `Added ${playerData.name} to roster`,
+          processed_by_param: user?.id || null
+        });
+
+      if (transactionError) {
+        console.error('❌ Error creating transaction record:', transactionError);
+        // Don't throw here - the player was successfully added, just the transaction record failed
+        console.warn('⚠️ Player added successfully but transaction record creation failed');
+      } else {
+        console.log('✅ Transaction record created:', transactionResult);
+      }
+
       return { success: true, playerId, fantasyTeamId, updatedData: updateData };
     },
     onSuccess: (_, variables) => {
       // Invalidate and refetch team roster
       queryClient.invalidateQueries({ queryKey: ['team-roster', variables.fantasyTeamId] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
-      console.log('✅ Roster queries invalidated');
+      queryClient.invalidateQueries({ queryKey: ['team-transactions', variables.fantasyTeamId] });
+      console.log('✅ Roster and transaction queries invalidated');
     },
     onError: (error) => {
       console.error('❌ Failed to add player to roster:', error);
@@ -264,6 +292,7 @@ export function useAddPlayerToRoster() {
 
 export function useRemovePlayerFromRoster() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
 
   return useMutation({
     mutationFn: async ({ 
@@ -275,13 +304,50 @@ export function useRemovePlayerFromRoster() {
     }) => {
       console.log(`🏀 Removing player from roster spot ${rosterSpotId} for team ${fantasyTeamId}...`);
       
+      // First, get the player information before removing them
+      const { data: rosterSpot, error: spotError } = await supabase
+        .from('fantasy_roster_spots')
+        .select(`
+          player_id,
+          player:player_id (
+            id,
+            name
+          )
+        `)
+        .eq('fantasy_team_id', fantasyTeamId)
+        .eq('id', rosterSpotId)
+        .single();
+
+      if (spotError || !rosterSpot) {
+        console.error('❌ Error finding roster spot:', spotError);
+        throw new Error(`Failed to find roster spot: ${spotError?.message || 'Roster spot not found'}`);
+      }
+
+      if (!rosterSpot.player_id) {
+        console.error('❌ No player found in this roster spot');
+        throw new Error('No player found in this roster spot');
+      }
+
+      // Get team information for transaction record
+      const { data: teamData, error: teamError } = await supabase
+        .from('fantasy_teams')
+        .select('league_id, season_id')
+        .eq('id', fantasyTeamId)
+        .single();
+
+      if (teamError || !teamData) {
+        console.error('❌ Team not found:', teamError);
+        throw new Error('Team not found');
+      }
+      
       const { error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .update({ 
-          player_id: null
+          player_id: null,
+          assigned_at: null
         })
         .eq('fantasy_team_id', fantasyTeamId)
-        .eq('roster_spot_id', rosterSpotId)
+        .eq('id', rosterSpotId)
         .select()
         .maybeSingle();
 
@@ -291,13 +357,36 @@ export function useRemovePlayerFromRoster() {
       }
 
       console.log('✅ Successfully removed player from roster');
+
+      // Create a transaction record for the cut move
+      console.log('📝 Creating transaction record for cut move...');
+      const { data: transactionResult, error: transactionError } = await supabase
+        .rpc('create_fantasy_transaction', {
+          league_id_param: teamData.league_id,
+          season_id_param: teamData.season_id,
+          transaction_type_param: 'cut',
+          fantasy_team_id_param: fantasyTeamId,
+          player_id_param: rosterSpot.player_id,
+          notes_param: `Cut ${(rosterSpot.player as any)?.name || 'player'} from roster`,
+          processed_by_param: user?.id || null
+        });
+
+      if (transactionError) {
+        console.error('❌ Error creating transaction record:', transactionError);
+        // Don't throw here - the player was successfully removed, just the transaction record failed
+        console.warn('⚠️ Player removed successfully but transaction record creation failed');
+      } else {
+        console.log('✅ Transaction record created:', transactionResult);
+      }
+
       return { success: true, fantasyTeamId, rosterSpotId };
     },
     onSuccess: (_, variables) => {
       // Invalidate and refetch team roster
       queryClient.invalidateQueries({ queryKey: ['team-roster', variables.fantasyTeamId] });
       queryClient.invalidateQueries({ queryKey: ['teams'] });
-      console.log('✅ Roster queries invalidated');
+      queryClient.invalidateQueries({ queryKey: ['team-transactions', variables.fantasyTeamId] });
+      console.log('✅ Roster and transaction queries invalidated');
     },
     onError: (error) => {
       console.error('❌ Failed to remove player from roster:', error);
@@ -329,7 +418,7 @@ export function useRoster(leagueId: string) {
       const teamIds = teams.map(team => team.id);
 
       const { data, error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select(`
           *,
           player:player_id (

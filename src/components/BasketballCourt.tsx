@@ -12,11 +12,14 @@ import {
   IconButton,
   Tooltip,
   CircularProgress,
+  Button,
 } from '@mui/joy';
+import { Clear } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 import PlayerJersey from './PlayerJersey';
 import { useLineupSettings } from '../hooks/useLineupSettings';
+import { useAutoLineup } from '../hooks/useAutoLineup';
 
 interface Player {
   id: string;
@@ -54,11 +57,14 @@ interface BasketballCourtProps {
   leagueId: string;
   teamId: string;
   availablePlayers: Player[];
+  currentWeek?: number;
+  currentMatchup?: any;
+  seasonYear?: number;
 }
 
 type LineupType = 'starters' | 'rotation' | 'bench';
 
-export default function BasketballCourt({ leagueId, teamId, availablePlayers }: BasketballCourtProps) {
+export default function BasketballCourt({ leagueId, teamId, availablePlayers, currentWeek, currentMatchup, seasonYear }: BasketballCourtProps) {
   const [activeTab, setActiveTab] = useState<LineupType>('starters');
   const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
   
@@ -73,6 +79,81 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
   const [draggedCourtPlayer, setDraggedCourtPlayer] = useState<CourtPlayer | null>(null);
 
   const queryClient = useQueryClient();
+  
+  // Auto-lineup mutation
+  const autoLineupMutation = useAutoLineup();
+
+  // Clear lineup mutation
+  const clearLineupMutation = useMutation({
+    mutationFn: async () => {
+      const weekNumber = currentWeek || 1;
+      const seasonYearValue = seasonYear || 2025;
+      
+      console.log('🧹 Clearing all lineup positions for week:', weekNumber, 'season:', seasonYearValue);
+      
+      const { error } = await supabase
+        .from('fantasy_lineups')
+        .delete()
+        .eq('league_id', leagueId)
+        .eq('fantasy_team_id', teamId)
+        .eq('week_number', weekNumber)
+        .eq('season_year', seasonYearValue);
+
+      if (error) {
+        console.error('❌ Error clearing lineup positions:', error);
+        throw error;
+      }
+      
+      console.log('✅ Successfully cleared all lineup positions');
+    },
+    onSuccess: () => {
+      // Invalidate and refetch lineup positions
+      queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, teamId] });
+    },
+    onError: (error) => {
+      console.error('❌ Clear lineup failed:', error);
+    }
+  });
+
+  // Handle auto-lineup
+  const handleAutoLineup = async () => {
+    if (!currentMatchup || !lineupSettings) {
+      console.error('❌ Missing required data for auto-lineup');
+      return;
+    }
+
+    const weekNumber = currentWeek || 1;
+    const seasonYearValue = seasonYear || 2025;
+    const seasonId = currentMatchup.season_id;
+    const matchupId = currentMatchup.id;
+
+    try {
+      await autoLineupMutation.mutateAsync({
+        leagueId,
+        teamId,
+        weekNumber,
+        seasonYear: seasonYearValue,
+        seasonId,
+        matchupId
+      });
+    } catch (error) {
+      console.error('❌ Auto-lineup failed:', error);
+    }
+  };
+
+  // Handle clear lineup
+  const handleClearLineup = async () => {
+    if (!currentMatchup) {
+      console.error('❌ Missing required data for clear lineup');
+      return;
+    }
+
+    try {
+      await clearLineupMutation.mutateAsync();
+    } catch (error) {
+      console.error('❌ Clear lineup failed:', error);
+    }
+  };
   
   // Helper function to get position requirements for a unit
   const getPositionRequirements = (unit: LineupType): string[] => {
@@ -114,6 +195,45 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
       default:
         return [];
     }
+  };
+
+  // Helper function to calculate position and position_order based on lineup type and court position
+  const calculatePositionAndOrder = (lineupType: LineupType, x: number, y: number): { position: string; position_order: number } => {
+    const positions = getPositionRequirements(lineupType);
+    
+    // For now, use a simple mapping based on court position
+    // This could be enhanced to be more sophisticated
+    let position: string;
+    let position_order: number;
+    
+    if (lineupType === 'bench') {
+      // For bench, all positions are UTIL
+      position = 'UTIL';
+      // Calculate order based on x position (left to right)
+      position_order = Math.floor((x / 100) * positions.length) + 1;
+    } else {
+      // For starters and rotation, determine position based on court area
+      if (y > 60) {
+        // Bottom area - Guards
+        position = 'G';
+        position_order = x < 50 ? 1 : 2;
+      } else if (y < 40) {
+        // Top area - Forwards and Center
+        if (x < 30 || x > 70) {
+          position = 'F';
+          position_order = x < 30 ? 1 : 2;
+        } else {
+          position = 'C';
+          position_order = 1;
+        }
+      } else {
+        // Middle area - default to Forward
+        position = 'F';
+        position_order = x < 50 ? 1 : 2;
+      }
+    }
+    
+    return { position, position_order };
   };
 
   // Helper function to check if a player is available for a specific unit
@@ -186,18 +306,21 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
   };
 
   // Fetch ALL lineup positions (for all units) to check player availability
-  const { data: allLineupPositions, isLoading: lineupLoading } = useQuery<LineupPosition[]>({
+  const { data: allLineupPositions, isLoading: lineupLoading, error: lineupError } = useQuery<LineupPosition[]>({
     queryKey: ['lineup-positions', leagueId, teamId],
     queryFn: async () => {
+      const weekNumber = currentWeek || 1;
+      const seasonYearValue = seasonYear || 2025;
+      
       console.log('🏀 BasketballCourt: Calling get_lineup_positions with:', {
-        p_league_id: leagueId,
         p_fantasy_team_id: teamId,
+        p_league_id: leagueId,
         p_lineup_type: null // Get all lineup types
       });
       
       const { data, error } = await supabase.rpc('get_lineup_positions', {
-        p_league_id: leagueId,
         p_fantasy_team_id: teamId,
+        p_league_id: leagueId,
         p_lineup_type: null // Get all lineup types
       });
 
@@ -207,9 +330,23 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
       }
       
       console.log('✅ BasketballCourt: All lineup positions fetched:', data);
+      console.log('🔍 BasketballCourt: Number of lineup positions:', data?.length || 0);
+      console.log('🔍 BasketballCourt: Lineup positions for current tab:', data?.filter(pos => pos.lineup_type === activeTab) || []);
       return (data || []) as LineupPosition[];
     },
     enabled: !!leagueId && !!teamId,
+  });
+
+  // Debug query state
+  console.log('🔍 BasketballCourt: Query state:', {
+    isLoading: lineupLoading,
+    error: lineupError,
+    dataLength: allLineupPositions?.length || 0,
+    enabled: !!leagueId && !!teamId,
+    leagueId,
+    teamId,
+    currentWeek,
+    seasonYear
   });
 
   // Filter lineup positions for the current active tab
@@ -230,25 +367,68 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
     lineupPositionId: pos.id,
   })) || [];
 
+  // Debug logging for court players
+  console.log('🔍 BasketballCourt: Active tab:', activeTab);
+  console.log('🔍 BasketballCourt: Lineup positions for active tab:', lineupPositions);
+  console.log('🔍 BasketballCourt: Players on court:', playersOnCourt);
+
   // Mutation to add/update lineup position
   const upsertLineupPosition = useMutation({
     mutationFn: async ({ playerId, x, y }: { playerId: string; x: number; y: number }) => {
+      // Calculate position and position_order based on lineup type and court position
+      const { position, position_order } = calculatePositionAndOrder(activeTab, x, y);
+      
+      // Get required data for the function call
+      const weekNumber = currentWeek || 1;
+      const seasonYearValue = seasonYear || 2025;
+      const matchupId = currentMatchup?.id || '00000000-0000-0000-0000-000000000000'; // Default UUID if no matchup
+      
+      // Get season_id from the current matchup (which already has it)
+      const seasonId = currentMatchup?.season_id || '00000000-0000-0000-0000-000000000000';
+      
+      // Look up the UUID id from nba_players table using the nba_player_id
+      const { data: playerData, error: playerError } = await supabase
+        .from('nba_players')
+        .select('id')
+        .eq('nba_player_id', parseInt(playerId))
+        .single();
+      
+      if (playerError || !playerData) {
+        console.error('❌ BasketballCourt: Error finding player UUID:', playerError);
+        throw new Error(`Player not found: ${playerId}`);
+      }
+      
+      const playerUuid = playerData.id;
+      
       console.log('🏀 BasketballCourt: Calling upsert_lineup_position with:', {
         p_league_id: leagueId,
+        p_season_id: seasonId,
         p_fantasy_team_id: teamId,
-        p_player_id: playerId,
+        p_matchup_id: matchupId,
+        p_week_number: weekNumber,
+        p_season_year: seasonYearValue,
         p_lineup_type: activeTab,
+        p_position: position,
+        p_position_order: position_order,
+        p_player_id: playerUuid,
         p_position_x: x,
         p_position_y: y
       });
       
       const { data, error } = await supabase.rpc('upsert_lineup_position', {
         p_league_id: leagueId,
+        p_season_id: seasonId,
         p_fantasy_team_id: teamId,
-        p_player_id: playerId,
+        p_matchup_id: matchupId,
+        p_week_number: weekNumber,
+        p_season_year: seasonYearValue,
         p_lineup_type: activeTab,
+        p_position: position,
+        p_position_order: position_order,
+        p_player_id: playerUuid,
         p_position_x: x,
-        p_position_y: y
+        p_position_y: y,
+        p_created_by: (await supabase.auth.getUser()).data.user?.id
       });
 
       if (error) {
@@ -323,8 +503,14 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
         return;
       }
       
+      const nbaPlayerId = draggedPlayer.nbaPlayerId?.toString();
+      if (!nbaPlayerId) {
+        console.error('❌ BasketballCourt: No NBA player ID found for player:', draggedPlayer);
+        return;
+      }
+      
       upsertLineupPosition.mutate({
-        playerId: draggedPlayer.id,
+        playerId: nbaPlayerId,
         x,
         y
       });
@@ -332,8 +518,14 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
     
     // If repositioning a jersey already on court
     if (draggedCourtPlayer) {
+      const nbaPlayerId = draggedCourtPlayer.nbaPlayerId?.toString();
+      if (!nbaPlayerId) {
+        console.error('❌ BasketballCourt: No NBA player ID found for court player:', draggedCourtPlayer);
+        return;
+      }
+      
       upsertLineupPosition.mutate({
-        playerId: draggedCourtPlayer.id,
+        playerId: nbaPlayerId,
         x,
         y
       });
@@ -384,54 +576,106 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
   return (
     <Card variant="outlined" sx={{ height: '100%' }}>
       <CardContent sx={{ p: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
-        {/* Tabs */}
-        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
-          <Tabs
-            value={activeTab}
-            onChange={(_, value) => setActiveTab(value as LineupType)}
-            sx={{ '--Tabs-gap': '0px' }}
-          >
-            <TabList>
-              {(['starters', 'rotation', 'bench'] as LineupType[]).map((type) => {
-                // Count players for this specific lineup type
-                const currentCount = allLineupPositions?.filter(pos => pos.lineup_type === type).length || 0;
-                const maxCount = getMaxPlayersForLineupType(type);
-                const multiplier = lineupSettings ? 
-                  (type === 'starters' ? lineupSettings.starters_multiplier :
-                   type === 'rotation' ? lineupSettings.rotation_multiplier :
-                   lineupSettings.bench_multiplier) : 1.0;
-                const positionRequirements = getPositionRequirements(type);
-                
-                return (
-                  <Tab key={type} value={type} sx={{ flex: 1 }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                          size="sm"
-                          variant="soft"
-                          color={getLineupTypeColor(type)}
-                          sx={{ minWidth: 20, height: 20 }}
-                        >
-                          {currentCount}/{maxCount}
-                        </Chip>
-                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                          {getLineupTypeLabel(type)}
-                        </Typography>
-                        <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                          {multiplier}x
-                        </Typography>
+
+        {/* Tabs Row with Auto Button and Position Requirements */}
+        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center' }}>
+          {/* Tabs */}
+          <Box sx={{ flex: 1 }}>
+            <Tabs
+              value={activeTab}
+              onChange={(_, value) => setActiveTab(value as LineupType)}
+              sx={{ '--Tabs-gap': '0px' }}
+            >
+              <TabList>
+                {(['starters', 'rotation', 'bench'] as LineupType[]).map((type) => {
+                  // Count players for this specific lineup type
+                  const currentCount = allLineupPositions?.filter(pos => pos.lineup_type === type).length || 0;
+                  const maxCount = getMaxPlayersForLineupType(type);
+                  const multiplier = lineupSettings ? 
+                    (type === 'starters' ? lineupSettings.starters_multiplier :
+                     type === 'rotation' ? lineupSettings.rotation_multiplier :
+                     lineupSettings.bench_multiplier) : 1.0;
+                  const positionRequirements = getPositionRequirements(type);
+                  
+                  return (
+                    <Tab key={type} value={type} sx={{ flex: 1 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip
+                            size="sm"
+                            variant="soft"
+                            color={getLineupTypeColor(type)}
+                            sx={{ minWidth: 20, height: 20 }}
+                          >
+                            {currentCount}/{maxCount}
+                          </Chip>
+                          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                            {getLineupTypeLabel(type)}
+                          </Typography>
+                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                            {multiplier}x
+                          </Typography>
+                        </Box>
+                        {positionRequirements.length > 0 && (
+                          <Typography level="body-xs" color="neutral" sx={{ textAlign: 'center', lineHeight: 1.2 }}>
+                            {positionRequirements.join(', ')}
+                          </Typography>
+                        )}
                       </Box>
-                      {positionRequirements.length > 0 && (
-                        <Typography level="body-xs" color="neutral" sx={{ textAlign: 'center', lineHeight: 1.2 }}>
-                          {positionRequirements.join(', ')}
-                        </Typography>
-                      )}
-                    </Box>
-                  </Tab>
-                );
-              })}
-            </TabList>
-          </Tabs>
+                    </Tab>
+                  );
+                })}
+              </TabList>
+            </Tabs>
+          </Box>
+
+          {/* Auto Button and Position Requirements */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1 }}>
+            {/* Auto Lineup Button */}
+            <Button
+              variant="solid"
+              color="primary"
+              startDecorator="🤖"
+              size="sm"
+              onClick={handleAutoLineup}
+              loading={autoLineupMutation.isPending}
+              disabled={!currentMatchup || !lineupSettings}
+              sx={{ 
+                minWidth: 'auto',
+                px: 2,
+                fontSize: '0.8rem'
+              }}
+            >
+              Auto
+            </Button>
+
+            {/* Position Requirements for Active Tab */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography level="body-xs" color="neutral" sx={{ fontWeight: 'bold' }}>
+                {getLineupTypeLabel(activeTab)}:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.5 }}>
+                {getPositionRequirements(activeTab).map((position, index) => {
+                  const isFilled = isPositionFilled(position, activeTab);
+                  return (
+                    <Chip
+                      key={index}
+                      size="sm"
+                      variant="soft"
+                      color={isFilled ? getLineupTypeColor(activeTab) : 'danger'}
+                      sx={{ 
+                        fontSize: '0.7rem', 
+                        height: 20,
+                        opacity: isFilled ? 1 : 0.8
+                      }}
+                    >
+                      {position}
+                    </Chip>
+                  );
+                })}
+              </Box>
+            </Box>
+          </Box>
         </Box>
 
         {/* Court + Roster Container */}
@@ -559,45 +803,6 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
               overflow: 'hidden',
             }}
           >
-            {/* Position Requirements Overlay - Top Right */}
-            <Box sx={{ 
-              position: 'absolute', 
-              top: 16, 
-              right: 16, 
-              zIndex: 10 
-            }}>
-              <Card variant="outlined" sx={{ 
-                bgcolor: 'background.level1',
-                backdropFilter: 'blur(8px)',
-                opacity: 0.95
-              }}>
-                <CardContent sx={{ p: 1.5 }}>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold', mb: 1, textAlign: 'center' }}>
-                    {activeTab.toUpperCase()}
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
-                    {getPositionRequirements(activeTab).map((position, index) => {
-                      const isFilled = isPositionFilled(position, activeTab);
-                      return (
-                        <Chip
-                          key={index}
-                          size="sm"
-                          variant="soft"
-                          color={isFilled ? getLineupTypeColor(activeTab) : 'danger'}
-                          sx={{ 
-                            fontSize: '0.7rem', 
-                            height: 20,
-                            opacity: isFilled ? 1 : 0.8
-                          }}
-                        >
-                          {position}
-                        </Chip>
-                      );
-                    })}
-                  </Box>
-                </CardContent>
-              </Card>
-            </Box>
 
             {/* Court Lines - Half Court Design */}
             <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -778,6 +983,45 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers }: 
                 </Box>
               );
             })}
+
+            {/* Roster Configuration Overlay - Top Right */}
+            <Box sx={{ 
+              position: 'absolute', 
+              top: 16, 
+              right: 16, 
+              zIndex: 5, // Higher than court but lower than jerseys (which are zIndex 10+)
+              bgcolor: 'rgba(255, 255, 255, 0.9)',
+              backdropFilter: 'blur(4px)',
+              borderRadius: 'md',
+              p: 1.5,
+              border: '1px solid',
+              borderColor: 'divider',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+            }}>
+              <Typography level="body-xs" color="neutral" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+                {getLineupTypeLabel(activeTab)} Requirements:
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {getPositionRequirements(activeTab).map((position, index) => {
+                  const isFilled = isPositionFilled(position, activeTab);
+                  return (
+                    <Chip
+                      key={index}
+                      size="sm"
+                      variant="soft"
+                      color={isFilled ? getLineupTypeColor(activeTab) : 'danger'}
+                      sx={{ 
+                        fontSize: '0.7rem', 
+                        height: 18,
+                        opacity: isFilled ? 1 : 0.8
+                      }}
+                    >
+                      {position}
+                    </Chip>
+                  );
+                })}
+              </Box>
+            </Box>
 
             {/* Loading overlay */}
             {lineupLoading && (

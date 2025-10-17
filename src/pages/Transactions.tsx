@@ -144,8 +144,8 @@ export default function Transactions({ leagueId }: TransactionsProps) {
       let playersMap: Record<number, any> = {};
       if (allPlayerIds.size > 0) {
         const { data: playersData, error: playersError } = await supabase
-          .from('players')
-          .select('id, name, position, team_abbreviation, nba_player_id, salary_2025_26')
+          .from('nba_players')
+          .select('id, name, position, team_abbreviation, nba_player_id')
           .in('id', Array.from(allPlayerIds));
 
         if (!playersError && playersData) {

@@ -30,42 +30,51 @@ export function useLineupSettings(leagueId: string) {
       
       console.log('🔧 useLineupSettings: Fetching settings for leagueId:', leagueId);
       
-      // Query league_settings table directly instead of using RPC functions
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('league_settings')
+      // Query fantasy_leagues table for basic league settings
+      const { data: leagueData, error: leagueError } = await supabase
+        .from('fantasy_leagues')
         .select('*')
-        .eq('league_id', leagueId)
+        .eq('id', leagueId)
         .single();
       
-      console.log('🔧 useLineupSettings: Settings data:', settingsData);
-      console.log('🔧 useLineupSettings: Settings error:', settingsError);
-      
-      if (settingsError) {
-        console.error('Error fetching lineup settings:', settingsError);
-        throw settingsError;
+      if (leagueError) {
+        console.error('Error fetching league data:', leagueError);
+        throw leagueError;
       }
       
-      if (!settingsData) {
-        console.log('🔧 useLineupSettings: No settings found for league');
+      if (!leagueData) {
+        console.log('🔧 useLineupSettings: No league found');
         return null;
       }
+
+      // Query fantasy_league_seasons table for season-specific settings
+      const { data: seasonData, error: seasonError } = await supabase
+        .from('fantasy_league_seasons')
+        .select('*')
+        .eq('league_id', leagueId)
+        .eq('is_active', true)
+        .single();
+      
+      console.log('🔧 useLineupSettings: League data:', leagueData);
+      console.log('🔧 useLineupSettings: Season data:', seasonData);
+      console.log('🔧 useLineupSettings: Season error:', seasonError);
       
       // Map the database fields to our interface
       const result: LineupSettings = {
-        roster_positions: settingsData.roster_positions || {},
-        starters_count: settingsData.starters_count || 5,
-        starters_multiplier: settingsData.starters_multiplier || 1.0,
-        rotation_count: settingsData.rotation_count || 5,
-        rotation_multiplier: settingsData.rotation_multiplier || 0.75,
-        bench_count: settingsData.bench_count || 3,
-        bench_multiplier: settingsData.bench_multiplier || 0.5,
-        scoring_type: settingsData.scoring_type || 'H2H_Points',
-        lineup_deadline: settingsData.lineup_deadline || 'daily',
-        lineup_lock_time: settingsData.lineup_lock_time || '00:00',
-        fantasy_scoring_format: settingsData.fantasy_scoring_format || 'FanDuel',
-        custom_scoring_categories: settingsData.custom_scoring_categories,
-        scoring_categories: settingsData.scoring_categories || {},
-        position_unit_assignments: settingsData.position_unit_assignments || {
+        roster_positions: seasonData?.roster_positions || {},
+        starters_count: seasonData?.starters_count || 5,
+        starters_multiplier: seasonData?.starters_multiplier || 1.0,
+        rotation_count: seasonData?.rotation_count || 5,
+        rotation_multiplier: seasonData?.rotation_multiplier || 0.75,
+        bench_count: seasonData?.bench_count || 3,
+        bench_multiplier: seasonData?.bench_multiplier || 0.5,
+        scoring_type: leagueData.scoring_type || 'H2H_Weekly',
+        lineup_deadline: seasonData?.lineup_deadline || 'daily',
+        lineup_lock_time: seasonData?.lineup_lock_time || '00:00',
+        fantasy_scoring_format: leagueData.fantasy_scoring_format || 'FanDuel',
+        custom_scoring_categories: seasonData?.custom_scoring_categories,
+        scoring_categories: seasonData?.scoring_categories || {},
+        position_unit_assignments: seasonData?.position_unit_assignments || {
           starters: {},
           rotation: {},
           bench: {}

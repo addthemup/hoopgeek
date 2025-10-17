@@ -2,6 +2,7 @@ import { Routes, Route, useParams } from 'react-router-dom'
 import { Box } from '@mui/joy'
 import Layout from './components/Layout'
 import Home from './pages/Home'
+import GamePage from './pages/GamePage'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import League from './pages/League'
@@ -17,6 +18,7 @@ import Betting from './pages/Betting'
 import JoinLeague from './pages/JoinLeague'
 import EditRosterSettings from './pages/EditRosterSettings'
 import CommissionerTools from './pages/CommissionerTools'
+import UserSettings from './pages/UserSettings'
 
 // Placeholder components for new routes
 const Highlights = () => (
@@ -93,6 +95,9 @@ function App() {
           <Route index element={<Home />} />
           <Route path="login" element={<Login />} />
           
+          {/* Game Highlights Routes */}
+          <Route path="game/:id" element={<GamePage />} />
+          
           {/* Fantasy Routes */}
           <Route path="fantasy" element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
@@ -113,6 +118,9 @@ function App() {
           <Route path="analysis" element={<Analysis />} />
           <Route path="betting" element={<Betting />} />
           <Route path="community" element={<Community />} />
+          
+          {/* User Settings */}
+          <Route path="settings" element={<UserSettings />} />
         </Route>
       </Routes>
     </Box>

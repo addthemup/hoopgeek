@@ -1,12 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   Alert,
   LinearProgress,
   Chip,
+  Button,
 } from '@mui/joy';
 import { useParams } from 'react-router-dom';
 import DraftBottomNav from './DraftBottomNav';
@@ -20,12 +19,15 @@ import DraftRules from './DraftRules';
 import DraftCommish from './DraftCommish';
 import DraftLobby from './DraftLobby';
 import DraftPicksCarousel from './DraftPicksCarousel';
+import AutodraftToggle from './AutodraftToggle';
 import { useAuth } from '../../hooks/useAuth';
 import { useLeague } from '../../hooks/useLeagues';
 import { useTeams } from '../../hooks/useTeams';
 import { useJoinDraftLobby, useUpdateLobbyStatus } from '../../hooks/useDraftLobby';
 import { useNextPick } from '../../hooks/useNextPick';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
+import { useDraftState } from '../../hooks/useDraftState';
+import { useStartDraft } from '../../hooks/useStartDraft';
 import { supabase } from '../../utils/supabase';
 
 export default function DraftComponent() {
@@ -37,9 +39,10 @@ export default function DraftComponent() {
   const updateLobbyStatus = useUpdateLobbyStatus();
   const { data: nextPick } = useNextPick(leagueId || '');
   const { data: draftOrder } = useDraftOrder(leagueId || '');
+  const { data: draftState } = useDraftState(leagueId || '');
+  const startDraft = useStartDraft();
   const [activeTab, setActiveTab] = useState(0);
   const [timeUntilDraft, setTimeUntilDraft] = useState<string>('');
-  const [timeRemaining, setTimeRemaining] = useState<string>('');
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
   const [tradeContext, setTradeContext] = useState<{
     teamId: string;
@@ -123,8 +126,29 @@ export default function DraftComponent() {
     }
   }, [userTeam, leagueId]);
 
-  // Get draft start time from league data
-  const draftStartTime = league?.draft_date ? new Date(league.draft_date) : null;
+  // Get draft start time from draft state (fantasy_league_seasons.draft_date)
+  // This is the ACTUAL draft start time, not the old fantasy_leagues.draft_date
+  const draftStartTime = draftState?.draft_date ? new Date(draftState.draft_date) : null;
+  
+  // Debug: Log timezone info
+  useEffect(() => {
+    if (draftState?.draft_date) {
+      const now = new Date();
+      const draftDate = new Date(draftState.draft_date);
+      console.log('🕐 Timezone Debug:', {
+        rawDraftDate: draftState.draft_date,
+        parsedDraftDate: draftDate.toString(),
+        draftDateISO: draftDate.toISOString(),
+        draftDateLocal: draftDate.toLocaleString(),
+        now: now.toString(),
+        nowISO: now.toISOString(),
+        nowLocal: now.toLocaleString(),
+        timezoneOffset: now.getTimezoneOffset(),
+        timeDiff: draftDate.getTime() - now.getTime(),
+        timeDiffMinutes: (draftDate.getTime() - now.getTime()) / 1000 / 60
+      });
+    }
+  }, [draftState?.draft_date]);
   
   // Calculate current pick information
   const currentPickInfo = useMemo(() => {
@@ -143,22 +167,33 @@ export default function DraftComponent() {
     return { currentPick, currentRound, totalPicks, timeRemaining };
   }, [draftOrder]);
   
-  // Determine if draft has started
+  // Determine if draft has started (check actual draft status, not just time)
   const isDraftStarted = useMemo(() => {
-    if (!draftStartTime) return false;
-    return new Date() >= draftStartTime;
-  }, [draftStartTime]);
+    // Check if draft is actually in progress in the database
+    return draftState?.draft_status === 'in_progress';
+  }, [draftState]);
 
-  const isDraftComplete = useMemo(() => {
-    // Check if all picks are completed
-    return currentPickInfo.currentPick > currentPickInfo.totalPicks;
-  }, [currentPickInfo.currentPick, currentPickInfo.totalPicks]);
+
+  // Check if there are picks remaining to be made
+  const hasPicksRemaining = useMemo(() => {
+    if (!draftOrder || draftOrder.length === 0) return true;
+    return draftOrder.some(pick => !pick.is_completed);
+  }, [draftOrder]);
+
+  // Note: Timer logic is now handled by the useDraftTimer hook in DraftPicksCarousel
+  
+  // Close lobby when draft actually starts
+  useEffect(() => {
+    if (isDraftStarted) {
+      setIsLobbyOpen(false);
+    }
+  }, [isDraftStarted]);
   
   // Always show carousel
   const shouldShowCarousel = true;
 
-  // Poll draft-manager edge function every 10 seconds when draft is active
-  // TODO: Remove this once cron job is properly configured
+  // Poll draft-manager edge function every 5 seconds when draft is active
+  // This provides near-instant auto-picks when timers expire
   useEffect(() => {
     // Only poll if draft has started and is not in lobby
     if (!isDraftStarted || isLobbyOpen || !leagueId) {
@@ -199,8 +234,8 @@ export default function DraftComponent() {
     // Call immediately
     callDraftManager();
 
-    // Then poll every 10 seconds
-    const interval = setInterval(callDraftManager, 10000);
+    // Then poll every 5 seconds for faster response
+    const interval = setInterval(callDraftManager, 5000);
 
     return () => {
       console.log('🛑 Stopping draft-manager polling');
@@ -208,7 +243,8 @@ export default function DraftComponent() {
     };
   }, [isDraftStarted, isLobbyOpen, leagueId]);
 
-  // Countdown timer effect
+  // Countdown timer effect - DISPLAY ONLY, does not trigger draft
+  // Draft is triggered by pg_cron every minute checking draft_date
   useEffect(() => {
     if (!draftStartTime) {
       setTimeUntilDraft('Draft date not set');
@@ -219,22 +255,20 @@ export default function DraftComponent() {
       const now = new Date();
       const timeDiff = draftStartTime.getTime() - now.getTime();
 
+      // If time has expired, stop updating (component will hide countdown section)
       if (timeDiff <= 0) {
-        setTimeUntilDraft('Draft Starting Now!');
-        setIsLobbyOpen(false); // Close lobby when draft starts
+        setTimeUntilDraft('0s');
         return;
       }
 
-      const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+      const days = Math.floor(timeDiff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((timeDiff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
 
-      // Open lobby when 1 hour or less remaining
-      if (hours === 0 && minutes <= 60) {
-        setIsLobbyOpen(true);
-      }
-
-      if (hours > 0) {
+      if (days > 0) {
+        setTimeUntilDraft(`${days}d ${hours}h ${minutes}m ${seconds}s`);
+      } else if (hours > 0) {
         setTimeUntilDraft(`${hours}h ${minutes}m ${seconds}s`);
       } else if (minutes > 0) {
         setTimeUntilDraft(`${minutes}m ${seconds}s`);
@@ -246,7 +280,7 @@ export default function DraftComponent() {
     // Update immediately
     updateCountdown();
 
-    // Update every second
+    // Update every second for accurate countdown
     const interval = setInterval(updateCountdown, 1000);
 
     return () => clearInterval(interval);
@@ -324,7 +358,7 @@ export default function DraftComponent() {
         sx={{ 
           position: 'sticky',
           top: 0,
-          zIndex: 1000,
+          zIndex: 999,
           bgcolor: 'background.surface',
           borderBottom: '1px solid',
           borderColor: 'divider',
@@ -342,22 +376,35 @@ export default function DraftComponent() {
             <Typography level="body-xs" color="neutral" sx={{ whiteSpace: 'nowrap' }}>
               Round {currentPickInfo.currentRound} • Pick {currentPickInfo.currentPick} of {currentPickInfo.totalPicks}
             </Typography>
-            {isDraftStarted && !isDraftComplete && (
-              <Typography level="body-xs" color="warning.600" sx={{ whiteSpace: 'nowrap' }}>
-                • {currentPickInfo.timeRemaining} remaining
+            {isDraftStarted && userTeam && (
+              <AutodraftToggle 
+                leagueId={leagueId || ''} 
+                teamId={userTeam.id}
+                isCommissioner={isCommissioner}
+                size="sm"
+              />
+            )}
+            {isDraftStarted && !hasPicksRemaining && (
+              <Typography level="body-xs" color="success" sx={{ whiteSpace: 'nowrap' }}>
+                • Completed
+              </Typography>
+            )}
+            {isDraftStarted && hasPicksRemaining && (
+              <Typography level="body-xs" color="success" sx={{ whiteSpace: 'nowrap' }}>
+                • Draft in progress
               </Typography>
             )}
           </Box>
 
-          {/* Right: Draft timing info */}
+          {/* Right: Draft timing info - Only show countdown BEFORE draft starts */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-            {draftStartTime ? (
+            {!isDraftStarted && draftStartTime && (
               <>
                 <Typography level="body-xs" color="neutral">
-                  {isDraftComplete ? 'Draft complete' : isDraftStarted ? 'Draft in progress' : 'Starts in:'}
+                  Starts in:
                 </Typography>
                 <Chip 
-                  color={isDraftComplete ? "success" : isDraftStarted ? "success" : "primary"} 
+                  color="primary" 
                   variant="soft" 
                   size="sm"
                   sx={{ 
@@ -367,23 +414,48 @@ export default function DraftComponent() {
                     px: 1
                   }}
                 >
-                  {isDraftComplete ? 'COMPLETE' : isDraftStarted ? 'LIVE' : timeUntilDraft}
+                  {timeUntilDraft}
                 </Chip>
               </>
-            ) : (
+            )}
+            {!isDraftStarted && !draftStartTime && (
               <Chip 
                 color="warning" 
                 variant="soft" 
                 size="sm"
                 sx={{ 
-                  fontWeight: 'bold',
-                  fontSize: '0.75rem',
-                  height: '20px',
-                  px: 1
+                    fontWeight: 'bold',
+                    fontSize: '0.75rem',
+                    height: '20px',
+                    px: 1
                 }}
               >
                 Not scheduled
               </Chip>
+            )}
+            
+            {/* Auto-Complete Button - Only show for commissioners when draft hasn't started */}
+            {isCommissioner && !isDraftStarted && hasPicksRemaining && (
+              <Button
+                size="sm"
+                color="warning"
+                variant="solid"
+                onClick={() => {
+                  if (leagueId) {
+                    startDraft.mutate(leagueId);
+                  }
+                }}
+                loading={startDraft.isPending}
+                title="Development Tool: Starts draft and enables auto-draft for all teams to test draft-manager functionality"
+                sx={{ 
+                  fontSize: '0.75rem',
+                  height: '24px',
+                  px: 1.5,
+                  fontWeight: 'bold'
+                }}
+              >
+                🤖 Auto-Complete
+              </Button>
             )}
           </Box>
         </Box>
@@ -395,7 +467,6 @@ export default function DraftComponent() {
           <DraftPicksCarousel
             leagueId={leagueId || ''}
             currentPickNumber={currentPickInfo.currentPick}
-            timeRemaining={currentPickInfo.timeRemaining}
             isDraftStarted={isDraftStarted}
             isCommissioner={isCommissioner}
             onInitiateTrade={handleInitiateTrade}
@@ -414,6 +485,7 @@ export default function DraftComponent() {
         onTabChange={setActiveTab}
         isCommissioner={isCommissioner}
         userTeamId={userTeam?.id}
+        leagueId={leagueId}
       />
 
     </Box>

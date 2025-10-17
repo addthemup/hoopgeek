@@ -106,7 +106,7 @@ export interface Player {
   created_at: string
   updated_at: string
   stats?: PlayerStats
-  espn_player_projections?: ESPNPlayerProjections[]
+  nba_espn_projections?: ESPNPlayerProjections[]
 }
 
 export interface PlayerStats {
@@ -228,6 +228,9 @@ export interface FantasyTeam {
     username?: string
   }
   roster?: FantasyTeamPlayer[] // Team's roster
+  fantasy_league_seasons?: {
+    salary_cap_amount: number
+  }
 }
 
 export interface DraftPick {

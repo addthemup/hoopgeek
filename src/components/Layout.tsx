@@ -6,7 +6,7 @@ export default function Layout() {
   return (
     <Box sx={{ minHeight: '100vh' }}>
       <TopNavigation />
-      <Box component="main" sx={{ p: 3 }}>
+      <Box component="main" sx={{ p: { xs: 0, sm: 3 } }}>
         <Outlet />
       </Box>
     </Box>

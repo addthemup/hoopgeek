@@ -237,9 +237,9 @@ export default function EditRosterSettings() {
       console.log('🔧 EditRosterSettings: Update data:', updateData);
       
       const { error } = await supabase
-        .from('league_settings')
+        .from('fantasy_leagues')
         .update(updateData)
-        .eq('league_id', leagueId);
+        .eq('id', leagueId);
 
       if (error) {
         throw error;

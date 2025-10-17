@@ -28,7 +28,7 @@ export function usePlayerUpcomingGames(playerId: string) {
       
       // First get the player's team information
       const { data: playerData, error: playerError } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('team_abbreviation, team_name')
         .eq('id', playerId)
         .single()

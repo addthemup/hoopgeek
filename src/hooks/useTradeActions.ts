@@ -20,9 +20,9 @@ export function useAcceptTrade() {
     mutationFn: async ({ tradeId, acceptingTeamId, isCommissioner = false }: AcceptTradeParams) => {
       console.log('✅ Accepting trade:', { tradeId, acceptingTeamId, isCommissioner });
 
-      const { data, error } = await supabase.rpc('accept_draft_trade_offer', {
-        p_trade_id: tradeId,
-        p_accepting_team_id: acceptingTeamId,
+      const { data, error } = await supabase.rpc('accept_trade_offer', {
+        trade_id_param: tradeId,
+        accepting_team_id_param: acceptingTeamId,
       });
 
       if (error) {
@@ -42,13 +42,16 @@ export function useAcceptTrade() {
       queryClient.invalidateQueries({ queryKey: ['team-drafted-players'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['available-draft-picks'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['pending-trades-count'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['team-roster'], refetchType: 'active' }); // ✅ ADDED: For DraftRoster, TeamRoster, Lineups
+      queryClient.invalidateQueries({ queryKey: ['user-team-roster'], refetchType: 'active' }); // ✅ ADDED: For user's roster
+      queryClient.invalidateQueries({ queryKey: ['team-draft-salary'], refetchType: 'active' }); // ✅ ADDED: Update salary totals
       
-      // Force refetch after a slight delay to ensure DB has been updated
-      setTimeout(() => {
-        queryClient.refetchQueries({ queryKey: ['team-drafted-players'] });
-        queryClient.refetchQueries({ queryKey: ['available-draft-picks'] });
-        queryClient.refetchQueries({ queryKey: ['draft-order'] });
-      }, 500);
+      // Force immediate refetch (no delay needed - database is already updated)
+      queryClient.refetchQueries({ queryKey: ['team-drafted-players'] });
+      queryClient.refetchQueries({ queryKey: ['available-draft-picks'] });
+      queryClient.refetchQueries({ queryKey: ['draft-order'] });
+      queryClient.refetchQueries({ queryKey: ['team-roster'] });
+      queryClient.refetchQueries({ queryKey: ['user-team-roster'] });
     },
   });
 }
@@ -60,9 +63,9 @@ export function useRejectTrade() {
     mutationFn: async ({ tradeId, rejectingTeamId, isCommissioner = false }: RejectTradeParams) => {
       console.log('❌ Rejecting trade:', { tradeId, rejectingTeamId, isCommissioner });
 
-      const { data, error } = await supabase.rpc('reject_draft_trade_offer', {
-        p_trade_id: tradeId,
-        p_rejecting_team_id: rejectingTeamId,
+      const { data, error } = await supabase.rpc('reject_trade_offer', {
+        trade_id_param: tradeId,
+        rejecting_team_id_param: rejectingTeamId,
       });
 
       if (error) {

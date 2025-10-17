@@ -12,8 +12,6 @@ import {
   Stack,
   Table,
   Sheet,
-  Select,
-  Option,
 } from '@mui/joy';
 import { useLeague } from '../hooks/useLeagues';
 import { useAuth } from '../hooks/useAuth';
@@ -25,7 +23,7 @@ import { useWeekSchedule, getGameTime } from '../hooks/useNBASchedule';
 import { usePlayerGameLogs } from '../hooks/usePlayerGameLogs';
 import { useLineupSettings } from '../hooks/useLineupSettings';
 import BasketballCourt from '../components/BasketballCourt';
-import { SCORING_FORMATS, getScoringFormat, calculateFantasyPoints, FantasyScoringFormat } from '../utils/fantasyScoring';
+import { getScoringFormat, calculateFantasyPoints } from '../utils/fantasyScoring';
 
 interface Player {
   id: string;
@@ -362,15 +360,13 @@ export default function Lineups({ leagueId }: LineupsProps) {
                 </Card>
 
       {/* Basketball Court Component */}
-      {console.log('🏀 Lineups: Passing props to BasketballCourt:', {
-        leagueId,
-        teamId: userTeam?.id,
-        availablePlayersCount: availablePlayers?.length
-      })}
       <BasketballCourt
         leagueId={leagueId}
         teamId={userTeam.id}
         availablePlayers={availablePlayers}
+        currentWeek={currentWeek}
+        currentMatchup={currentMatchup}
+        seasonYear={2025}
       />
 
       {/* Weekly Schedule Table */}

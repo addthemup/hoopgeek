@@ -31,42 +31,133 @@ serve(async (req) => {
   }
 
   console.log('🏀 Draft Manager: Starting draft management cycle...');
-
+  const now = new Date();  // Ensure 'now' is correctly defined
   try {
+      // Check if this is a manual trigger
+      const body = await req.json().catch(() => ({}));
+      if (body.trigger === 'manual_start') {
+        console.log('🚀 Manual trigger received - processing immediately');
+        if (body.league_id) {
+          console.log(`🎯 Focusing on league: ${body.league_id}`);
+        }
+        // Add a small delay to ensure database updates are committed
+        console.log('⏳ Waiting 2 seconds for database updates to commit...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } else if (body.trigger === 'pick_made') {
+        console.log('🎯 Pick made trigger received - moving to next pick');
+        if (body.league_id) {
+          console.log(`🎯 Focusing on league: ${body.league_id}, pick: ${body.pick_number}`);
+        }
+        // Add a small delay to ensure database updates are committed
+        console.log('⏳ Waiting 1 second for database updates to commit...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      } else if (body.trigger === 'draft_start_time_reached') {
+        console.log('⏰ Draft start time reached trigger received');
+        if (body.league_id) {
+          console.log(`🎯 Focusing on league: ${body.league_id}`);
+        }
+        // Process immediately for draft start time
+        console.log('⏳ Processing draft start time trigger...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
     // Initialize Supabase client with service role (full access)
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const now = new Date();
     console.log(`⏰ Current time: ${now.toISOString()}`);
 
     // Step 1: Find drafts that should be starting now
+    console.log('🔍 Fetching drafts to start');
     const { data: draftsToStart, error: startError } = await supabase
-      .from('leagues')
-      .select('id, name, draft_date, draft_status')
+      .from('fantasy_league_seasons')
+      .select('league_id, draft_date, draft_status, fantasy_leagues!inner(id, name)')
       .eq('draft_status', 'scheduled')
       .lte('draft_date', now.toISOString())
       .limit(10);
 
+    // Also check for drafts that are already in_progress (manual start case)
+    console.log('🔍 Checking for drafts already in progress...');
+    const { data: inProgressDrafts, error: inProgressError } = await supabase
+      .from('fantasy_league_seasons')
+      .select('league_id, draft_date, draft_status, fantasy_leagues!inner(id, name)')
+      .eq('draft_status', 'in_progress')
+      .limit(10);
+
+    if (inProgressError) {
+      console.error('❌ Error fetching in-progress drafts:', inProgressError);
+    } else if (inProgressDrafts && inProgressDrafts.length > 0) {
+      console.log(`⚡ Found ${inProgressDrafts.length} draft(s) already in progress:`);
+      inProgressDrafts.forEach(d => {
+        console.log(`   - ${d.fantasy_leagues?.name}: Status=${d.draft_status}, Date=${d.draft_date}`);
+      });
+    } else {
+      console.log('📊 No drafts currently in progress');
+    }
+    
+    // Also check what drafts exist for debugging
+    const { data: allDrafts, error: allDraftsError } = await supabase
+      .from('fantasy_league_seasons')
+      .select('league_id, draft_date, draft_status, fantasy_leagues!inner(id, name)')
+      .limit(10);
+    
+    if (!allDraftsError && allDrafts) {
+      console.log(`📊 Found ${allDrafts.length} total drafts:`);
+      allDrafts.forEach(d => {
+        console.log(`   - ${d.fantasy_leagues?.name}: status=${d.draft_status}, date=${d.draft_date}`);
+      });
+    }
+
     if (startError) {
       console.error('❌ Error fetching drafts to start:', startError);
     } else if (draftsToStart && draftsToStart.length > 0) {
-      console.log(`🚀 Found ${draftsToStart.length} draft(s) to start:`);
+      console.log(`🚀 Found ${draftsToStart.length} draft(s) ready to start.`);
       draftsToStart.forEach(d => {
-        console.log(`   - ${d.name} (ID: ${d.id}, scheduled: ${d.draft_date})`);
+        console.log(`   - ${d.fantasy_leagues?.name || 'Unknown'}: Scheduled for ${d.draft_date}`);
       });
 
       for (const draft of draftsToStart) {
-        await startDraft(supabase, draft.id, draft.name);
+        console.log(`📝 Starting draft for ${draft.fantasy_leagues?.name}`);
+        await startDraft(supabase, draft.league_id, draft.fantasy_leagues?.name);
       }
     } else {
       console.log('✅ No drafts need to start right now');
     }
 
+    // If this is a manual start trigger, we don't need to start any drafts
+    // The start_draft_manually function already handled that
+    if (body.trigger === 'manual_start') {
+      console.log('🚀 Manual start detected - skipping draft start logic');
+    }
+    
+    // If this is a draft start time trigger, focus on the specific league
+    if (body.trigger === 'draft_start_time_reached' && body.league_id) {
+      console.log(`⏰ Draft start time reached for league: ${body.league_id}`);
+      
+      // Check if this specific league needs to start
+      const { data: specificDraft, error: specificError } = await supabase
+        .from('fantasy_league_seasons')
+        .select('league_id, draft_date, draft_status, fantasy_leagues!inner(id, name)')
+        .eq('league_id', body.league_id)
+        .eq('draft_status', 'scheduled')
+        .lte('draft_date', now.toISOString())
+        .limit(1);
+
+      if (specificError) {
+        console.error('❌ Error fetching specific draft to start:', specificError);
+      } else if (specificDraft && specificDraft.length > 0) {
+        console.log(`🚀 Starting draft for ${specificDraft[0].fantasy_leagues?.name} (start time reached)`);
+        await startDraft(supabase, specificDraft[0].league_id, specificDraft[0].fantasy_leagues?.name);
+      } else {
+        console.log(`📊 League ${body.league_id} is not ready to start or already started`);
+      }
+    }
+
     // Step 2: Find drafts in progress with expired picks
+    console.log('🔍 Checking for active drafts...');
     const { data: activeDrafts, error: activeError } = await supabase
-      .from('draft_current_state')
+      .from('fantasy_draft_current_state')
       .select(`
         league_id,
         current_pick_id,
@@ -74,8 +165,8 @@ serve(async (req) => {
         current_round,
         draft_status,
         is_auto_pick_active,
-        leagues!inner(name, max_teams),
-        draft_order!inner(
+        fantasy_leagues!inner(name, max_teams),
+        fantasy_draft_order!inner(
           id,
           time_expires,
           pick_number,
@@ -86,22 +177,141 @@ serve(async (req) => {
         )
       `)
       .eq('draft_status', 'in_progress')
-      .eq('is_auto_pick_active', true) // Only process drafts with auto-pick ENABLED
       .not('current_pick_id', 'is', null);
+
+    // Debug: Check what we found
+    if (activeDrafts && activeDrafts.length > 0) {
+      console.log('🔍 Active drafts found:');
+      activeDrafts.forEach(draft => {
+        console.log(`   - League ${draft.league_id}: Pick #${draft.current_pick_number}`);
+        console.log(`     Current pick ID: ${draft.current_pick_id}`);
+        console.log(`     Time expires: ${draft.fantasy_draft_order?.time_expires || 'not set'}`);
+        console.log(`     Is completed: ${draft.fantasy_draft_order?.is_completed || 'not set'}`);
+      });
+    } else {
+      console.log('🔍 No active drafts with picks found. Checking for missing draft states...');
+      
+      // Find all leagues that are in_progress in fantasy_league_seasons but missing from fantasy_draft_current_state
+      // First, get all league_ids that have draft states
+      const { data: existingStates, error: existingError } = await supabase
+        .from('fantasy_draft_current_state')
+        .select('league_id');
+      
+      if (existingError) {
+        console.error('❌ Error fetching existing draft states:', existingError);
+      } else {
+        const existingLeagueIds = existingStates?.map(s => s.league_id) || [];
+        
+        // Now find leagues that are in_progress but don't have draft states
+        let missingQuery = supabase
+          .from('fantasy_league_seasons')
+          .select(`
+            league_id,
+            fantasy_leagues!inner(name)
+          `)
+          .eq('draft_status', 'in_progress');
+        
+        if (existingLeagueIds.length > 0) {
+          missingQuery = missingQuery.not('league_id', 'in', `(${existingLeagueIds.join(',')})`);
+        }
+        
+        const { data: missingStates, error: missingError } = await missingQuery;
+      
+      if (missingError) {
+        console.error('❌ Error checking for missing draft states:', missingError);
+      } else if (missingStates && missingStates.length > 0) {
+        console.log(`🔧 Found ${missingStates.length} league(s) missing draft state, initializing...`);
+        
+        for (const league of missingStates) {
+          console.log(`🔧 Initializing draft state for league: ${league.fantasy_leagues?.name} (${league.league_id})`);
+          
+          const { data: initResult, error: initError } = await supabase
+            .rpc('initialize_draft_state', {
+              league_id_param: league.league_id
+            });
+          
+          if (initError) {
+            console.error(`❌ Error initializing draft state for ${league.league_id}:`, initError);
+          } else {
+            console.log(`✅ Draft state initialized for ${league.fantasy_leagues?.name}:`, initResult);
+          }
+        }
+      } else {
+        console.log('✅ All in-progress drafts have proper draft states');
+        }
+      }
+    }
 
     if (activeError) {
       console.error('❌ Error fetching active drafts:', activeError);
     } else if (activeDrafts && activeDrafts.length > 0) {
       console.log(`⚡ Found ${activeDrafts.length} active draft(s) with picks to process:`);
       activeDrafts.forEach(d => {
-        console.log(`   - League ${d.league_id}: Pick #${d.current_pick_number} (expires: ${d.draft_order?.time_expires || 'not set'})`);
+        console.log(`   - League ${d.league_id}: Pick #${d.current_pick_number} (expires: ${d.fantasy_draft_order?.time_expires || 'not set'})`);
+        console.log(`     Draft Status: ${d.draft_status}, Auto-pick Active: ${d.is_auto_pick_active}`);
+        console.log(`     Current Pick ID: ${d.current_pick_id}, Round: ${d.current_round}`);
       });
 
       for (const draftState of activeDrafts) {
-        await processDraftPick(supabase, draftState, now);
+        // Check if the current team has autodraft enabled before processing
+        const currentPick = draftState.fantasy_draft_order;
+        if (currentPick && currentPick.time_expires) {
+          const expiresAt = new Date(currentPick.time_expires);
+          console.log(`⏰ Checking pick #${currentPick.pick_number}: expires at ${expiresAt.toISOString()}, now is ${now.toISOString()}`);
+          console.log(`⏰ Time comparison: now=${now.getTime()}, expires=${expiresAt.getTime()}, expired=${now >= expiresAt}`);
+          if (now >= expiresAt) {
+            console.log(`⏰ Pick #${currentPick.pick_number} has EXPIRED - processing...`);
+            // Time has expired, check if team has autodraft enabled
+            const { data: teams } = await supabase
+              .from('fantasy_teams')
+              .select('id, team_name, autodraft_enabled')
+              .eq('league_id', draftState.league_id)
+              .order('id');
+            
+            if (teams && teams.length > 0) {
+              console.log(`👥 Found ${teams.length} teams for league ${draftState.league_id}`);
+              teams.forEach((t, i) => {
+                console.log(`   Team ${i + 1}: ${t.team_name} (autodraft: ${t.autodraft_enabled})`);
+              });
+              
+              const team = teams[currentPick.team_position - 1];
+              console.log(`👥 Team at position ${currentPick.team_position}: ${team?.team_name || 'NOT FOUND'}, autodraft_enabled: ${team?.autodraft_enabled || 'NOT FOUND'}`);
+              if (team && team.autodraft_enabled) {
+                console.log(`🤖 Processing autodraft for team ${team.team_name} (pick #${currentPick.pick_number})`);
+                await processDraftPick(supabase, draftState, now);
+              } else {
+                console.log(`⏰ Time expired for pick #${currentPick.pick_number} but team ${team?.team_name || 'unknown'} doesn't have autodraft enabled`);
+                // Still process to enable autodraft for the team
+                await processDraftPick(supabase, draftState, now);
+              }
+            } else {
+              console.log(`❌ No teams found for league ${draftState.league_id}`);
+            }
+          } else {
+            const timeRemaining = Math.floor((expiresAt.getTime() - now.getTime()) / 1000);
+            console.log(`⏳ Pick #${currentPick.pick_number} still has ${timeRemaining} seconds remaining`);
+          }
+        }
       }
     } else {
       console.log('✅ No active drafts requiring action');
+      
+      // Let's also check if there are any drafts in progress at all
+      const { data: allActiveDrafts, error: allActiveError } = await supabase
+        .from('fantasy_draft_current_state')
+        .select('league_id, current_pick_number, draft_status, fantasy_leagues!inner(name)')
+        .eq('draft_status', 'in_progress');
+      
+      if (allActiveError) {
+        console.error('❌ Error checking all active drafts:', allActiveError);
+      } else if (allActiveDrafts && allActiveDrafts.length > 0) {
+        console.log(`📊 Found ${allActiveDrafts.length} draft(s) in progress (but no expired picks):`);
+        allActiveDrafts.forEach(d => {
+          console.log(`   - ${d.fantasy_leagues?.name}: Pick #${d.current_pick_number}`);
+        });
+      } else {
+        console.log('📊 No drafts currently in progress');
+      }
     }
 
     return new Response(
@@ -139,15 +349,20 @@ async function startDraft(supabase: any, leagueId: string, leagueName: string) {
   console.log(`📝 Starting draft for league: ${leagueName}`);
 
   try {
-    // Update league status
+    // Update league season status (not fantasy_leagues)
     await supabase
-      .from('leagues')
-      .update({ draft_status: 'in_progress' })
-      .eq('id', leagueId);
+      .from('fantasy_league_seasons')
+      .update({ 
+        draft_status: 'in_progress',
+        draft_date: new Date().toISOString()
+      })
+      .eq('league_id', leagueId)
+      .order('created_at', { ascending: false })
+      .limit(1);
 
     // Get first pick from draft order
     const { data: firstPick, error: pickError } = await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .select('id, pick_number, round, team_position')
       .eq('league_id', leagueId)
       .eq('pick_number', 1)
@@ -160,9 +375,9 @@ async function startDraft(supabase: any, leagueId: string, leagueName: string) {
 
     // Get league settings for timing
     const { data: settings } = await supabase
-      .from('league_settings')
+      .from('fantasy_leagues')
       .select('draft_time_per_pick, draft_auto_pick_enabled')
-      .eq('league_id', leagueId)
+      .eq('id', leagueId)
       .single();
 
     const timePerPick = settings?.draft_time_per_pick || 60; // default 60 seconds
@@ -170,13 +385,13 @@ async function startDraft(supabase: any, leagueId: string, leagueName: string) {
 
     // Count total picks
     const { count: totalPicks } = await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .select('*', { count: 'exact', head: true })
       .eq('league_id', leagueId);
 
     // Initialize draft_current_state
     const { error: stateError } = await supabase
-      .from('draft_current_state')
+      .from('fantasy_draft_current_state')
       .upsert({
         league_id: leagueId,
         current_pick_id: firstPick.id,
@@ -197,7 +412,7 @@ async function startDraft(supabase: any, leagueId: string, leagueName: string) {
 
     // Set timer on first pick
     await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .update({
         time_started: new Date().toISOString(),
         time_expires: expiresAt.toISOString()
@@ -215,7 +430,7 @@ async function startDraft(supabase: any, leagueId: string, leagueName: string) {
  */
 async function processDraftPick(supabase: any, draftState: any, now: Date) {
   const leagueId = draftState.league_id;
-  const currentPick = draftState.draft_order;
+  const currentPick = draftState.fantasy_draft_order;
 
   if (!currentPick || currentPick.is_completed) {
     console.log(`⏭️ Moving to next pick for league ${leagueId}`);
@@ -226,13 +441,16 @@ async function processDraftPick(supabase: any, draftState: any, now: Date) {
   // Check if time has expired
   if (currentPick.time_expires) {
     const expiresAt = new Date(currentPick.time_expires);
+    console.log(`⏰ processDraftPick: Checking pick #${currentPick.pick_number} - now=${now.getTime()}, expires=${expiresAt.getTime()}, expired=${now >= expiresAt}`);
     if (now >= expiresAt) {
-      console.log(`⏰ Time expired for pick #${currentPick.pick_number} in league ${leagueId}`);
+      console.log(`⏰ Time expired for pick #${currentPick.pick_number} in league ${leagueId} - calling autoPickPlayer`);
       await autoPickPlayer(supabase, leagueId, currentPick, draftState);
     } else {
       const secondsRemaining = Math.round((expiresAt.getTime() - now.getTime()) / 1000);
       console.log(`⏳ Pick #${currentPick.pick_number} has ${secondsRemaining}s remaining`);
     }
+  } else {
+    console.log(`❌ No time_expires found for pick #${currentPick.pick_number}`);
   }
 }
 
@@ -243,6 +461,7 @@ async function processDraftPick(supabase: any, draftState: any, now: Date) {
  */
 async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any, draftState: any) {
   console.log(`🤖 Auto-picking for pick #${currentPick.pick_number} (Round ${currentPick.round})`);
+  console.log(`🤖 autoPickPlayer called with leagueId: ${leagueId}, pickId: ${currentPick.id}`);
 
   try {
     // Get the team for this pick
@@ -270,7 +489,7 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
     
     // Get total rounds from draft order
     const { data: roundData } = await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .select('round')
       .eq('league_id', leagueId)
       .order('round', { ascending: false })
@@ -281,7 +500,7 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
     
     // Count how many picks this team has already made
     const { count: completedPicks } = await supabase
-      .from('draft_picks')
+      .from('fantasy_draft_picks')
       .select('*', { count: 'exact', head: true })
       .eq('league_id', leagueId)
       .eq('fantasy_team_id', team.id);
@@ -312,10 +531,9 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
         // Team is genuinely capped out
         console.log(`💸 Team "${team.team_name}" is capped out - marking pick as skipped`);
         await supabase
-          .from('draft_order')
+          .from('fantasy_draft_order')
           .update({
             is_completed: true,
-            is_auto_picked: true,
             auto_pick_reason: 'insufficient_cap_space',
             time_started: new Date().toISOString(),
             time_expires: new Date().toISOString()
@@ -331,35 +549,46 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
       
       // Get remaining cap for this team
       const { data: roster } = await supabase
-        .from('fantasy_team_rosters')
-        .select('player_id, players!inner(salary_2025_26)')
-        .eq('fantasy_team_id', team.id);
+        .from('fantasy_roster_spots')
+        .select(`
+          player_id,
+          nba_players!inner(
+            nba_hoopshype_salaries(salary_2025_26)
+          )
+        `)
+        .eq('fantasy_team_id', team.id)
+        .not('player_id', 'is', null);
 
-      const { data: league } = await supabase
-        .from('leagues')
+      const { data: leagueSeason } = await supabase
+        .from('fantasy_league_seasons')
         .select('salary_cap_amount')
-        .eq('id', leagueId)
+        .eq('league_id', leagueId)
+        .eq('is_active', true)
         .single();
 
-      const currentSalary = roster?.reduce((sum: number, r: any) => sum + (r.players?.salary_2025_26 || 0), 0) || 0;
-      const salaryCap = league?.salary_cap_amount || 170000000;
+      const currentSalary = roster?.reduce((sum: number, r: any) => sum + (r.nba_players?.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0), 0) || 0;
+      const salaryCap = leagueSeason?.salary_cap_amount || 200000000;
       const remainingCap = salaryCap - currentSalary;
       
       // Get already-drafted players
       const { data: draftedPlayers } = await supabase
-        .from('draft_picks')
+        .from('fantasy_draft_picks')
         .select('player_id')
         .eq('league_id', leagueId);
 
       const draftedPlayerIds = draftedPlayers?.map((p: any) => p.player_id) || [];
       
-      // Get ANY available player that fits under the cap, sorted by projected points
+      // Get ANY available player that fits under the cap, sorted by salary (highest first)
       let fallbackQuery = supabase
-        .from('players')
-        .select('*')
+        .from('nba_players')
+        .select(`
+          *,
+          nba_hoopshype_salaries!inner(salary_2025_26),
+          nba_espn_projections(proj_2026_pts, proj_2026_reb, proj_2026_ast, proj_2026_gp)
+        `)
         .eq('is_active', true)
-        .lte('salary_2025_26', remainingCap)
-        .order('projected_fantasy_points_2025_26', { ascending: false });
+        .lte('nba_hoopshype_salaries.salary_2025_26', remainingCap)
+        .order('nba_hoopshype_salaries(salary_2025_26)', { ascending: false });
       
       if (draftedPlayerIds.length > 0) {
         fallbackQuery = fallbackQuery.not('id', 'in', `(${draftedPlayerIds.join(',')})`);
@@ -371,10 +600,9 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
         // Still no players available - this shouldn't happen if canTeamAffordPlayers returned true
         console.error('Fallback query also failed:', fallbackError);
         await supabase
-          .from('draft_order')
+          .from('fantasy_draft_order')
           .update({
             is_completed: true,
-            is_auto_picked: true,
             auto_pick_reason: 'no_eligible_players'
           })
           .eq('id', currentPick.id);
@@ -384,10 +612,12 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
       
       // Use the fallback player
       const fallbackPlayer = fallbackPlayers[0];
-      console.log(`🔄 Using fallback player: ${fallbackPlayer.name} (${fallbackPlayer.position}) - $${(fallbackPlayer.salary_2025_26 / 1000000).toFixed(1)}M`);
+      const playerSalary = fallbackPlayer.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0;
+      console.log(`🔄 Using fallback player: ${fallbackPlayer.name} (${fallbackPlayer.position}) - $${(playerSalary / 1000000).toFixed(1)}M`);
       
       // Make the pick
-      const { error: pickError } = await supabase
+      console.log(`📝 Creating fallback draft pick record for ${fallbackPlayer.name}...`);
+      const { data: fallbackPickResult, error: pickError } = await supabase
         .rpc('make_draft_pick', {
           league_id_param: leagueId,
           draft_order_id_param: currentPick.id,
@@ -395,16 +625,17 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
         });
 
       if (pickError) {
-        console.error('Error making fallback draft pick:', pickError);
+        console.error('❌ Error making fallback draft pick:', pickError);
         return;
       }
+
+      console.log('✅ Fallback draft pick record created successfully:', fallbackPickResult);
 
       // Mark as auto-picked
       const autoPickReason = team.autodraft_enabled ? 'autodraft_enabled' : 'time_expired';
       await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .update({
-          is_auto_picked: true,
           auto_pick_reason: autoPickReason
         })
         .eq('id', currentPick.id);
@@ -433,6 +664,7 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
     console.log(`   🧢 Remaining Cap After: $${(bestPlayer.remaining_cap_after / 1000000).toFixed(1)}M`);
 
     // Make the pick using the database function
+    console.log(`📝 Creating draft pick record for ${bestPlayer.name}...`);
     const { data: pickResult, error: pickError } = await supabase
       .rpc('make_draft_pick', {
         league_id_param: leagueId,
@@ -441,18 +673,19 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
       });
 
     if (pickError) {
-      console.error('Error making draft pick:', pickError);
+      console.error('❌ Error making draft pick:', pickError);
       return;
     }
+
+    console.log('✅ Draft pick record created successfully:', pickResult);
 
     // Determine auto-pick reason
     const autoPickReason = team.autodraft_enabled ? 'autodraft_enabled' : 'time_expired';
 
     // Mark as auto-picked
     await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .update({
-        is_auto_picked: true,
         auto_pick_reason: autoPickReason
       })
       .eq('id', currentPick.id);
@@ -464,6 +697,22 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
         .from('fantasy_teams')
         .update({ autodraft_enabled: true })
         .eq('id', team.id);
+      
+      // Add a system message to draft chat about autodraft being enabled
+      try {
+        await supabase
+          .from('fantasy_draft_chat_messages')
+          .insert({
+            league_id: leagueId,
+            season_id: draftState.season_id,
+            user_id: null, // System message
+            fantasy_team_id: team.id,
+            message: `🤖 Auto-draft enabled for ${team.team_name} (missed pick)`,
+            message_type: 'system'
+          });
+      } catch (chatError) {
+        console.warn('Failed to add autodraft message to chat:', chatError);
+      }
     }
 
     console.log(`✅ Auto-picked ${bestPlayer.name} for team ${team.team_name}`);
@@ -481,21 +730,39 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
  */
 async function canTeamAffordPlayers(supabase: any, leagueId: string, teamId: string): Promise<boolean> {
   try {
-    // Get team's current cap space
+    // Get team's current cap space by querying fantasy_draft_picks
     const { data: roster } = await supabase
-      .from('fantasy_team_rosters')
-      .select('player_id, players!inner(salary_2025_26)')
+      .from('fantasy_draft_picks')
+      .select(`
+        player_id,
+        nba_players!inner(
+          id,
+          nba_hoopshype_salaries(salary_2025_26)
+        )
+      `)
+      .eq('league_id', leagueId)
       .eq('fantasy_team_id', teamId);
 
-    const { data: league } = await supabase
-      .from('leagues')
+    const { data: leagueSeason } = await supabase
+      .from('fantasy_league_seasons')
       .select('salary_cap_amount')
-      .eq('id', leagueId)
+      .eq('league_id', leagueId)
+      .eq('is_active', true)
       .single();
 
-    const currentSalary = roster?.reduce((sum: number, r: any) => sum + (r.players?.salary_2025_26 || 0), 0) || 0;
-    const salaryCap = league?.salary_cap_amount || 170000000;
+    // Calculate current salary from draft picks
+    const currentSalary = roster?.reduce((sum: number, r: any) => {
+      // Access salary from the nested structure
+      const salaryData = r.nba_players?.nba_hoopshype_salaries;
+      const salary = Array.isArray(salaryData) ? (salaryData[0]?.salary_2025_26 || 0) : (salaryData?.salary_2025_26 || 0);
+      return sum + salary;
+    }, 0) || 0;
+    
+    const salaryCap = leagueSeason?.salary_cap_amount || 200000000;
     const remainingCap = salaryCap - currentSalary;
+
+    // Debug logging
+    console.log(`💰 Team ${teamId} salary check: cap=$${(salaryCap/1000000).toFixed(1)}M, current=$${(currentSalary/1000000).toFixed(1)}M, remaining=$${(remainingCap/1000000).toFixed(1)}M, roster_size=${roster?.length || 0}`);
 
     // Check if team has less than minimum salary ($600,000)
     if (remainingCap < 600000) {
@@ -505,7 +772,7 @@ async function canTeamAffordPlayers(supabase: any, leagueId: string, teamId: str
 
     // Get all already-drafted player IDs for this league
     const { data: draftedPlayers } = await supabase
-      .from('draft_picks')
+      .from('fantasy_draft_picks')
       .select('player_id')
       .eq('league_id', leagueId);
 
@@ -514,10 +781,13 @@ async function canTeamAffordPlayers(supabase: any, leagueId: string, teamId: str
     // Check if there are any available players they can afford
     // Note: if no players drafted yet, skip the .not() filter
     let query = supabase
-      .from('players')
-      .select('id')
+      .from('nba_players')
+      .select(`
+        id,
+        nba_hoopshype_salaries(salary_2025_26)
+      `)
       .eq('is_active', true)
-      .lte('salary_2025_26', remainingCap);
+      .lte('nba_hoopshype_salaries.salary_2025_26', remainingCap);
 
     if (draftedPlayerIds.length > 0) {
       query = query.not('id', 'in', `(${draftedPlayerIds.join(',')})`);
@@ -581,7 +851,7 @@ async function moveToNextPick(supabase: any, leagueId: string, draftState: any) 
 
     // Get next uncompleted pick
     const { data: nextPick, error: nextError } = await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .select('id, pick_number, round, team_position')
       .eq('league_id', leagueId)
       .eq('is_completed', false)
@@ -630,10 +900,9 @@ async function moveToNextPick(supabase: any, leagueId: string, draftState: any) 
       
       // Mark this pick as completed with special reason
       await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .update({
           is_completed: true,
-          is_auto_picked: true,
           auto_pick_reason: 'insufficient_cap_space',
           time_started: new Date().toISOString(),
           time_expires: new Date().toISOString() // Expired immediately
@@ -647,9 +916,9 @@ async function moveToNextPick(supabase: any, leagueId: string, draftState: any) 
 
     // Get league settings for timing
     const { data: settings } = await supabase
-      .from('league_settings')
+      .from('fantasy_leagues')
       .select('draft_time_per_pick')
-      .eq('league_id', leagueId)
+      .eq('id', leagueId)
       .single();
 
     // Use 3-second timer if team has autodraft enabled, otherwise use full timer
@@ -660,7 +929,7 @@ async function moveToNextPick(supabase: any, leagueId: string, draftState: any) 
 
     // Update draft_current_state
     await supabase
-      .from('draft_current_state')
+      .from('fantasy_draft_current_state')
       .update({
         current_pick_id: nextPick.id,
         current_pick_number: nextPick.pick_number,
@@ -672,7 +941,7 @@ async function moveToNextPick(supabase: any, leagueId: string, draftState: any) 
 
     // Set timer on next pick
     await supabase
-      .from('draft_order')
+      .from('fantasy_draft_order')
       .update({
         time_started: new Date().toISOString(),
         time_expires: expiresAt.toISOString()
@@ -692,15 +961,22 @@ async function completeDraft(supabase: any, leagueId: string) {
   console.log(`🎉 Completing draft for league ${leagueId}`);
 
   try {
+    // Update league_seasons status (this is what the frontend checks)
+    await supabase
+      .from('fantasy_league_seasons')
+      .update({ draft_status: 'completed' })
+      .eq('league_id', leagueId)
+      .eq('is_active', true);
+
     // Update league status
     await supabase
-      .from('leagues')
+      .from('fantasy_leagues')
       .update({ draft_status: 'completed' })
       .eq('id', leagueId);
 
     // Update draft_current_state
     await supabase
-      .from('draft_current_state')
+      .from('fantasy_draft_current_state')
       .update({
         draft_status: 'completed',
         draft_completed_at: new Date().toISOString()
@@ -709,11 +985,11 @@ async function completeDraft(supabase: any, leagueId: string) {
 
     // Update league_states to regular_season phase
     await supabase
-      .from('league_states')
+      .from('fantasy_league_states')
       .update({ current_phase: 'regular_season' })
       .eq('league_id', leagueId);
 
-    console.log(`✅ Draft completed successfully`);
+    console.log(`✅ Draft completed successfully for league ${leagueId}`);
   } catch (error) {
     console.error('Error completing draft:', error);
   }

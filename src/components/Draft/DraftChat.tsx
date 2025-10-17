@@ -19,6 +19,7 @@ import { useDraftLobbyParticipants, useUpdateLobbyStatus, useJoinDraftLobby } fr
 import { useAuth } from '../../hooks/useAuth';
 import { useTeams } from '../../hooks/useTeams';
 import { useLeagueMembers } from '../../hooks/useLeagueMembers';
+import { markChatAsViewed } from '../../hooks/useChatMentions';
 import { DraftUserList } from './DraftUserList';
 
 interface DraftChatProps {
@@ -86,6 +87,13 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Mark chat as viewed when component mounts (user switched to chat tab)
+  useEffect(() => {
+    if (userTeam && leagueId) {
+      markChatAsViewed(leagueId, userTeam.id);
+    }
+  }, [userTeam, leagueId]);
 
   const handleSendMessage = async () => {
     if (!message.trim() || !userTeam) return;

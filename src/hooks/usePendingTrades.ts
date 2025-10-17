@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 
 export interface TradePlayer {
-  id: number;
+  id: string; // Changed from number to string (UUID)
   name: string;
   position: string;
   team_abbreviation: string;

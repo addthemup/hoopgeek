@@ -31,9 +31,9 @@ export function useDraftSettings(leagueId: string) {
       console.log(`🏀 Fetching draft settings for league ${leagueId}...`)
       
       const { data, error } = await supabase
-        .from('league_settings')
+        .from('fantasy_leagues')
         .select('*')
-        .eq('league_id', leagueId)
+        .eq('id', leagueId)
         .single()
 
       if (error) {

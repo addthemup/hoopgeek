@@ -46,6 +46,156 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
 
   const { data: roster, isLoading: rosterLoading } = useTeamRoster(selectedTeamId);
 
+  // Generate roster configuration based on league settings
+  const rosterConfiguration = useMemo(() => {
+    if (!league?.roster_positions) {
+      // Default configuration if not available
+      return [
+        { position: 'G', count: 2, filled: 0 },
+        { position: 'F', count: 2, filled: 0 },
+        { position: 'C', count: 1, filled: 0 },
+        { position: 'UTIL', count: 3, filled: 0 }
+      ];
+    }
+
+    const config = [];
+    const rosterPos = league.roster_positions;
+
+    // Add Guards
+    if (rosterPos.G > 0) {
+      config.push({ position: 'G', count: rosterPos.G, filled: 0 });
+    }
+
+    // Add Forwards
+    if (rosterPos.F > 0) {
+      config.push({ position: 'F', count: rosterPos.F, filled: 0 });
+    }
+
+    // Add Centers
+    if (rosterPos.C > 0) {
+      config.push({ position: 'C', count: rosterPos.C, filled: 0 });
+    }
+
+    // Add UTIL spots
+    if (rosterPos.UTIL > 0) {
+      config.push({ position: 'UTIL', count: rosterPos.UTIL, filled: 0 });
+    }
+
+    return config;
+  }, [league?.roster_positions]);
+
+  // Create a simple roster display that shows position requirements
+  const rosterDisplay = useMemo(() => {
+    if (!roster) return [];
+
+    const players = roster.filter(spot => spot.player);
+    
+
+    // Create roster spots based on league configuration
+    const rosterSpots = [];
+    
+    if (league?.roster_positions) {
+      const rosterPos = league.roster_positions;
+      
+      // Add Guards
+      for (let i = 0; i < (rosterPos.G || 0); i++) {
+        rosterSpots.push({ position: 'G', index: i, player: null });
+      }
+      
+      // Add Forwards
+      for (let i = 0; i < (rosterPos.F || 0); i++) {
+        rosterSpots.push({ position: 'F', index: i, player: null });
+      }
+      
+      // Add Centers
+      for (let i = 0; i < (rosterPos.C || 0); i++) {
+        rosterSpots.push({ position: 'C', index: i, player: null });
+      }
+      
+      // Add UTIL spots
+      for (let i = 0; i < (rosterPos.UTIL || 0); i++) {
+        rosterSpots.push({ position: 'UTIL', index: i, player: null });
+      }
+    } else {
+      // Default configuration
+      rosterSpots.push(
+        { position: 'G', index: 0, player: null },
+        { position: 'G', index: 1, player: null },
+        { position: 'F', index: 0, player: null },
+        { position: 'F', index: 1, player: null },
+        { position: 'C', index: 0, player: null },
+        { position: 'UTIL', index: 0, player: null },
+        { position: 'UTIL', index: 1, player: null },
+        { position: 'UTIL', index: 2, player: null }
+      );
+    }
+
+    // Helper function to check if a player can play a position
+    const canPlayPosition = (player: any, position: string) => {
+      if (!player?.position) {
+        return false;
+      }
+      
+      const playerPositions = player.position.split(',').map((p: string) => p.trim());
+      
+      switch (position) {
+        case 'G':
+          // Check for both abbreviations and full words
+          return playerPositions.some((p: string) => 
+            ['PG', 'SG', 'G', 'Point Guard', 'Shooting Guard', 'Guard'].includes(p) ||
+            p.toLowerCase().includes('guard')
+          );
+        case 'F':
+          // Check for both abbreviations and full words
+          return playerPositions.some((p: string) => 
+            ['SF', 'PF', 'F', 'Small Forward', 'Power Forward', 'Forward'].includes(p) ||
+            p.toLowerCase().includes('forward')
+          );
+        case 'C':
+          // Check for both abbreviations and full words
+          return playerPositions.some((p: string) => 
+            ['C', 'Center'].includes(p) ||
+            p.toLowerCase().includes('center')
+          );
+        case 'UTIL':
+          return true; // Any player can be UTIL
+        default:
+          return playerPositions.includes(position);
+      }
+    };
+
+    // Place players in appropriate spots
+    const placedPlayers = new Set();
+    
+    // First pass: Fill required positions
+    for (const spot of rosterSpots) {
+      if (spot.position === 'UTIL') continue; // Skip UTIL for now
+      
+      const availablePlayer = players.find(player => 
+        !placedPlayers.has(player.id) && 
+        canPlayPosition(player, spot.position)
+      );
+      
+      if (availablePlayer) {
+        spot.player = availablePlayer;
+        placedPlayers.add(availablePlayer.id);
+      }
+    }
+
+    // Second pass: Fill UTIL spots with remaining players
+    for (const spot of rosterSpots) {
+      if (spot.position === 'UTIL' && !spot.player) {
+        const availablePlayer = players.find(player => !placedPlayers.has(player.id));
+        if (availablePlayer) {
+          spot.player = availablePlayer;
+          placedPlayers.add(availablePlayer.id);
+        }
+      }
+    }
+
+    return rosterSpots;
+  }, [roster, league?.roster_positions]);
+
   // Filter picks for the selected team (including traded picks)
   const teamPicks = useMemo(() => {
     if (!draftOrder || !selectedTeamId) return [];
@@ -67,7 +217,9 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
           .from('fantasy_roster_spots')
           .select(`
             player:player_id (
-              salary_2025_26
+              nba_hoopshype_salaries (
+                salary_2025_26
+              )
             )
           `)
           .eq('fantasy_team_id', selectedTeamId);
@@ -79,7 +231,7 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
 
         const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
           const player = rosterSpot.player as any;
-          const playerSalary = player?.salary_2025_26 || 0;
+          const playerSalary = player?.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0;
           return sum + playerSalary;
         }, 0) || 0;
 
@@ -135,6 +287,26 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
       return `BENCH ${positionOrder - 10}`;
     }
     return position;
+  };
+
+  // Helper function to check if a player can play a position
+  const canPlayPosition = (player: any, position: string) => {
+    if (!player?.position) return false;
+    
+    const playerPositions = player.position.split(',').map((p: string) => p.trim());
+    
+    switch (position) {
+      case 'G':
+        return playerPositions.some((p: string) => ['PG', 'SG', 'G'].includes(p));
+      case 'F':
+        return playerPositions.some((p: string) => ['SF', 'PF', 'F'].includes(p));
+      case 'C':
+        return playerPositions.some((p: string) => ['C'].includes(p));
+      case 'UTIL':
+        return true; // Any player can be UTIL
+      default:
+        return playerPositions.includes(position);
+    }
   };
 
   if (teamsLoading || rosterLoading) {
@@ -234,14 +406,14 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
                   Current Roster
                 </Typography>
 
-            {/* Roster Grid */}
+            {/* Roster Configuration Grid */}
             <Grid container spacing={1}>
-              {roster?.map((rosterSpot) => {
-                const player = rosterSpot.player;
+              {rosterDisplay.map((spot, index) => {
+                const { position, player } = spot;
                 const isEmpty = !player;
                 
                 return (
-                  <Grid xs={6} sm={4} md={3} key={rosterSpot.id}>
+                  <Grid xs={6} sm={4} md={3} key={`${position}-${index}`}>
                     <Card 
                       variant="outlined" 
                       sx={{ 
@@ -252,62 +424,90 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
                         justifyContent: 'center',
                         alignItems: 'center',
                         p: 1,
-                        bgcolor: isEmpty ? 'neutral.50' : 'background.surface'
+                        bgcolor: isEmpty ? 'neutral.50' : 'success.50',
+                        borderColor: isEmpty ? 'neutral.300' : 'success.300'
                       }}
                     >
                       <Chip 
                         size="sm" 
-                        color={getPositionColor(player?.position || rosterSpot.position)} 
-                        variant="soft"
+                        color={getPositionColor(position)} 
+                        variant={isEmpty ? "outlined" : "soft"}
                         sx={{ mb: 1 }}
                       >
-                        {player?.position || getPositionLabel(rosterSpot.position, rosterSpot.roster_spot?.position_order || 0)}
+                        {position}
                       </Chip>
                       
-                      <Avatar 
-                        size="md" 
-                        src={!isEmpty && player?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
-                        sx={{ 
-                          bgcolor: isEmpty ? 'neutral.300' : 'primary.500',
-                          width: 48,
-                          height: 48,
-                          mb: 1,
-                          '& img': {
-                            objectFit: 'cover'
-                          }
-                        }}
-                        onError={(e) => {
-                          // Fallback to initials if image fails to load
-                          const target = e.target as HTMLImageElement;
-                          target.style.display = 'none';
-                          const parent = target.parentElement;
-                          if (parent) {
-                            parent.textContent = isEmpty ? '?' : player?.name?.charAt(0) || '?';
-                          }
-                        }}
-                      >
-                        {isEmpty ? '?' : player?.name?.charAt(0)}
-                      </Avatar>
-                      
-                      <Typography 
-                        level="body-sm" 
-                        sx={{ 
-                          fontWeight: 'bold',
-                          textAlign: 'center',
-                          fontSize: '0.8rem'
-                        }}
-                      >
-                        {isEmpty ? 'Empty' : player?.name}
-                      </Typography>
-                      
-                      {player && (
-                        <Typography 
-                          level="body-xs" 
-                          color="neutral"
-                          sx={{ textAlign: 'center' }}
-                        >
-                          {player.team_abbreviation || player.team_name}
-                        </Typography>
+                      {player ? (
+                        <>
+                          <Avatar 
+                            size="md" 
+                            src={player.player?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.player.nba_player_id}.png` : undefined}
+                            sx={{ 
+                              bgcolor: 'primary.500',
+                              width: 48,
+                              height: 48,
+                              mb: 1,
+                              '& img': {
+                                objectFit: 'cover'
+                              }
+                            }}
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const parent = target.parentElement;
+                              if (parent) {
+                                parent.textContent = player.player?.name?.charAt(0) || '?';
+                              }
+                            }}
+                          >
+                            {player.player?.name?.charAt(0)}
+                          </Avatar>
+                          
+                          <Typography 
+                            level="body-sm" 
+                            sx={{ 
+                              fontWeight: 'bold',
+                              textAlign: 'center',
+                              fontSize: '0.8rem'
+                            }}
+                          >
+                            {player.player?.name}
+                          </Typography>
+                          
+                          <Typography 
+                            level="body-xs" 
+                            color="neutral"
+                            sx={{ textAlign: 'center' }}
+                          >
+                            {player.player?.team_abbreviation || player.player?.team_name}
+                          </Typography>
+                        </>
+                      ) : (
+                        <>
+                          <Avatar 
+                            size="md" 
+                            sx={{ 
+                              bgcolor: 'neutral.300',
+                              width: 48,
+                              height: 48,
+                              mb: 1
+                            }}
+                          >
+                            ?
+                          </Avatar>
+                          
+                          <Typography 
+                            level="body-sm" 
+                            sx={{ 
+                              fontWeight: 'bold',
+                              textAlign: 'center',
+                              fontSize: '0.8rem',
+                              color: 'neutral.500'
+                            }}
+                          >
+                            Empty
+                          </Typography>
+                        </>
                       )}
                     </Card>
                   </Grid>
@@ -323,23 +523,23 @@ export default function DraftRoster({ leagueId }: DraftRosterProps) {
                         {roster?.filter(spot => spot.player).length || 0}
                       </Typography>
                       <Typography level="body-xs" color="neutral">
-                        Players
+                        Total Players
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'center' }}>
                       <Typography level="h6" sx={{ fontWeight: 'bold' }}>
-                        {roster?.filter(spot => spot.is_starter && spot.player).length || 0}
+                        {rosterDisplay.filter(spot => spot.player).length}
                       </Typography>
                       <Typography level="body-xs" color="neutral">
-                        Starters
+                        Filled Spots
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'center' }}>
                       <Typography level="h6" sx={{ fontWeight: 'bold' }}>
-                        {roster?.filter(spot => !spot.is_starter && !spot.roster_spot?.is_injured_reserve && spot.player).length || 0}
+                        {rosterDisplay.filter(spot => !spot.player).length}
                       </Typography>
                       <Typography level="body-xs" color="neutral">
-                        Bench
+                        Remaining
                       </Typography>
                     </Box>
                   </Stack>

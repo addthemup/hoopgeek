@@ -56,7 +56,7 @@ export function useUpdateDraftOrder() {
     }) => {
       // First, clear existing draft order
       const { error: deleteError } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .delete()
         .eq('league_id', leagueId)
 
@@ -64,7 +64,7 @@ export function useUpdateDraftOrder() {
 
       // Then insert new draft order
       const { data, error } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .insert(
           picks.map(pick => ({
             league_id: leagueId,
@@ -101,7 +101,7 @@ export function useSwapDraftPicks() {
     }) => {
       // Get both picks
       const { data: picks, error: fetchError } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .select('*')
         .in('id', [pick1Id, pick2Id])
         .eq('league_id', leagueId)
@@ -116,7 +116,7 @@ export function useSwapDraftPicks() {
 
       // Swap the team positions
       const { error: updateError } = await supabase
-        .from('draft_order')
+        .from('fantasy_draft_order')
         .update([
           { team_position: pick2.team_position },
           { team_position: pick1.team_position }

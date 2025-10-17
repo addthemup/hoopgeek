@@ -75,7 +75,21 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
   const [errors, setErrors] = useState<string[]>([]);
 
   const handleSettingsChange = (field: keyof LeagueSettings, value: any) => {
-    setSettings(prev => ({ ...prev, [field]: value }));
+    // Convert datetime-local to UTC before saving
+    let processedValue = value;
+    if (field === 'draft_date' && value) {
+      // datetime-local input gives us "2025-10-17T12:00" in local time
+      // We need to convert it to ISO 8601 UTC format for the database
+      const localDate = new Date(value);
+      processedValue = localDate.toISOString();
+      console.log('🕐 Converting draft_date:', {
+        input: value,
+        localDate: localDate.toString(),
+        utcISO: processedValue
+      });
+    }
+    
+    setSettings(prev => ({ ...prev, [field]: processedValue }));
   };
 
   const handleRosterPositionChange = (position: string, value: number) => {

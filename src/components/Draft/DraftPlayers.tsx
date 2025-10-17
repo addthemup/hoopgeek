@@ -26,6 +26,7 @@ import { useTeams } from '../../hooks/useTeams';
 import { useLeague } from '../../hooks/useLeagues';
 import { useAutoDraft } from '../../hooks/useAutoDraft';
 import { useNextPick } from '../../hooks/useNextPick';
+import { useMakeDraftPick } from '../../hooks/useMakeDraftPick';
 
 interface DraftPlayersProps {
   leagueId: string;
@@ -36,6 +37,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
   const { data: teams } = useTeams(leagueId);
   const { data: league } = useLeague(leagueId);
   const autoDraftMutation = useAutoDraft();
+  const makeDraftPickMutation = useMakeDraftPick();
   const { data: nextPick } = useNextPick(leagueId);
   
   const [searchInput, setSearchInput] = useState('');
@@ -43,12 +45,11 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
   const [positionFilter, setPositionFilter] = useState<string>('');
   const [teamFilter, setTeamFilter] = useState<string>('');
   const [salaryFilter, setSalaryFilter] = useState<string>('');
-  const [showInactive, setShowInactive] = useState(false);
   const [page, setPage] = useState(1);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [cooldownTimer, setCooldownTimer] = useState(0);
-  const [hiddenPlayerIds, setHiddenPlayerIds] = useState<Set<number>>(new Set());
+  const [hiddenPlayerIds, setHiddenPlayerIds] = useState<Set<string>>(new Set());
   const [showProjections, setShowProjections] = useState(true); // Default to 2025-26 projections
 
   // Check if current user is commissioner
@@ -91,12 +92,13 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     }
   }, [nextPick?.pickNumber]);
 
-  const { data: playersData, isLoading, error } = usePlayersPaginated(page, 25, {
+  // Fetch ALL players with projections and salaries for proper sorting
+  const { data: allPlayersData, isLoading, error } = usePlayersPaginated(1, 1000, {
     search: debouncedSearch,
     position: positionFilter,
     team: teamFilter,
-    salary: salaryFilter,
-    showInactive: showInactive,
+    // salary: salaryFilter, // Temporarily disabled - not implemented in usePlayersPaginated yet
+    showInactive: false, // Always show active players only
     leagueId
   } as any);
 
@@ -148,18 +150,47 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     return Math.round(fantasyPoints);
   };
 
-  // Sort players by projected fantasy points in descending order
-  const allSortedPlayers = playersData?.players ? [...playersData.players].sort((a, b) => {
-    const aFantasy = calculateProjectedFantasyPoints(a);
-    const bFantasy = calculateProjectedFantasyPoints(b);
-    return bFantasy - aFantasy; // Descending order
-  }) : [];
+  // Sort ALL players by projected fantasy points in descending order
+  const allSortedPlayers = allPlayersData?.players ? [...allPlayersData.players]
+    .filter(player => {
+      // Apply client-side salary filtering
+      if (!salaryFilter) return true;
+      
+      const salary = (player as any).nba_hoopshype_salaries?.[0]?.salary_2025_26;
+      if (!salary) return false; // Exclude players without salary data
+      
+      const salaryInMillions = salary / 1000000; // Convert to millions
+      
+      switch (salaryFilter) {
+        case '<10':
+          return salaryInMillions < 10;
+        case '10-20':
+          return salaryInMillions >= 10 && salaryInMillions <= 20;
+        case '20-30':
+          return salaryInMillions >= 20 && salaryInMillions <= 30;
+        case '40+':
+          return salaryInMillions >= 40;
+        default:
+          return true;
+      }
+    })
+    .sort((a, b) => {
+      const aFantasy = calculateProjectedFantasyPoints(a);
+      const bFantasy = calculateProjectedFantasyPoints(b);
+      return bFantasy - aFantasy; // Descending order
+    }) : [];
 
-  // Implement client-side pagination for draft players
-  const pageSize = 25;
+  // Implement client-side pagination for draft players (10 per page)
+  const pageSize = 10;
   const startIndex = (page - 1) * pageSize;
   const endIndex = startIndex + pageSize;
   const sortedPlayers = allSortedPlayers.slice(startIndex, endIndex);
+  
+  // Debug: Check for players with null IDs
+  const playersWithNullIds = sortedPlayers.filter(p => !p.id);
+  if (playersWithNullIds.length > 0) {
+    console.warn('⚠️ Found players with null IDs:', playersWithNullIds);
+  }
   
   // Calculate pagination info
   const totalPlayers = allSortedPlayers.length;
@@ -203,8 +234,21 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
       // Optimistically hide the player immediately
       setHiddenPlayerIds(prev => new Set(prev).add(player.id));
       
-      // For now, just show a message - this would call a draft API
-      setSnackbarMessage(`Drafted ${player.name}! (Feature coming soon)`);
+      console.log('📤 Calling makeDraftPickMutation with:', {
+        leagueId,
+        playerId: player.id,
+        teamId: nextPick.teamId,
+        pickNumber: nextPick.pickNumber
+      });
+      
+      await makeDraftPickMutation.mutateAsync({
+        leagueId,
+        playerId: player.id,
+        teamId: nextPick.teamId,
+        pickNumber: nextPick.pickNumber
+      });
+      
+      setSnackbarMessage(`Drafted ${player.name} to ${nextPick.teamName}!`);
       setSnackbarOpen(true);
     } catch (error) {
       setSnackbarMessage(`Failed to draft player: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -230,7 +274,9 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
     setPage(1);
   };
 
-  const handleAutoDraft = async (playerId: number) => {
+  const handleAutoDraft = async (playerId: string) => {
+    console.log('🔍 handleAutoDraft called with playerId:', playerId, 'type:', typeof playerId);
+    
     if (!nextPick) {
       setSnackbarMessage('No picks available for auto-draft');
       setSnackbarOpen(true);
@@ -243,20 +289,33 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
       return;
     }
 
+    if (!playerId || playerId === 'null' || playerId === 'undefined') {
+      setSnackbarMessage('Invalid player ID for auto-draft');
+      setSnackbarOpen(true);
+      return;
+    }
+
     try {
       // Start cooldown immediately
       setCooldownTimer(2);
       // Optimistically hide the player immediately
       setHiddenPlayerIds(prev => new Set(prev).add(playerId));
       
-      await autoDraftMutation.mutateAsync({
+      console.log('📤 Calling autoDraftMutation with:', {
         leagueId,
-        playerId,
+        playerId: playerId,
         teamId: nextPick.teamId,
         pickNumber: nextPick.pickNumber
       });
       
-      setSnackbarMessage(`Auto-drafted ${playersData?.players.find(p => p.id === playerId)?.name} to ${nextPick.teamName}`);
+      await autoDraftMutation.mutateAsync({
+        leagueId,
+        playerId: playerId,
+        teamId: nextPick.teamId,
+        pickNumber: nextPick.pickNumber
+      });
+      
+      setSnackbarMessage(`Auto-drafted ${allPlayersData?.players.find(p => p.id === playerId)?.name} to ${nextPick.teamName}`);
       setSnackbarOpen(true);
     } catch (error) {
       setSnackbarMessage(`Failed to auto-draft player: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -291,6 +350,14 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
 
   return (
     <Box>
+      {/* Responsive CSS for mobile */}
+      <style>{`
+        @media (max-width: 768px) {
+          .hide-on-mobile {
+            display: none !important;
+          }
+        }
+      `}</style>
       {/* Draft Status */}
       {nextPick && (
         <Alert 
@@ -395,11 +462,10 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                 sx={{ flex: 1 }}
               >
                 <Option value="">All Salaries</Option>
-                <Option value="40+">$40M+</Option>
-                <Option value="30-40">$30M - $40M</Option>
-                <Option value="20-30">$20M - $30M</Option>
+                <Option value="<10">Under $10M</Option>
                 <Option value="10-20">$10M - $20M</Option>
-                <Option value="0-10">$0M - $10M</Option>
+                <Option value="20-30">$20M - $30M</Option>
+                <Option value="40+">Over $40M</Option>
               </Select>
               
               <Button
@@ -413,18 +479,6 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
               </Button>
             </Stack>
             
-            {/* Show Inactive Players Toggle */}
-            <FormControl orientation="horizontal" sx={{ justifyContent: 'space-between' }}>
-              <FormLabel>Show inactive players</FormLabel>
-              <Switch
-                checked={showInactive}
-                onChange={(event) => {
-                  setShowInactive(event.target.checked);
-                  setPage(1); // Reset to first page when toggling
-                }}
-                size="sm"
-              />
-            </FormControl>
 
             {/* Stats/Projections Toggle */}
             <FormControl orientation="horizontal" sx={{ justifyContent: 'space-between' }}>
@@ -449,13 +503,11 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
             <Table hoverRow size="sm">
               <thead>
                 <tr>
-                  <th style={{ width: '200px' }}>Player</th>
-                  <th style={{ width: '80px' }}>Pos</th>
-                  <th style={{ width: '100px' }}>Team</th>
+                  <th style={{ width: '250px' }}>Player</th>
                   <th style={{ width: '100px' }}>Proj Fantasy Pts</th>
-                  <th style={{ width: '80px' }}>{showProjections ? '2026 PTS' : '2025 PTS'}</th>
-                  <th style={{ width: '80px' }}>{showProjections ? '2026 REB' : '2025 REB'}</th>
-                  <th style={{ width: '80px' }}>{showProjections ? '2026 AST' : '2025 AST'}</th>
+                  <th style={{ width: '80px' }} className="hide-on-mobile">{showProjections ? '2026 PTS' : '2025 PTS'}</th>
+                  <th style={{ width: '80px' }} className="hide-on-mobile">{showProjections ? '2026 REB' : '2025 REB'}</th>
+                  <th style={{ width: '80px' }} className="hide-on-mobile">{showProjections ? '2026 AST' : '2025 AST'}</th>
                   <th style={{ width: '120px' }}>2025-26 Salary</th>
                   <th style={{ width: '100px' }}>Action</th>
                 </tr>
@@ -475,38 +527,46 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                         >
                           {player.name?.charAt(0)}
                         </Avatar>
-                        <Box>
+                        <Box sx={{ flex: 1 }}>
                           <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                             {player.name}
                           </Typography>
-                          {player.jersey_number && (
-                            <Typography level="body-xs" color="neutral">
-                              #{player.jersey_number}
-                            </Typography>
-                          )}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
+                            {player.jersey_number && (
+                              <Chip 
+                                size="sm" 
+                                variant="outlined"
+                                sx={{ fontSize: '0.7rem', height: 18, minWidth: 'auto', px: 0.5 }}
+                              >
+                                #{player.jersey_number}
+                              </Chip>
+                            )}
+                            <Chip 
+                              size="sm" 
+                              color={getPositionColor(player.position || '')} 
+                              variant="soft"
+                              sx={{ fontSize: '0.7rem', height: 18, minWidth: 'auto', px: 0.5 }}
+                            >
+                              {player.position}
+                            </Chip>
+                            <Chip 
+                              size="sm" 
+                              variant="outlined"
+                              color="neutral"
+                              sx={{ fontSize: '0.7rem', height: 18, minWidth: 'auto', px: 0.5 }}
+                            >
+                              {player.team_abbreviation || player.team_name}
+                            </Chip>
+                          </Box>
                         </Box>
                       </Box>
-                    </td>
-                    <td>
-                      <Chip 
-                        size="sm" 
-                        color={getPositionColor(player.position || '')} 
-                        variant="soft"
-                      >
-                        {player.position}
-                      </Chip>
-                    </td>
-                    <td>
-                      <Typography level="body-sm">
-                        {player.team_abbreviation || player.team_name}
-                      </Typography>
                     </td>
                     <td>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
                         {calculateProjectedFantasyPoints(player).toLocaleString()}
                       </Typography>
                     </td>
-                    <td>
+                    <td className="hide-on-mobile">
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
                           ? ((player as any).nba_espn_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')
@@ -514,7 +574,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                         }
                       </Typography>
                     </td>
-                    <td>
+                    <td className="hide-on-mobile">
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
                           ? ((player as any).nba_espn_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')
@@ -522,7 +582,7 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                         }
                       </Typography>
                     </td>
-                    <td>
+                    <td className="hide-on-mobile">
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                         {showProjections 
                           ? ((player as any).nba_espn_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')
@@ -545,7 +605,8 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                           variant="outlined"
                           startDecorator={<Add />}
                           onClick={() => handleDraftPlayer(player)}
-                          disabled={!buttonsEnabled}
+                          disabled={!buttonsEnabled || makeDraftPickMutation.isPending}
+                          loading={makeDraftPickMutation.isPending}
                           sx={{ fontSize: '0.7rem' }}
                         >
                           {cooldownTimer > 0 ? `${cooldownTimer}s` : 'Draft'}
@@ -556,7 +617,17 @@ export default function DraftPlayers({ leagueId }: DraftPlayersProps) {
                             variant="soft"
                             color="warning"
                             startDecorator={<AutoAwesome />}
-                            onClick={() => handleAutoDraft(player.id)}
+                            onClick={() => {
+                              console.log('🔍 Auto button clicked for player:', player);
+                              console.log('🔍 Player ID:', player.id, 'type:', typeof player.id);
+                              if (!player.id) {
+                                console.error('❌ Player ID is null/undefined:', player.id);
+                                setSnackbarMessage('Invalid player data - missing ID');
+                                setSnackbarOpen(true);
+                                return;
+                              }
+                              handleAutoDraft(player.id);
+                            }}
                             loading={autoDraftMutation.isPending}
                             disabled={!autoEnabled}
                             sx={{ fontSize: '0.7rem' }}

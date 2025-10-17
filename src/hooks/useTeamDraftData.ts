@@ -66,49 +66,51 @@ export function useTeamDraftPicks(leagueId: string, teamId: string) {
   });
 }
 
-export function useTeamDraftedPlayers(leagueId: string, teamId: string) {
+export function useTeamDraftedPlayers(leagueId: string, teamId: string, options?: { refetchInterval?: number; staleTime?: number }) {
   return useQuery<TeamDraftedPlayer[], Error>({
     queryKey: ['team-drafted-players', leagueId, teamId],
     queryFn: async () => {
+      // Get players from fantasy_roster_spots (current roster) instead of fantasy_draft_picks (draft history)
       const { data, error } = await supabase
-        .from('fantasy_draft_picks')
+        .from('fantasy_roster_spots')
         .select(`
-          pick_number,
-          round,
+          draft_round,
+          draft_pick,
           nba_players!inner (
             id,
             name,
             position,
             team_abbreviation,
             nba_player_id,
-            jersey_number
-          ),
-          nba_hoopshype_salaries!left (
-            salary_2025_26
+            jersey_number,
+            nba_hoopshype_salaries (
+              salary_2025_26
+            )
           )
         `)
-        .eq('league_id', leagueId)
         .eq('fantasy_team_id', teamId)
-        .order('pick_number');
+        .not('player_id', 'is', null) // Only get spots with players
+        .order('draft_pick');
 
       if (error) {
         console.error('Error fetching team drafted players:', error);
         throw new Error(`Failed to fetch team drafted players: ${error.message}`);
       }
 
-      return data.map(pick => ({
-        id: pick.nba_players.id,
-        name: pick.nba_players.name,
-        position: pick.nba_players.position,
-        team_abbreviation: pick.nba_players.team_abbreviation,
-        nba_player_id: pick.nba_players.nba_player_id,
-        jersey_number: pick.nba_players.jersey_number,
-        pick_number: pick.pick_number,
-        round: pick.round,
-        salary_2025_26: pick.nba_hoopshype_salaries?.salary_2025_26,
+      return data.map(spot => ({
+        id: spot.nba_players.id,
+        name: spot.nba_players.name,
+        position: spot.nba_players.position,
+        team_abbreviation: spot.nba_players.team_abbreviation,
+        nba_player_id: spot.nba_players.nba_player_id,
+        jersey_number: spot.nba_players.jersey_number,
+        pick_number: spot.draft_pick || 0,
+        round: spot.draft_round || 1,
+        salary_2025_26: spot.nba_players?.nba_hoopshype_salaries?.[0]?.salary_2025_26,
       })) as TeamDraftedPlayer[];
     },
     enabled: !!leagueId && !!teamId,
-    refetchInterval: 2000, // Refetch every 2 seconds for live updates
+    refetchInterval: options?.refetchInterval || 2000, // Refetch every 2 seconds for live updates
+    staleTime: options?.staleTime || 1000, // Consider data stale after 1 second
   });
 }

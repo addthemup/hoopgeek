@@ -16,11 +16,10 @@ export function useAddPlayerToRoster() {
     }) => {
       // Find an available roster spot
       const { data: availableSpot, error: spotError } = await supabase
-        .from('fantasy_team_players')
-        .select('id, position')
+        .from('fantasy_roster_spots')
+        .select('id')
         .eq('fantasy_team_id', fantasyTeamId)
-        .eq('player_id', null)
-        .eq('position', position)
+        .is('player_id', null)
         .limit(1)
         .maybeSingle()
 
@@ -30,7 +29,7 @@ export function useAddPlayerToRoster() {
 
       // Add player to the roster spot
       const { error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .update({ player_id: playerId })
         .eq('id', availableSpot.id)
 
@@ -55,7 +54,7 @@ export function useRemovePlayerFromRoster() {
       playerId: number 
     }) => {
       const { error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .update({ player_id: null })
         .eq('fantasy_team_id', fantasyTeamId)
         .eq('player_id', playerId)
@@ -74,14 +73,14 @@ export function useIsPlayerOnRoster(fantasyTeamId: string, playerId: string) {
     queryKey: ['player-roster-check', fantasyTeamId, playerId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('fantasy_team_players')
-        .select('id, position')
+        .from('fantasy_roster_spots')
+        .select('id')
         .eq('fantasy_team_id', fantasyTeamId)
         .eq('player_id', playerId)
         .maybeSingle()
 
       if (error && error.code !== 'PGRST116') throw error
-      return data ? { isOnRoster: true, position: data.position } : { isOnRoster: false, position: null }
+      return data ? { isOnRoster: true, position: null } : { isOnRoster: false, position: null }
     },
     enabled: !!fantasyTeamId && !!playerId,
   })
@@ -92,10 +91,9 @@ export function useGetPlayerRosterInfo(playerId: string) {
     queryKey: ['player-roster-info', playerId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select(`
           id,
-          position,
           fantasy_teams (
             id,
             team_name,

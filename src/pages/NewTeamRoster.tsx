@@ -147,7 +147,7 @@ export default function NewTeamRoster({ leagueId, teamId }: NewTeamRosterProps) 
 
   // Calculate projected fantasy points for a player
   const calculateProjectedFantasyPoints = (player: any) => {
-    const projections = (player as any)?.espn_player_projections?.[0];
+    const projections = (player as any)?.nba_espn_projections?.[0];
     if (!projections) return 0;
 
     const {
@@ -442,37 +442,37 @@ export default function NewTeamRoster({ leagueId, teamId }: NewTeamRosterProps) 
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_min?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_min?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_stl?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_stl?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_blk?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_blk?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ textAlign: 'right' }}>
-                          {isEmpty ? '--' : ((player as any)?.espn_player_projections?.[0]?.proj_2026_to?.toFixed(1) || 'N/A')}
+                          {isEmpty ? '--' : ((player as any)?.nba_espn_projections?.[0]?.proj_2026_to?.toFixed(1) || 'N/A')}
                         </Typography>
                       </td>
                     </tr>

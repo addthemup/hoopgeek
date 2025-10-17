@@ -511,6 +511,7 @@ CREATE OR REPLACE FUNCTION accept_draft_trade_offer(
 ) RETURNS BOOLEAN AS $$
 DECLARE
     trade_record RECORD;
+    is_commissioner BOOLEAN := FALSE;
 BEGIN
     -- Get the trade offer
     SELECT * INTO trade_record 
@@ -521,17 +522,26 @@ BEGIN
         RAISE EXCEPTION 'Trade offer not found or not pending';
     END IF;
     
-    -- Validate that the accepting team is the recipient
-    IF trade_record.to_team_id != p_accepting_team_id THEN
-        RAISE EXCEPTION 'You can only accept trade offers sent to your team';
-    END IF;
+    -- Check if user is commissioner of the league
+    SELECT EXISTS (
+        SELECT 1 FROM fantasy_leagues 
+        WHERE id = trade_record.league_id AND commissioner_id = auth.uid()
+    ) INTO is_commissioner;
     
-    -- Validate that user is the owner of the accepting team
-    IF NOT EXISTS (
-        SELECT 1 FROM fantasy_teams 
-        WHERE id = p_accepting_team_id AND user_id = auth.uid()
-    ) THEN
-        RAISE EXCEPTION 'You can only accept trade offers for your own team';
+    -- If not commissioner, validate normal trade acceptance rules
+    IF NOT is_commissioner THEN
+        -- Validate that the accepting team is the recipient
+        IF trade_record.to_team_id != p_accepting_team_id THEN
+            RAISE EXCEPTION 'You can only accept trade offers sent to your team';
+        END IF;
+        
+        -- Validate that user is the owner of the accepting team
+        IF NOT EXISTS (
+            SELECT 1 FROM fantasy_teams 
+            WHERE id = p_accepting_team_id AND user_id = auth.uid()
+        ) THEN
+            RAISE EXCEPTION 'You can only accept trade offers for your own team';
+        END IF;
     END IF;
     
     -- Check if trade has expired
@@ -560,6 +570,7 @@ CREATE OR REPLACE FUNCTION reject_draft_trade_offer(
 ) RETURNS BOOLEAN AS $$
 DECLARE
     trade_record RECORD;
+    is_commissioner BOOLEAN := FALSE;
 BEGIN
     -- Get the trade offer
     SELECT * INTO trade_record 
@@ -570,17 +581,26 @@ BEGIN
         RAISE EXCEPTION 'Trade offer not found or not pending';
     END IF;
     
-    -- Validate that the rejecting team is either sender or recipient
-    IF trade_record.from_team_id != p_rejecting_team_id AND trade_record.to_team_id != p_rejecting_team_id THEN
-        RAISE EXCEPTION 'You can only reject trade offers involving your team';
-    END IF;
+    -- Check if user is commissioner of the league
+    SELECT EXISTS (
+        SELECT 1 FROM fantasy_leagues 
+        WHERE id = trade_record.league_id AND commissioner_id = auth.uid()
+    ) INTO is_commissioner;
     
-    -- Validate that user is the owner of the rejecting team
-    IF NOT EXISTS (
-        SELECT 1 FROM fantasy_teams 
-        WHERE id = p_rejecting_team_id AND user_id = auth.uid()
-    ) THEN
-        RAISE EXCEPTION 'You can only reject trade offers for your own team';
+    -- If not commissioner, validate normal trade rejection rules
+    IF NOT is_commissioner THEN
+        -- Validate that the rejecting team is either sender or recipient
+        IF trade_record.from_team_id != p_rejecting_team_id AND trade_record.to_team_id != p_rejecting_team_id THEN
+            RAISE EXCEPTION 'You can only reject trade offers involving your team';
+        END IF;
+        
+        -- Validate that user is the owner of the rejecting team
+        IF NOT EXISTS (
+            SELECT 1 FROM fantasy_teams 
+            WHERE id = p_rejecting_team_id AND user_id = auth.uid()
+        ) THEN
+            RAISE EXCEPTION 'You can only reject trade offers for your own team';
+        END IF;
     END IF;
     
     -- Reject the trade

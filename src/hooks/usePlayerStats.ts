@@ -125,7 +125,7 @@ export function usePlayerStats(playerId: string) {
       try {
         // Fetch player basic info
         const { data: playerData, error: playerError } = await supabase
-          .from('players')
+          .from('nba_players')
           .select('*')
           .eq('id', playerId)
           .single();
@@ -156,7 +156,7 @@ export function usePlayerStats(playerId: string) {
 
         // Fetch recent game logs (last 10 games)
         const { data: gameLogsData, error: gameLogsError } = await supabase
-          .from('player_game_logs')
+          .from('nba_boxscores')
           .select('*')
           .eq('player_id', playerId)
           .order('game_date', { ascending: false })

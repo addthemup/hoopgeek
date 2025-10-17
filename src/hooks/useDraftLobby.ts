@@ -7,7 +7,7 @@ export function useDraftLobbyParticipants(leagueId: string) {
     queryKey: ['draft-lobby-participants', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_lobby_participants')
+        .from('fantasy_draft_lobby_participants')
         .select(`
           *,
           fantasy_team:fantasy_team_id (
@@ -40,10 +40,23 @@ export function useJoinDraftLobby() {
 
       console.log('🚀 Joining draft lobby:', { leagueId, userId: user.id, fantasyTeamId });
 
+      // First, get the season_id from the fantasy_team
+      const { data: teamData, error: teamError } = await supabase
+        .from('fantasy_teams')
+        .select('season_id')
+        .eq('id', fantasyTeamId)
+        .single()
+
+      if (teamError || !teamData) {
+        console.error('❌ Error fetching team season_id:', teamError)
+        throw new Error(`Failed to fetch team data: ${teamError?.message || 'Team not found'}`)
+      }
+
       const { data, error } = await supabase
-        .from('draft_lobby_participants')
+        .from('fantasy_draft_lobby_participants')
         .upsert({
           league_id: leagueId,
+          season_id: teamData.season_id,
           user_id: user.id,
           fantasy_team_id: fantasyTeamId,
           is_online: true,
@@ -78,7 +91,7 @@ export function useLeaveDraftLobby() {
       if (!user) throw new Error('User not authenticated')
 
       const { error } = await supabase
-        .from('draft_lobby_participants')
+        .from('fantasy_draft_lobby_participants')
         .delete()
         .eq('league_id', leagueId)
         .eq('user_id', user.id)
@@ -104,7 +117,7 @@ export function useUpdateLobbyStatus() {
       if (!user) throw new Error('User not authenticated')
 
       const { error } = await supabase
-        .from('draft_lobby_participants')
+        .from('fantasy_draft_lobby_participants')
         .update({
           last_seen_at: new Date().toISOString(),
           is_online: true

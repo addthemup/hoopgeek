@@ -3,7 +3,7 @@ import { supabase } from '../utils/supabase';
 
 interface AutoDraftRequest {
   leagueId: string;
-  playerId: number;
+  playerId: string;
   teamId: string;
   pickNumber: number;
 }
@@ -14,6 +14,7 @@ export function useAutoDraft() {
   return useMutation({
     mutationFn: async ({ leagueId, playerId, teamId, pickNumber }: AutoDraftRequest) => {
       console.log(`🤖 Auto-drafting player ${playerId} to team ${teamId} at pick ${pickNumber}`);
+      console.log('📤 Sending request to auto-draft function with:', { leagueId, playerId, teamId, pickNumber });
       
       const { data, error } = await supabase.functions.invoke('auto-draft', {
         body: {
@@ -23,6 +24,8 @@ export function useAutoDraft() {
           pickNumber
         }
       });
+      
+      console.log('📥 Auto-draft response:', { data, error });
 
       if (error) {
         console.error('❌ Auto-draft error:', error);

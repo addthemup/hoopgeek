@@ -23,16 +23,18 @@ export function usePlayerRosterStatus(playerId: string, leagueId: string, userTe
 
       // Check if player is on any roster in this league
       const { data: rosterData, error } = await supabase
-        .from('fantasy_team_players')
+        .from('fantasy_roster_spots')
         .select(`
           fantasy_team_id,
           fantasy_teams!inner (
             id,
             team_name,
-            user_id
+            user_id,
+            league_id
           )
         `)
         .eq('player_id', playerId)
+        .eq('fantasy_teams.league_id', leagueId)
         .not('player_id', 'is', null);
 
       if (error) {

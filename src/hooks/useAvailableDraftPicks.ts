@@ -6,10 +6,10 @@ export interface AvailableDraftPick {
   round: number;
   team_position: number;
   is_completed: boolean;
-  fantasy_team_id?: string | null; // Set if pick was traded
+  current_team_id?: string | null; // Current owner of the pick (may be different from original if traded)
 }
 
-export function useAvailableDraftPicks(leagueId: string, teamId: string) {
+export function useAvailableDraftPicks(leagueId: string, teamId: string, options?: { refetchInterval?: number; staleTime?: number }) {
   return useQuery<AvailableDraftPick[], Error>({
     queryKey: ['available-draft-picks', leagueId, teamId],
     queryFn: async () => {
@@ -41,8 +41,8 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
 
       // Get all draft picks for this team that haven't been completed yet
       // This includes:
-      // 1. Original picks (fantasy_team_id matches this team and team_position matches)
-      // 2. Traded picks (fantasy_team_id matches this team)
+      // 1. Original picks (where current_team_id is null or matches fantasy_team_id)
+      // 2. Traded picks (where current_team_id matches this team)
       const { data, error } = await supabase
         .from('fantasy_draft_order')
         .select(`
@@ -50,11 +50,11 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
           round,
           team_position,
           is_completed,
-          fantasy_team_id
+          fantasy_team_id,
+          current_team_id
         `)
         .eq('league_id', leagueId)
         .eq('is_completed', false) // Only get picks that haven't been used
-        .eq('fantasy_team_id', teamId) // Get picks that belong to this team
         .order('pick_number');
 
       if (error) {
@@ -62,11 +62,29 @@ export function useAvailableDraftPicks(leagueId: string, teamId: string) {
         throw new Error(`Failed to fetch available draft picks: ${error.message}`);
       }
 
-      console.log(`✅ Successfully fetched ${data.length} available draft picks for team (including traded picks)`);
-      return data as AvailableDraftPick[];
+      // Filter picks that belong to this team (either as original owner or current owner)
+      const teamPicks = data.filter(pick => {
+        // If current_team_id is set, use that (pick was traded)
+        if (pick.current_team_id) {
+          return pick.current_team_id === teamId;
+        }
+        // Otherwise, use fantasy_team_id (original owner)
+        return pick.fantasy_team_id === teamId;
+      });
+
+      console.log(`✅ Successfully fetched ${teamPicks.length} available draft picks for team (${data.length} total picks checked)`);
+      console.log('🏀 Team picks:', teamPicks);
+      
+      return teamPicks.map(pick => ({
+        pick_number: pick.pick_number,
+        round: pick.round,
+        team_position: pick.team_position,
+        is_completed: pick.is_completed,
+        current_team_id: pick.current_team_id || pick.fantasy_team_id
+      })) as AvailableDraftPick[];
     },
     enabled: !!leagueId && !!teamId,
-    staleTime: 1000 * 60 * 2, // 2 minutes
-    refetchInterval: 5000, // Refetch every 5 seconds for live updates
+    staleTime: options?.staleTime || 1000, // Consider data stale after 1 second
+    refetchInterval: options?.refetchInterval || 2000, // Refetch every 2 seconds for live updates
   });
 }

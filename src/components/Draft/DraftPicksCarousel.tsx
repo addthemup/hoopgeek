@@ -14,19 +14,20 @@ import {
   Timer, 
   NavigateBefore, 
   NavigateNext,
-  SwapHoriz,
-  SmartToy,
-  Person
+  SwapHoriz
 } from '@mui/icons-material';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
-import { supabase } from '../../utils/supabase';
+import { useToggleTeamAutoDraft } from '../../hooks/useDraftState';
+import { useTeams } from '../../hooks/useTeams';
 import { getTeamColors } from '../../utils/nbaTeamColors';
+import { useDraftTimer } from '../../hooks/useDraftTimer';
+import { useDraftPicksIntegration } from '../../hooks/useDraftIntegration';
 
 interface DraftPicksCarouselProps {
   leagueId: string;
   currentPickNumber: number;
   isDraftStarted: boolean;
-  isCommissioner?: boolean;
+  isCommissioner: boolean;
   onInitiateTrade: (pick: any) => void;
 }
 
@@ -34,17 +35,20 @@ export default function DraftPicksCarousel({
   leagueId, 
   currentPickNumber, 
   isDraftStarted,
-  isCommissioner = false,
+  isCommissioner,
   onInitiateTrade
 }: DraftPicksCarouselProps) {
   const { data: draftOrder, isLoading } = useDraftOrder(leagueId);
+  const { data: teams } = useTeams(leagueId);
+  const toggleTeamAutoDraft = useToggleTeamAutoDraft();
+  
+  // Use new timer hook for real-time database updates
+  const { timeRemaining, formattedTime, isActive } = useDraftTimer(leagueId);
+  const { currentPick } = useDraftPicksIntegration();
+  
   const [scrollPosition, setScrollPosition] = useState(0);
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [togglingAutodraft, setTogglingAutodraft] = useState<string | null>(null);
-  const [isIdle, setIsIdle] = useState(false);
   const [userInteracting, setUserInteracting] = useState(false);
   const carouselRef = useRef<HTMLDivElement>(null);
-  const idleTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const cardWidth = 180; // Width of each card (compact size)
   const visibleCards = 4; // Number of cards visible at once
 
@@ -66,6 +70,7 @@ export default function DraftPicksCarousel({
   const visiblePicks = getVisiblePicks();
   const currentPickIndex = visiblePicks.findIndex(pick => pick.pick_number === currentPickNumber);
 
+
   // Calculate number of teams in the league (from round 1 picks)
   const numberOfTeams = draftOrder?.filter(pick => pick.round === 1).length || 10;
 
@@ -74,28 +79,13 @@ export default function DraftPicksCarousel({
     return ((pickNumber - 1) % numberOfTeams) + 1;
   };
 
-  const scrollToPick = (pickIndex: number, center = false) => {
+  const scrollToPick = (pickIndex: number) => {
     if (!carouselRef.current) return;
     
-    let newPosition;
-    if (center) {
-      // Center the pick in the viewport
-      const containerWidth = carouselRef.current.clientWidth;
-      const gap = 16; // 2 * 8px gap between cards (gap: 2 in sx)
-      const padding = 8; // px: 1 in sx = 8px
-      
-      // Calculate the position of the card's center
-      const cardLeft = padding + (pickIndex * (cardWidth + gap));
-      const cardCenter = cardLeft + (cardWidth / 2);
-      
-      // Center the card in the viewport
-      newPosition = Math.max(0, cardCenter - (containerWidth / 2));
-    } else {
-      // Position at the left edge (original behavior)
-      const gap = 16; // 2 * 8px gap between cards
-      const padding = 8; // px: 1 in sx = 8px
-      newPosition = padding + (pickIndex * (cardWidth + gap));
-    }
+    // Position at the left edge
+    const gap = 16; // 2 * 8px gap between cards
+    const padding = 8; // px: 1 in sx = 8px
+    const newPosition = padding + (pickIndex * (cardWidth + gap));
     
     carouselRef.current.scrollTo({
       left: newPosition,
@@ -107,7 +97,6 @@ export default function DraftPicksCarousel({
   const scrollLeft = () => {
     if (!carouselRef.current) return;
     setUserInteracting(true);
-    resetIdleTimer();
     const gap = 16; // 2 * 8px gap between cards
     const newPosition = Math.max(0, scrollPosition - (cardWidth + gap));
     carouselRef.current.scrollTo({
@@ -120,7 +109,6 @@ export default function DraftPicksCarousel({
   const scrollRight = () => {
     if (!carouselRef.current) return;
     setUserInteracting(true);
-    resetIdleTimer();
     const gap = 16; // 2 * 8px gap between cards
     const maxScroll = Math.max(0, (visiblePicks.length - visibleCards) * (cardWidth + gap));
     const newPosition = Math.min(maxScroll, scrollPosition + (cardWidth + gap));
@@ -131,25 +119,8 @@ export default function DraftPicksCarousel({
     setScrollPosition(newPosition);
   };
 
-  // Idle detection functions
-  const resetIdleTimer = () => {
-    if (idleTimeoutRef.current) {
-      clearTimeout(idleTimeoutRef.current);
-    }
-    
-    setIsIdle(false);
-    setUserInteracting(true);
-    
-    // Set new timeout for 15 seconds
-    idleTimeoutRef.current = setTimeout(() => {
-      setIsIdle(true);
-      setUserInteracting(false);
-    }, 15000);
-  };
-
   const handleUserInteraction = () => {
     setUserInteracting(true);
-    resetIdleTimer();
   };
 
   // Handle scroll events to update position
@@ -163,85 +134,26 @@ export default function DraftPicksCarousel({
   // Auto-scroll to current pick when it changes
   useEffect(() => {
     if (currentPickIndex >= 0 && carouselRef.current) {
-      // If user is idle, center the current pick; otherwise position at left edge
-      scrollToPick(currentPickIndex, isIdle);
+      scrollToPick(currentPickIndex);
     }
-  }, [currentPickNumber, currentPickIndex, isIdle]);
+  }, [currentPickNumber, currentPickIndex]);
 
-  // Auto-center when entering idle state
+
+  // Debug countdown state
   useEffect(() => {
-    if (isIdle && currentPickIndex >= 0 && carouselRef.current) {
-      scrollToPick(currentPickIndex, true);
-    }
-  }, [isIdle, currentPickIndex]);
-
-  // Initialize idle timer on mount
-  useEffect(() => {
-    resetIdleTimer();
-    
-    // Cleanup on unmount
-    return () => {
-      if (idleTimeoutRef.current) {
-        clearTimeout(idleTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // Reset idle timer when draft starts
-  useEffect(() => {
-    if (isDraftStarted) {
-      resetIdleTimer();
-    }
-  }, [isDraftStarted]);
-
-  // Format seconds to "M:SS" format
-  const formatTime = (totalSeconds: number): string => {
-    if (totalSeconds <= 0) return '0:00';
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  // Calculate and update countdown timer from database time_expires
-  useEffect(() => {
-    if (!isDraftStarted) {
-      setCountdown(null);
-      return;
-    }
-
-    // Find the current pick
-    const currentPick = visiblePicks.find(pick => pick.pick_number === currentPickNumber);
-    
-    if (!currentPick || !currentPick.time_expires) {
-      setCountdown(null);
-      return;
-    }
-
-    // Calculate initial countdown from database timestamp
-    const calculateRemainingSeconds = () => {
-      const expiresAt = new Date(currentPick.time_expires!).getTime();
-      const now = Date.now();
-      const remainingMs = expiresAt - now;
-      return Math.max(0, Math.floor(remainingMs / 1000));
-    };
-
-    // Set initial countdown
-    setCountdown(calculateRemainingSeconds());
-
-    // Update countdown every second
-    const interval = setInterval(() => {
-      const remaining = calculateRemainingSeconds();
-      setCountdown(remaining);
-      
-      // Stop the interval if time is up
-      if (remaining <= 0) {
-        clearInterval(interval);
-      }
-    }, 1000);
-
-    // Cleanup interval on unmount or when dependencies change
-    return () => clearInterval(interval);
-  }, [currentPickNumber, isDraftStarted, visiblePicks]);
+    console.log('🕐 Zustand Countdown Debug:', {
+      isDraftStarted,
+      currentPickNumber,
+      timeRemaining,
+      formattedTime,
+      isActive,
+      currentPick: currentPick ? {
+        pickNumber: currentPick.pickNumber,
+        timeExpires: currentPick.timeExpires,
+        isCompleted: currentPick.isCompleted
+      } : null,
+    });
+  }, [isDraftStarted, currentPickNumber, timeRemaining, formattedTime, isActive, currentPick]);
 
   // Shorten position strings
   const shortenPosition = (position: string): string => {
@@ -253,25 +165,51 @@ export default function DraftPicksCarousel({
     return position;
   };
 
+  // Calculate remaining salary cap for a team
+  const getRemainingSalaryCap = (teamId: string) => {
+    if (!teams || !draftOrder) {
+      return null;
+    }
+    
+    const team = teams.find(t => t.id === teamId);
+    if (!team) {
+      return null;
+    }
+    
+    // Get all completed picks for this team
+    const teamPicks = draftOrder.filter(pick => 
+      pick.team_id === teamId && 
+      pick.is_completed && 
+      pick.salary_2025_26
+    );
+    
+    // Calculate total salary spent
+    const totalSalarySpent = teamPicks.reduce((sum, pick) => sum + (pick.salary_2025_26 || 0), 0);
+    
+    // Get the actual salary cap from fantasy_league_seasons (fallback to 200M if not set)
+    // Note: We need to fetch this from the league season, not the team
+    const salaryCap = team.fantasy_league_seasons?.salary_cap_amount || 200000000; // Use actual league season salary cap
+    const remainingCap = salaryCap - totalSalarySpent;
+    
+    return {
+      totalSpent: totalSalarySpent,
+      remaining: remainingCap,
+      percentage: (totalSalarySpent / salaryCap) * 100
+    };
+  };
 
-  // Toggle autodraft for a team (commissioner only)
-  const handleToggleAutodraft = async (pick: any, currentAutodraftStatus: boolean) => {
+
+  // Handle team-specific autopick toggle
+  const handleToggleTeamAutoDraft = async (teamId: string, currentEnabled: boolean) => {
     if (!isCommissioner) return;
     
-    setTogglingAutodraft(pick.team_id);
     try {
-      const { error } = await supabase
-        .from('fantasy_teams')
-        .update({ autodraft_enabled: !currentAutodraftStatus })
-        .eq('id', pick.team_id);
-
-      if (error) {
-        console.error('Error toggling autodraft:', error);
-      }
+      await toggleTeamAutoDraft.mutateAsync({
+        teamId,
+        enabled: !currentEnabled
+      });
     } catch (error) {
-      console.error('Error toggling autodraft:', error);
-    } finally {
-      setTogglingAutodraft(null);
+      console.error('Error toggling team auto draft:', error);
     }
   };
 
@@ -305,32 +243,6 @@ export default function DraftPicksCarousel({
 
   return (
     <Box sx={{ position: 'relative', width: '100%' }}>
-      {/* Idle State Indicator */}
-      {isIdle && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: -8,
-            left: '50%',
-            transform: 'translateX(-50%)',
-            zIndex: 3,
-            bgcolor: 'primary.500',
-            color: 'white',
-            px: 2,
-            py: 0.5,
-            borderRadius: 'md',
-            fontSize: '0.75rem',
-            fontWeight: 'bold',
-            animation: 'fadeInOut 2s ease-in-out infinite',
-            '@keyframes fadeInOut': {
-              '0%, 100%': { opacity: 0.7 },
-              '50%': { opacity: 1 }
-            }
-          }}
-        >
-          🎯 Auto-Centered
-        </Box>
-      )}
 
       {/* Navigation Buttons */}
       <IconButton
@@ -401,6 +313,23 @@ export default function DraftPicksCarousel({
           const status = getPickStatus(pick);
           const isCurrentPick = pick.pick_number === currentPickNumber;
           
+          // Debug logging for trade indicators
+          if (pick.is_completed && pick.player_name) {
+            console.log('🔍 DraftPicksCarousel - Pick Debug:', {
+              pickNumber: pick.pick_number,
+              playerName: pick.player_name,
+              isTraded: pick.is_traded,
+              originalTeamName: pick.original_team_name,
+              currentOwnerName: pick.current_owner_name,
+              teamName: pick.team_name,
+              originalTeamId: pick.original_team_id,
+              currentOwnerId: pick.current_owner_id,
+              teamId: pick.team_id,
+              playerWasTraded: pick.player_was_traded,
+              playerTradedToTeam: pick.player_traded_to_team
+            });
+          }
+          
           return (
             <Box key={pick.pick_number} sx={{ position: 'relative' }}>
               <Card
@@ -413,25 +342,20 @@ export default function DraftPicksCarousel({
                   minHeight: 65,
                   maxHeight: 65,
                   border: isCurrentPick ? '2px solid' : '1px solid',
-                  borderColor: isCurrentPick ? (isIdle ? 'primary.500' : 'warning.500') : status === 'forfeited' ? 'danger.500' : 'divider',
+                  borderColor: isCurrentPick ? 'warning.500' : status === 'forfeited' ? 'danger.500' : 'divider',
                   bgcolor: status === 'completed' 
                     ? 'success.50' 
                     : status === 'forfeited'
                       ? 'danger.50'
                       : status === 'current' 
-                        ? (isIdle ? 'primary.50' : 'warning.50')
+                        ? 'warning.50'
                         : 'background.body',
                   opacity: status === 'forfeited' ? 0.7 : 1,
-                  animation: isCurrentPick && isDraftStarted ? (isIdle ? 'idlePulse 3s infinite' : 'pulse 2s infinite') : 'none',
+                  animation: isCurrentPick && isDraftStarted ? 'pulse 2s infinite' : 'none',
                   '@keyframes pulse': {
                     '0%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0.7)' },
                     '70%': { boxShadow: '0 0 0 10px rgba(251, 191, 36, 0)' },
                     '100%': { boxShadow: '0 0 0 0 rgba(251, 191, 36, 0)' }
-                  },
-                  '@keyframes idlePulse': {
-                    '0%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0.7)' },
-                    '50%': { boxShadow: '0 0 0 8px rgba(25, 118, 210, 0.3)' },
-                    '100%': { boxShadow: '0 0 0 0 rgba(25, 118, 210, 0)' }
                   }
                 }}
               >
@@ -505,14 +429,15 @@ export default function DraftPicksCarousel({
               {pick.original_team_name || pick.team_name || 'Empty Team'}
             </Typography>
             
-            {/* Traded Indicator */}
-            {pick.is_traded && pick.current_owner_name && (
+            {/* Trade Indicators */}
+            {/* Pick Trade Indicator (before player is drafted) */}
+            {!pick.is_completed && pick.is_traded && pick.current_owner_name && (
               <Chip
                 color="primary"
                 size="sm"
                 variant="soft"
-                sx={{ 
-                  mt: 0.25, 
+                sx={{
+                  mt: 0.25,
                   fontSize: '0.55rem',
                   px: 0.5,
                   py: 0.15,
@@ -521,6 +446,25 @@ export default function DraftPicksCarousel({
                 }}
               >
                 → {pick.current_owner_name}
+              </Chip>
+            )}
+            
+            {/* Player Trade Indicator (after player is drafted) */}
+            {pick.is_completed && pick.player_was_traded && pick.player_traded_to_team && (
+              <Chip
+                color="success"
+                size="sm"
+                variant="soft"
+                sx={{
+                  mt: 0.25,
+                  fontSize: '0.55rem',
+                  px: 0.5,
+                  py: 0.15,
+                  minHeight: 'auto',
+                  height: '14px'
+                }}
+              >
+                → {pick.player_traded_to_team}
               </Chip>
             )}
             
@@ -542,9 +486,9 @@ export default function DraftPicksCarousel({
                   )}
                   
                   {/* Countdown Timer for Current Pick */}
-                  {isCurrentPick && countdown !== null && (
+                  {isCurrentPick && isActive && timeRemaining > 0 && (
                     <Chip
-                      color={countdown <= 10 ? 'danger' : 'warning'}
+                      color={timeRemaining <= 10 ? 'danger' : 'warning'}
                       size="sm"
                       startDecorator={<Timer />}
                       sx={{ 
@@ -554,14 +498,14 @@ export default function DraftPicksCarousel({
                         px: 0.75,
                         py: 0.25,
                         minHeight: 'auto',
-                        animation: countdown <= 10 ? 'blink 1s infinite' : 'none',
+                        animation: timeRemaining <= 10 ? 'blink 1s infinite' : 'none',
                         '@keyframes blink': {
                           '0%, 100%': { opacity: 1 },
                           '50%': { opacity: 0.5 }
                         }
                       }}
                     >
-                      {formatTime(countdown)}
+                      {formattedTime}
                     </Chip>
                   )}
                   
@@ -575,6 +519,33 @@ export default function DraftPicksCarousel({
                     <Typography level="body-xs" sx={{ fontSize: '0.6rem', fontWeight: 'bold', color: 'success.500', mt: 0.15, lineHeight: 1.1 }}>
                       ${(pick.salary_2025_26 / 1000000).toFixed(1)}M
                     </Typography>
+                  )}
+                  
+                  {/* Show remaining salary cap for pending picks */}
+                  {!pick.is_completed && pick.team_id && (
+                    (() => {
+                      const teamId = pick.team_id;
+                      const capInfo = getRemainingSalaryCap(teamId);
+                      if (!capInfo) return null;
+                      
+                      const isOverCap = capInfo.remaining < 0;
+                      const isNearCap = capInfo.remaining < 10000000; // Less than 10M remaining
+                      
+                      return (
+                        <Typography 
+                          level="body-xs" 
+                          sx={{ 
+                            fontSize: '0.6rem', 
+                            fontWeight: 'bold', 
+                            color: isOverCap ? 'danger.500' : isNearCap ? 'warning.500' : 'primary.500',
+                            mt: 0.15, 
+                            lineHeight: 1.1 
+                          }}
+                        >
+                          {isOverCap ? 'Over Cap' : `$${(capInfo.remaining / 1000000).toFixed(1)}M left`}
+                        </Typography>
+                      );
+                    })()
                   )}
                 </CardContent>
               
@@ -599,7 +570,6 @@ export default function DraftPicksCarousel({
                   }}
                 >
                   {status === 'forfeited' ? '✗' :
-                   status === 'completed' ? '✓' :
                    status === 'current' ? '•' : `${pick.round}.${getPickInRound(pick.pick_number)}`}
                 </CardOverflow>
               </Card>
@@ -613,28 +583,26 @@ export default function DraftPicksCarousel({
                 display: 'flex',
                 gap: 0.5
               }}>
-                {/* Autodraft Toggle Button - Commissioner only */}
-                {isCommissioner && (
+                {/* Team Autopick Toggle Button - Only for commissioners */}
+                {isCommissioner && !pick.is_completed && (
                   <IconButton
                     size="sm"
                     variant="soft"
-                    color={pick.autodraft_enabled ? 'success' : 'neutral'}
+                    color={pick.autodraft_enabled ? "success" : "neutral"}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleUserInteraction();
-                      handleToggleAutodraft(pick, pick.autodraft_enabled || false);
+                      handleToggleTeamAutoDraft(pick.team_id, pick.autodraft_enabled || false);
                     }}
-                    loading={togglingAutodraft === pick.team_id}
-                    disabled={togglingAutodraft === pick.team_id}
                     sx={{ 
                       minWidth: 24,
                       minHeight: 24,
                       borderRadius: '50%',
                       boxShadow: 'sm'
                     }}
-                    title={pick.autodraft_enabled ? 'Disable Autodraft' : 'Enable Autodraft'}
+                    title={pick.autodraft_enabled ? `Disable Auto Draft for ${pick.team_name}` : `Enable Auto Draft for ${pick.team_name}`}
                   >
-                    {pick.autodraft_enabled ? <SmartToy sx={{ fontSize: '0.9rem' }} /> : <Person sx={{ fontSize: '0.9rem' }} />}
+                    🤖
                   </IconButton>
                 )}
                 

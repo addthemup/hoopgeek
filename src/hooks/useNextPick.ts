@@ -24,7 +24,7 @@ export function useNextPick(leagueId: string) {
           team_position,
           is_completed,
           fantasy_team_id,
-          fantasy_teams!inner (
+          fantasy_teams!fantasy_draft_order_fantasy_team_id_fkey (
             id,
             team_name
           )

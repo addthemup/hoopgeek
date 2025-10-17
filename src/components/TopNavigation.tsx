@@ -279,9 +279,20 @@ export default function TopNavigation() {
           {/* User Actions */}
           {user ? (
             <Stack direction="row" spacing={1} alignItems="center">
-              <Typography level="body-sm" sx={{ color: 'inherit', display: { xs: 'none', sm: 'block' } }}>
+              <Button 
+                variant="plain" 
+                size="sm"
+                onClick={() => navigate('/settings')}
+                sx={{ 
+                  color: 'inherit', 
+                  display: { xs: 'none', sm: 'flex' },
+                  '&:hover': {
+                    textDecoration: 'underline'
+                  }
+                }}
+              >
                 {user.email}
-              </Typography>
+              </Button>
               <Button variant="soft" size="sm" onClick={handleSignOut}>
                 Sign Out
               </Button>

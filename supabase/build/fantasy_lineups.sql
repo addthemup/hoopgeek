@@ -1,15 +1,4 @@
--- =====================================================
--- FANTASY LINEUPS SYSTEM
--- =====================================================
--- Manages weekly lineups for fantasy basketball teams
--- Supports starters, rotation, and bench players with position assignments
--- =====================================================
 
--- =====================================================
--- FANTASY LINEUPS TABLE
--- =====================================================
--- Stores weekly lineup configurations for each team
--- =====================================================
 
 CREATE TABLE IF NOT EXISTS fantasy_lineups (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -122,6 +111,7 @@ ALTER TABLE fantasy_lineups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fantasy_lineup_submissions ENABLE ROW LEVEL SECURITY;
 
 -- Fantasy Lineups Policies
+DROP POLICY IF EXISTS "Users can view lineups in their leagues" ON fantasy_lineups;
 CREATE POLICY "Users can view lineups in their leagues" ON fantasy_lineups
     FOR SELECT TO authenticated
     USING (
@@ -132,6 +122,7 @@ CREATE POLICY "Users can view lineups in their leagues" ON fantasy_lineups
         )
     );
 
+DROP POLICY IF EXISTS "Users can manage lineups for their teams" ON fantasy_lineups;
 CREATE POLICY "Users can manage lineups for their teams" ON fantasy_lineups
     FOR ALL TO authenticated
     USING (
@@ -140,6 +131,7 @@ CREATE POLICY "Users can manage lineups for their teams" ON fantasy_lineups
         )
     );
 
+DROP POLICY IF EXISTS "Commissioners can manage all lineups" ON fantasy_lineups;
 CREATE POLICY "Commissioners can manage all lineups" ON fantasy_lineups
     FOR ALL TO authenticated
     USING (
@@ -149,6 +141,7 @@ CREATE POLICY "Commissioners can manage all lineups" ON fantasy_lineups
     );
 
 -- Fantasy Lineup Submissions Policies
+DROP POLICY IF EXISTS "Users can view lineup submissions in their leagues" ON fantasy_lineup_submissions;
 CREATE POLICY "Users can view lineup submissions in their leagues" ON fantasy_lineup_submissions
     FOR SELECT TO authenticated
     USING (
@@ -159,6 +152,7 @@ CREATE POLICY "Users can view lineup submissions in their leagues" ON fantasy_li
         )
     );
 
+DROP POLICY IF EXISTS "Users can manage lineup submissions for their teams" ON fantasy_lineup_submissions;
 CREATE POLICY "Users can manage lineup submissions for their teams" ON fantasy_lineup_submissions
     FOR ALL TO authenticated
     USING (
@@ -167,6 +161,7 @@ CREATE POLICY "Users can manage lineup submissions for their teams" ON fantasy_l
         )
     );
 
+DROP POLICY IF EXISTS "Commissioners can manage all lineup submissions" ON fantasy_lineup_submissions;
 CREATE POLICY "Commissioners can manage all lineup submissions" ON fantasy_lineup_submissions
     FOR ALL TO authenticated
     USING (
@@ -198,11 +193,14 @@ CREATE TRIGGER update_fantasy_lineup_submissions_updated_at
 
 -- Drop existing function if it exists
 DROP FUNCTION IF EXISTS get_lineup_positions(UUID, UUID, TEXT);
+DROP FUNCTION IF EXISTS get_lineup_positions(UUID, UUID, TEXT, INTEGER, INTEGER);
 
 CREATE OR REPLACE FUNCTION get_lineup_positions(
     p_league_id UUID,
     p_fantasy_team_id UUID,
-    p_lineup_type TEXT DEFAULT NULL
+    p_lineup_type TEXT DEFAULT NULL,
+    p_week_number INTEGER DEFAULT NULL,
+    p_season_year INTEGER DEFAULT NULL
 )
 RETURNS TABLE (
     id UUID,
@@ -240,12 +238,14 @@ BEGIN
     WHERE fl.league_id = p_league_id
     AND fl.fantasy_team_id = p_fantasy_team_id
     AND (p_lineup_type IS NULL OR fl.lineup_type = p_lineup_type)
+    AND (p_week_number IS NULL OR fl.week_number = p_week_number)
+    AND (p_season_year IS NULL OR fl.season_year = p_season_year)
     ORDER BY fl.lineup_type, fl.position, fl.position_order;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute permission
-GRANT EXECUTE ON FUNCTION get_lineup_positions(UUID, UUID, TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION get_lineup_positions(UUID, UUID, TEXT, INTEGER, INTEGER) TO authenticated;
 
 -- =====================================================
 -- UPSERT LINEUP POSITION FUNCTION

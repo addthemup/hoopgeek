@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -18,6 +18,7 @@ import {
   IconButton,
   Divider,
   Chip,
+  Snackbar,
 } from '@mui/joy';
 import {
   SwapHoriz,
@@ -63,7 +64,7 @@ interface DraftTradeProps {
 }
 
 interface Player {
-  id: number;
+  id: string; // Changed from number to string (UUID)
   name: string;
   position: string;
   team_abbreviation: string;
@@ -90,6 +91,11 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  
+  // Snackbar state for trade actions
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [snackbarColor, setSnackbarColor] = useState<'success' | 'danger'>('success');
 
   // Get current user's team
   const userTeam = teams?.find(team => team.user_id === user?.id);
@@ -106,12 +112,24 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
   const isDraftComplete = nextPick === null;
   
   // Get draft data for user's team
-  const { data: userDraftedPlayers } = useTeamDraftedPlayers(leagueId, userTeam?.id || '');
-  const { data: userAvailablePicks } = useAvailableDraftPicks(leagueId, userTeam?.id || '');
+  const { data: userDraftedPlayers } = useTeamDraftedPlayers(leagueId, userTeam?.id || '', {
+    refetchInterval: 2000, // Refetch every 2 seconds during draft
+    staleTime: 1000, // Consider data stale after 1 second
+  });
+  const { data: userAvailablePicks } = useAvailableDraftPicks(leagueId, userTeam?.id || '', {
+    refetchInterval: 2000,
+    staleTime: 1000,
+  });
   
   // Get draft data for selected team
-  const { data: selectedTeamDraftedPlayers } = useTeamDraftedPlayers(leagueId, selectedTeam);
-  const { data: selectedTeamAvailablePicks } = useAvailableDraftPicks(leagueId, selectedTeam);
+  const { data: selectedTeamDraftedPlayers } = useTeamDraftedPlayers(leagueId, selectedTeam, {
+    refetchInterval: 2000,
+    staleTime: 1000,
+  });
+  const { data: selectedTeamAvailablePicks } = useAvailableDraftPicks(leagueId, selectedTeam, {
+    refetchInterval: 2000,
+    staleTime: 1000,
+  });
 
   // Pre-populate with trade context if provided
   useEffect(() => {
@@ -152,6 +170,8 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
 
   // Debug logging
   useEffect(() => {
+    console.log('🏀 DraftTrade - User Team ID:', userTeam?.id);
+    console.log('🏀 DraftTrade - Selected Team ID:', selectedTeam);
     console.log('🏀 DraftTrade - My Team Players:', myPlayers.length, myPlayers);
     console.log('🏀 DraftTrade - Their Team Players:', theirPlayers.length, theirPlayers);
     console.log('🏀 DraftTrade - My Picks:', myPicks.length, myPicks);
@@ -162,7 +182,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
       console.log('🏀 DraftTrade - Offered Players Type:', typeof pendingTrades[0].offered_players);
       console.log('🏀 DraftTrade - Offered Players Value:', pendingTrades[0].offered_players);
     }
-  }, [myPlayers, theirPlayers, myPicks, theirPicks, pendingTrades]);
+  }, [myPlayers, theirPlayers, myPicks, theirPicks, pendingTrades, userTeam, selectedTeam]);
 
   // Add item to trade
   const addToTrade = (item: Player | DraftPick, type: 'player' | 'pick', isMyTeam: boolean) => {
@@ -221,8 +241,18 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
         acceptingTeamId: userTeam.id,
         isCommissioner,
       });
+      
+      // Show success message
+      setSnackbarMessage(isCommissioner ? 'Trade force accepted successfully!' : 'Trade accepted successfully!');
+      setSnackbarColor('success');
+      setSnackbarOpen(true);
     } catch (error: any) {
       console.error('Error accepting trade:', error);
+      
+      // Show error message
+      setSnackbarMessage(error.message || 'Failed to accept trade');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
     }
   };
 
@@ -236,8 +266,18 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
         rejectingTeamId: userTeam.id,
         isCommissioner,
       });
+      
+      // Show success message
+      setSnackbarMessage(isCommissioner ? 'Trade force rejected successfully!' : 'Trade rejected successfully!');
+      setSnackbarColor('success');
+      setSnackbarOpen(true);
     } catch (error: any) {
       console.error('Error rejecting trade:', error);
+      
+      // Show error message
+      setSnackbarMessage(error.message || 'Failed to reject trade');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
     }
   };
 
@@ -280,16 +320,15 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
         return;
       }
 
-      // Call the create_draft_trade_offer function
-      const { data, error } = await supabase.rpc('create_draft_trade_offer', {
-        p_league_id: leagueId,
-        p_season_id: seasonData.id,
-        p_from_team_id: userTeam.id,
-        p_to_team_id: selectedTeam,
-        p_offered_players: JSON.stringify(offeredPlayerIds),
-        p_offered_picks: JSON.stringify(offeredPickNumbers),
-        p_requested_players: JSON.stringify(requestedPlayerIds),
-        p_requested_picks: JSON.stringify(requestedPickNumbers),
+      // Call the create_trade_offer function (old working schema)
+      const { data, error } = await supabase.rpc('create_trade_offer', {
+        league_id_param: leagueId,
+        from_team_id_param: userTeam.id,
+        to_team_id_param: selectedTeam,
+        offered_players_param: offeredPlayerIds,
+        offered_picks_param: offeredPickNumbers,
+        requested_players_param: requestedPlayerIds,
+        requested_picks_param: requestedPickNumbers,
       });
       
       if (error) {
@@ -498,11 +537,11 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                                         src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
                                         size="sm"
                                       >
-                                        {player.name.charAt(0)}
+                                        {player.name?.charAt(0) || '?'}
                                       </Avatar>
                                       <Box sx={{ flex: 1, minWidth: 0 }}>
                                         <Typography level="body-xs" sx={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {player.name}
+                                          {player.name || 'Unknown Player'}
                                         </Typography>
                                         <Typography level="body-xs" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
                                           {player.position} • ${player.salary_2025_26 ? (player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
@@ -586,11 +625,11 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                                         src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
                                         size="sm"
                                       >
-                                        {player.name.charAt(0)}
+                                        {player.name?.charAt(0) || '?'}
                                       </Avatar>
                                       <Box sx={{ flex: 1, minWidth: 0 }}>
                                         <Typography level="body-xs" sx={{ fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                          {player.name}
+                                          {player.name || 'Unknown Player'}
                                         </Typography>
                                         <Typography level="body-xs" sx={{ fontSize: '0.65rem', color: 'text.secondary' }}>
                                           {player.position} • ${player.salary_2025_26 ? (player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
@@ -762,7 +801,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                         </ListItemDecorator>
                         <ListItemContent>
                           <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                            {player.name}
+                            {player.name || 'Unknown Player'}
                           </Typography>
                           <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
                             {player.position} • {player.team_abbreviation}
@@ -982,7 +1021,7 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
                             </ListItemDecorator>
                             <ListItemContent>
                               <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                {player.name}
+                                {player.name || 'Unknown Player'}
                               </Typography>
                               <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
                                 {player.position} • {player.team_abbreviation}
@@ -1164,6 +1203,16 @@ export default function DraftTrade({ leagueId, tradeContext, onClearContext, isC
           )}
         </CardContent>
       </Card>
+
+      {/* Snackbar for trade action feedback */}
+      <Snackbar
+        open={snackbarOpen}
+        onClose={() => setSnackbarOpen(false)}
+        color={snackbarColor}
+        autoHideDuration={4000}
+      >
+        {snackbarMessage}
+      </Snackbar>
     </Box>
   );
 }

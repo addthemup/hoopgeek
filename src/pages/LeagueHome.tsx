@@ -113,13 +113,16 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
       // Fetch salary data for all teams in parallel
       const promises = teams.map(async (team) => {
         try {
-          // Only fetch roster spots that have actual players assigned
+          // Fetch roster spots with player salary data using proper joins
           const { data: rosterData, error } = await supabase
             .from('fantasy_roster_spots')
             .select(`
               player_id,
-              player:player_id (
-                salary_2025_26
+              nba_players!inner(
+                id,
+                nba_hoopshype_salaries!inner(
+                  salary_2025_26
+                )
               )
             `)
             .eq('fantasy_team_id', team.id)
@@ -133,8 +136,9 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
           console.log(`📊 Team ${team.team_name} roster data:`, rosterData);
 
           const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
-            const player = rosterSpot.player as any; // Type assertion for player
-            const playerSalary = player?.salary_2025_26 || 0;
+            const player = rosterSpot.nba_players as any;
+            const salaryData = player?.nba_hoopshype_salaries?.[0];
+            const playerSalary = salaryData?.salary_2025_26 || 0;
             console.log(`  Player salary: ${playerSalary}`);
             return sum + playerSalary;
           }, 0) || 0;
@@ -166,7 +170,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
     queryKey: ['recent-trades', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('fantasy_draft_trade_offers')
+        .from('draft_trade_offers')
         .select(`
           id,
           created_at,

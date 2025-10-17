@@ -7,7 +7,7 @@ export function useDraftChatMessages(leagueId: string) {
     queryKey: ['draft-chat-messages', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_chat_messages')
+        .from('fantasy_draft_chat_messages')
         .select(`
           *,
           fantasy_team:fantasy_team_id (
@@ -48,7 +48,7 @@ export function useSendDraftChatMessage() {
       if (!user) throw new Error('User not authenticated')
 
       const { data, error } = await supabase
-        .from('draft_chat_messages')
+        .from('fantasy_draft_chat_messages')
         .insert({
           league_id: leagueId,
           user_id: user.id,

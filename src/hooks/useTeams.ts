@@ -10,7 +10,12 @@ export function useTeams(leagueId: string) {
       
       const { data, error } = await supabase
         .from('fantasy_teams')
-        .select('*')
+        .select(`
+          *,
+          fantasy_league_seasons!inner(
+            salary_cap_amount
+          )
+        `)
         .eq('league_id', leagueId)
         .order('created_at', { ascending: true })
 

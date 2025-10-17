@@ -43,9 +43,23 @@ export default function LeagueSettingsManager({ league, isCommissioner, onUpdate
   const [hasChanges, setHasChanges] = useState(false)
 
   const handleInputChange = (field: keyof UpdateLeagueSettingsFormData, value: any) => {
+    // Convert datetime-local to UTC before saving
+    let processedValue = value;
+    if (field === 'draft_date' && value) {
+      // datetime-local input gives us "2025-10-17T12:00" in local time
+      // We need to convert it to ISO 8601 UTC format for the database
+      const localDate = new Date(value);
+      processedValue = localDate.toISOString();
+      console.log('🕐 Converting draft_date:', {
+        input: value,
+        localDate: localDate.toString(),
+        utcISO: processedValue
+      });
+    }
+    
     setFormData(prev => ({
       ...prev,
-      [field]: value
+      [field]: processedValue
     }))
     setHasChanges(true)
   }
@@ -68,7 +82,22 @@ export default function LeagueSettingsManager({ league, isCommissioner, onUpdate
   }
 
   const getCurrentValue = (field: keyof LeagueSettings) => {
-    return formData[field as keyof UpdateLeagueSettingsFormData] ?? league[field]
+    const value = formData[field as keyof UpdateLeagueSettingsFormData] ?? league[field];
+    
+    // Convert draft_date from UTC ISO to datetime-local format
+    if (field === 'draft_date' && value) {
+      // Database stores: "2025-10-17T12:00:00+00:00" (UTC)
+      // datetime-local needs: "2025-10-17T05:00" (local time, no timezone)
+      const date = new Date(value);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+    
+    return value;
   }
 
   const renderBasicSettings = () => (

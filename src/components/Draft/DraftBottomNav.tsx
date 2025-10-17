@@ -18,17 +18,22 @@ import {
   ChatRounded as ChatIcon,
 } from '@mui/icons-material';
 import { usePendingTradesCount } from '../../hooks/usePendingTradesCount';
+import { useChatMentions } from '../../hooks/useChatMentions';
 
 interface DraftBottomNavProps {
   activeTab: number;
   onTabChange: (tab: number) => void;
   isCommissioner?: boolean;
   userTeamId?: string;
+  leagueId?: string;
 }
 
-export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner = false, userTeamId }: DraftBottomNavProps) {
+export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner = false, userTeamId, leagueId }: DraftBottomNavProps) {
   // Fetch pending trades count
-  const { data: pendingCount = 0 } = usePendingTradesCount(userTeamId);
+  const { data: pendingCount = 0 } = usePendingTradesCount(userTeamId, leagueId);
+  
+  // Fetch chat mention count
+  const { data: mentionCount = 0 } = useChatMentions(leagueId || '');
 
   const tabs = [
     { label: 'Roster', icon: RosterIcon, color: 'primary' },
@@ -36,7 +41,7 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
     { label: 'Best Available', icon: BestAvailableIcon, color: 'warning' },
     { label: 'Picks', icon: PicksIcon, color: 'danger' },
     { label: 'Trade', icon: TradeIcon, color: 'neutral', badge: pendingCount },
-    { label: 'Chat', icon: ChatIcon, color: 'info' },
+    { label: 'Chat', icon: ChatIcon, color: 'info', badge: mentionCount },
     { label: 'Rules', icon: RulesIcon, color: 'info' },
     ...(isCommissioner ? [{ label: 'Commish', icon: CommishIcon, color: 'primary' }] : []),
   ];
@@ -52,7 +57,7 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
         bottom: 0,
         left: 0,
         right: 0,
-        zIndex: 1000,
+        zIndex: 999,
         borderTopLeftRadius: '12px',
         borderTopRightRadius: '12px',
         bgcolor: `${'var(--colors-index)'}.500`,

@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase';
 export interface PlayerComprehensiveData {
   // Basic player info
   player: {
-    id: number;
+    id: string;
     nba_player_id: number;
     name: string;
     first_name?: string;
@@ -47,6 +47,29 @@ export interface PlayerComprehensiveData {
     current_reb?: number;
     current_ast?: number;
     stats_timeframe?: string;
+    // Salary data from nba_hoopshype_salaries
+    nba_hoopshype_salaries?: Array<{
+      salary_2025_26?: number;
+      salary_2026_27?: number;
+      salary_2027_28?: number;
+      salary_2028_29?: number;
+      contract_years_remaining?: number;
+    }>;
+    // Projections data from nba_espn_projections
+    nba_espn_projections?: Array<{
+      proj_2026_gp?: number;
+      proj_2026_min?: number;
+      proj_2026_pts?: number;
+      proj_2026_reb?: number;
+      proj_2026_ast?: number;
+      proj_2026_stl?: number;
+      proj_2026_blk?: number;
+      proj_2026_to?: number;
+      proj_2026_3pm?: number;
+      proj_2026_fg_pct?: number;
+      proj_2026_ft_pct?: number;
+      outlook_2026?: string;
+    }>;
   };
   
   // Career stats (regular season)
@@ -186,71 +209,51 @@ export interface PlayerComprehensiveData {
   
   // Recent game logs (2024-25)
   recentGameLogs: Array<{
-    id: number;
-    game_id: string;
-    season_year: string;
+    id: string;
+    player_id: string;
+    nba_player_id: number;
     player_name: string;
+    game_id: string;
+    game_date: string;
+    season_year: string;
+    matchup: string;
+    jersey_num: number;
+    position: string;
     team_id: number;
     team_abbreviation: string;
     team_name: string;
-    game_date: string;
-    matchup: string;
-    wl: string;
-    min: number;
+    team_city: string;
+    team_tricode: string;
+    min: string | number;
     fgm: number;
     fga: number;
-    fg_pct: number;
+    fg_pct: string | number;
     fg3m: number;
     fg3a: number;
-    fg3_pct: number;
+    fg3_pct: string | number;
     ftm: number;
     fta: number;
-    ft_pct: number;
+    ft_pct: string | number;
     oreb: number;
     dreb: number;
     reb: number;
     ast: number;
-    tov: number;
     stl: number;
     blk: number;
-    blka: number;
-    pf: number;
-    pfd: number;
+    tov: number;
+    fouls_personal: number;
     pts: number;
-    plus_minus: number;
-    nba_fantasy_pts: number;
-    dd2: number;
-    td3: number;
-    // Rankings
-    gp_rank: number;
-    w_rank: number;
-    l_rank: number;
-    w_pct_rank: number;
-    min_rank: number;
-    fgm_rank: number;
-    fga_rank: number;
-    fg_pct_rank: number;
-    fg3m_rank: number;
-    fg3a_rank: number;
-    fg3_pct_rank: number;
-    ftm_rank: number;
-    fta_rank: number;
-    ft_pct_rank: number;
-    oreb_rank: number;
-    dreb_rank: number;
-    reb_rank: number;
-    ast_rank: number;
-    tov_rank: number;
-    stl_rank: number;
-    blk_rank: number;
-    blka_rank: number;
-    pf_rank: number;
-    pfd_rank: number;
-    pts_rank: number;
-    plus_minus_rank: number;
-    nba_fantasy_pts_rank: number;
-    dd2_rank: number;
-    td3_rank: number;
+    plus_minus_points: number;
+    true_shooting_pct: string | number;
+    effective_fg_pct: string | number;
+    usage_rate: string | number;
+    player_efficiency_rating: string | number;
+    game_score: string | number;
+    is_starter: boolean;
+    is_home_game: boolean;
+    game_type: string;
+    created_at: string;
+    updated_at: string;
   }>;
   
   // Game logs pagination info
@@ -259,6 +262,22 @@ export interface PlayerComprehensiveData {
     page: number;
     pageSize: number;
     totalPages: number;
+  };
+  
+  // ESPN Projections data
+  espnProjections?: {
+    proj_2026_gp?: number;
+    proj_2026_min?: number;
+    proj_2026_pts?: number;
+    proj_2026_reb?: number;
+    proj_2026_ast?: number;
+    proj_2026_stl?: number;
+    proj_2026_blk?: number;
+    proj_2026_to?: number;
+    proj_2026_3pm?: number;
+    proj_2026_fg_pct?: number;
+    proj_2026_ft_pct?: number;
+    outlook_2026?: string;
   };
 }
 
@@ -273,10 +292,33 @@ export function usePlayerComprehensive(
       console.log(`🏀 Fetching comprehensive data for player ${playerId}...`);
       
       try {
-        // Fetch player basic info
+        // Fetch player basic info with related data
         const { data: playerData, error: playerError } = await supabase
-          .from('players')
-          .select('*')
+          .from('nba_players')
+          .select(`
+            *,
+            nba_hoopshype_salaries (
+              salary_2025_26,
+              salary_2026_27,
+              salary_2027_28,
+              salary_2028_29,
+              contract_years_remaining
+            ),
+            nba_espn_projections (
+              proj_2026_gp,
+              proj_2026_min,
+              proj_2026_pts,
+              proj_2026_reb,
+              proj_2026_ast,
+              proj_2026_stl,
+              proj_2026_blk,
+              proj_2026_to,
+              proj_2026_3pm,
+              proj_2026_fg_pct,
+              proj_2026_ft_pct,
+              outlook_2026
+            )
+          `)
           .eq('id', playerId)
           .single();
 
@@ -289,50 +331,19 @@ export function usePlayerComprehensive(
           throw new Error('Player not found');
         }
 
-        // Fetch career stats (regular season)
-        const numericPlayerId = Number(playerId);
-
-        const { data: careerData, error: careerError } = await supabase
-          .from('player_career_totals_regular_season')
-          .select('*')
-          .eq('player_id', numericPlayerId)
-          .maybeSingle();
-
-        // Fetch career stats (post season)
-        const { data: careerPostData, error: careerPostError } = await supabase
-          .from('player_career_totals_post_season')
-          .select('*')
-          .eq('player_id', numericPlayerId)
-          .maybeSingle();
-
-        // Fetch career stats (all star)
-        const { data: careerAllStarData, error: careerAllStarError } = await supabase
-          .from('player_career_totals_all_star_season')
-          .select('*')
-          .eq('player_id', numericPlayerId)
-          .maybeSingle();
-
-        // Fetch season breakdown (last 10 seasons)
-        const { data: seasonBreakdownData, error: seasonError } = await supabase
-          .from('player_season_totals_regular_season')
-          .select('*')
-          .eq('player_id', numericPlayerId)
-          .order('season_id', { ascending: false })
-          .limit(10);
-
-        // Fetch season rankings (last 5 seasons)
-        const { data: seasonRankingsData, error: rankingsError } = await supabase
-          .from('player_season_rankings_regular_season')
-          .select('*')
-          .eq('player_id', numericPlayerId)
-          .order('season_id', { ascending: false })
-          .limit(5);
+        // Note: Career stats and season breakdown tables are not available in the new schema
+        // These would need to be calculated from nba_boxscores if needed
+        const careerData = null;
+        const careerPostData = null;
+        const careerAllStarData = null;
+        const seasonBreakdownData = null;
+        const seasonRankingsData = null;
 
         // Fetch game logs with pagination
         const { data: gameLogsData, error: gameLogsError, count: gameLogsCount } = await supabase
-          .from('player_game_logs')
+          .from('nba_boxscores')
           .select('*', { count: 'exact' })
-          .eq('player_id', numericPlayerId)
+          .eq('player_id', playerId)
           .eq('season_year', '2024-25')
           .order('game_date', { ascending: false })
           .range((gameLogsPage - 1) * gameLogsPageSize, gameLogsPage * gameLogsPageSize - 1);
@@ -355,6 +366,7 @@ export function usePlayerComprehensive(
             pageSize: gameLogsPageSize,
             totalPages: totalPages,
           },
+          espnProjections: playerData.nba_espn_projections?.[0] || undefined,
         };
 
         console.log('✅ Successfully fetched comprehensive player data for:', playerData.name);
@@ -385,7 +397,7 @@ export function usePlayerGameLogs(
     queryKey: ['player-game-logs', playerId, season, page, pageSize],
     queryFn: async () => {
       const { data, error, count } = await supabase
-        .from('player_game_logs')
+        .from('nba_boxscores')
         .select('*', { count: 'exact' })
         .eq('player_id', playerId)
         .eq('season_year', season)

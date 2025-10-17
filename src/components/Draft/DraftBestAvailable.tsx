@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -21,6 +21,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Add,
+  TrendingUp,
+  TrendingDown,
 } from '@mui/icons-material';
 import { usePlayersPaginated } from '../../hooks/useNBAData';
 import { useNextPick } from '../../hooks/useNextPick';
@@ -39,17 +41,19 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
   const { data: nextPick } = useNextPick(leagueId);
   const isDraftComplete = nextPick === null;
 
-  // Get all available players for global sorting
-  const { data: playersData, isLoading, error } = usePlayersPaginated(1, 1000, {
+  // Get all available players for global sorting (same logic as DraftPlayers)
+  const { data: allPlayersData, isLoading, error } = usePlayersPaginated(1, 1000, {
     search: '',
     position: '',
     team: '',
+    salary: '',
+    showInactive: false,
     leagueId: isDraftComplete ? undefined : leagueId, // Don't fetch players if draft is complete
   });
 
   // Calculate projected fantasy points for a player (same logic as DraftPlayers)
   const calculateProjectedFantasyPoints = (player: any) => {
-    const projections = (player as any).espn_player_projections?.[0];
+    const projections = (player as any).nba_espn_projections?.[0];
     if (!projections) return 0;
 
     const {
@@ -73,10 +77,12 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
     const total3pm = proj_2026_3pm * proj_2026_gp;
 
     // Calculate field goals made (approximate from FG% and points)
+    // Assuming average 2-pt FG value of 2 points, we can estimate 2-pt FGs
     const total2ptFg = Math.max(0, (totalPts - (total3pm * 3)) / 2);
     const totalFg = total2ptFg + total3pm;
 
     // Calculate free throws made (approximate from FT% and points)
+    // This is a rough estimate - in reality we'd need FTA data
     const totalFt = Math.max(0, (totalPts - (totalFg * 2) - (total3pm * 1)) / 1);
 
     // Apply fantasy scoring formula
@@ -93,8 +99,8 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
     return Math.round(fantasyPoints);
   };
 
-  // Sort players by projected fantasy points in descending order
-  const bestAvailablePlayers = playersData?.players ? [...playersData.players].sort((a, b) => {
+  // Sort ALL players by projected fantasy points in descending order (same logic as DraftPlayers)
+  const bestAvailablePlayers = allPlayersData?.players ? [...allPlayersData.players].sort((a, b) => {
     const aFantasy = calculateProjectedFantasyPoints(a);
     const bFantasy = calculateProjectedFantasyPoints(b);
     return bFantasy - aFantasy; // Descending order
@@ -153,7 +159,7 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
       case 'up':
         return <TrendingUp color="success" />;
       case 'down':
-        return <TrendingDown color="danger" />;
+        return <TrendingDown color="error" />;
       default:
         return null;
     }
@@ -214,7 +220,7 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
       {/* Header */}
       <Card variant="outlined" sx={{ mb: 2 }}>
         <CardContent sx={{ textAlign: 'center' }}>
-          <Typography level="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+          <Typography level="title-lg" sx={{ fontWeight: 'bold', mb: 1 }}>
             🏆 Best Available
           </Typography>
           <Typography level="body-sm" color="neutral">
@@ -225,7 +231,7 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
 
       {/* Player Cards Grid */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
-        {currentPlayers.map((player, index) => (
+        {currentPlayers.map((player) => (
           <Grid 
             key={player.id} 
             xs={12} 
@@ -255,7 +261,7 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
                     target.style.display = 'none';
                     const parent = target.parentElement;
                     if (parent) {
-                      parent.textContent = player.name.split(' ').map((n: string) => n[0]).join('');
+                      parent.textContent = player.name?.split(' ').map((n: string) => n[0]).join('') || '';
                     }
                   }}
                 >
@@ -290,11 +296,39 @@ export default function DraftBestAvailable({ leagueId }: DraftBestAvailableProps
                   </Typography>
                 </Box>
 
+                {/* Key Stats Display */}
+                <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-around', gap: 1 }}>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {((player as any).nba_espn_projections?.[0]?.proj_2026_pts?.toFixed(1) || 'N/A')}
+                    </Typography>
+                    <Typography level="body-xs" color="neutral">
+                      PTS
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {((player as any).nba_espn_projections?.[0]?.proj_2026_reb?.toFixed(1) || 'N/A')}
+                    </Typography>
+                    <Typography level="body-xs" color="neutral">
+                      REB
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                      {((player as any).nba_espn_projections?.[0]?.proj_2026_ast?.toFixed(1) || 'N/A')}
+                    </Typography>
+                    <Typography level="body-xs" color="neutral">
+                      AST
+                    </Typography>
+                  </Box>
+                </Box>
+
                 {/* Salary Display */}
                 <Box sx={{ mb: 2 }}>
                   <Typography level="h4" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                    {player.salary_2025_26 
-                      ? `$${(player.salary_2025_26 / 1000000).toFixed(1)}M`
+                    {(player as any).nba_hoopshype_salaries?.[0]?.salary_2025_26 
+                      ? `$${((player as any).nba_hoopshype_salaries[0].salary_2025_26 / 1000000).toFixed(1)}M`
                       : 'N/A'
                     }
                   </Typography>

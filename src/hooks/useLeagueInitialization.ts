@@ -56,11 +56,11 @@ export function useCreateLeague() {
       // Step 2: Create league settings record
       console.log('⚙️ Creating league settings...')
       const { error: settingsError } = await supabase
-        .from('league_settings')
-        .insert({
-          league_id: league.id,
+        .from('fantasy_leagues')
+        .update({
           ...settings
         })
+        .eq('id', league.id)
 
       if (settingsError) {
         console.error('❌ Error creating league settings:', settingsError)

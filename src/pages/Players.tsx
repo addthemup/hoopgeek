@@ -25,7 +25,11 @@ import {
   Table,
   Divider,
   LinearProgress,
+  Modal,
+  ModalDialog,
+  ModalClose,
 } from '@mui/joy';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { usePlayersPaginated } from '../hooks/useNBAData';
@@ -35,6 +39,7 @@ import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
 import { usePlayerUpcomingGames } from '../hooks/usePlayerUpcomingGames';
 import { usePlayerRosterStatus } from '../hooks/usePlayerRosterStatus';
 import { Player as DatabasePlayer } from '../types';
+import { supabase } from '../utils/supabase';
 import PlayerActionButtons from '../components/PlayerActionButtons';
 import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday, PersonRemove, SwapHoriz } from '@mui/icons-material';
 
@@ -73,7 +78,8 @@ const PlayerActionButton = ({
   leagueId, 
   userTeamId, 
   onAddToRoster, 
-  addPlayerMutation 
+  addPlayerMutation,
+  hasAvailableRosterSpot
 }: {
   playerId: string;
   playerName: string;
@@ -81,8 +87,18 @@ const PlayerActionButton = ({
   userTeamId?: string;
   onAddToRoster: (playerId: string, playerName: string) => void;
   addPlayerMutation: any;
+  hasAvailableRosterSpot: boolean;
 }) => {
   const { data: rosterStatus, isLoading } = usePlayerRosterStatus(playerId, leagueId, userTeamId);
+
+  // Debug logging
+  console.log('🔍 PlayerActionButton for', playerName, ':', {
+    playerId,
+    leagueId,
+    userTeamId,
+    rosterStatus,
+    hasAvailableRosterSpot
+  });
 
   if (isLoading) {
     return (
@@ -93,6 +109,19 @@ const PlayerActionButton = ({
   }
 
   if (!rosterStatus?.isOnRoster) {
+    if (!hasAvailableRosterSpot) {
+      return (
+        <Button
+          size="sm"
+          variant="outlined"
+          disabled
+          startDecorator={<Add />}
+        >
+          Roster Full
+        </Button>
+      );
+    }
+
     return (
       <Button
         size="sm"
@@ -138,6 +167,7 @@ const PlayerActionButton = ({
         // TODO: Implement trade player functionality
         console.log('Trade player:', playerId, 'from team:', rosterStatus.teamName);
       }}
+      title={`Player is currently on ${rosterStatus.teamName}'s roster`}
     >
       Trade
     </Button>
@@ -154,7 +184,9 @@ const PlayersTable = memo(({
   paginatedData,
   addPlayerMutation,
   leagueId,
-  userTeamId
+  userTeamId,
+  calculateProjectedFantasyPoints,
+  hasAvailableRosterSpot
 }: {
   players: Player[];
   playersLoading: boolean;
@@ -165,6 +197,8 @@ const PlayersTable = memo(({
   addPlayerMutation: any;
   leagueId: string;
   userTeamId?: string;
+  calculateProjectedFantasyPoints: (player: any) => number;
+  hasAvailableRosterSpot: boolean;
 }) => {
   if (playersLoading) {
     return (
@@ -201,6 +235,7 @@ const PlayersTable = memo(({
                 <th>Position</th>
                 <th>Team</th>
                 <th>Status</th>
+                <th>Proj Fantasy Pts</th>
                 <th>Current PTS</th>
                 <th>Current REB</th>
                 <th>Current AST</th>
@@ -262,6 +297,14 @@ const PlayersTable = memo(({
                     </Chip>
                   </td>
                   <td>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                      {paginatedData?.players.find((p: any) => p.id.toString() === player.id) 
+                        ? calculateProjectedFantasyPoints(paginatedData.players.find((p: any) => p.id.toString() === player.id)).toLocaleString()
+                        : 'N/A'
+                      }
+                    </Typography>
+                  </td>
+                  <td>
                     <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
                       {player.score}
                     </Typography>
@@ -278,8 +321,8 @@ const PlayersTable = memo(({
                   </td>
                   <td>
                     <Typography level="body-sm">
-                      {paginatedData?.players.find((p: any) => p.id.toString() === player.id)?.salary 
-                        ? `$${((paginatedData.players.find((p: any) => p.id.toString() === player.id)?.salary || 0) / 1000000).toFixed(1)}M`
+                      {(paginatedData?.players.find((p: any) => p.id.toString() === player.id) as any)?.nba_hoopshype_salaries?.[0]?.salary_2025_26 
+                        ? `$${(((paginatedData.players.find((p: any) => p.id.toString() === player.id) as any)?.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0) / 1000000).toFixed(1)}M`
                         : 'N/A'
                       }
                     </Typography>
@@ -292,6 +335,7 @@ const PlayersTable = memo(({
                       userTeamId={userTeamId}
                       onAddToRoster={onAddToRoster}
                       addPlayerMutation={addPlayerMutation}
+                      hasAvailableRosterSpot={hasAvailableRosterSpot}
                     />
                   </td>
                 </tr>
@@ -313,6 +357,30 @@ export default function Players({ leagueId }: PlayersProps) {
   
   // Find the user's team in this league
   const userTeam = teams?.find(team => team.user_id === user?.id);
+
+  // Check if user has available roster spots
+  const { data: availableRosterSpots } = useQuery({
+    queryKey: ['available-roster-spots', userTeam?.id],
+    queryFn: async () => {
+      if (!userTeam?.id) return false;
+      
+      const { data, error } = await supabase
+        .from('fantasy_roster_spots')
+        .select('id')
+        .eq('fantasy_team_id', userTeam.id)
+        .is('player_id', null)
+        .limit(1);
+      
+      if (error) {
+        console.error('Error checking available roster spots:', error);
+        return false;
+      }
+      
+      return data && data.length > 0;
+    },
+    enabled: !!userTeam?.id,
+    staleTime: 1000 * 30, // 30 seconds
+  });
   
   const [activeTab, setActiveTab] = useState(0);
   const [compareMode, setCompareMode] = useState(false);
@@ -326,8 +394,10 @@ export default function Players({ leagueId }: PlayersProps) {
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [snackbarColor, setSnackbarColor] = useState<'success' | 'danger'>('success');
-  const [pageSize] = useState(25);
+  const [pageSize] = useState(10);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [playerToAdd, setPlayerToAdd] = useState<{ id: string; name: string } | null>(null);
 
   // Debounce search term to prevent excessive API calls
   useEffect(() => {
@@ -342,23 +412,84 @@ export default function Players({ leagueId }: PlayersProps) {
     return () => clearTimeout(timer);
   }, [searchTerm, debouncedSearchTerm]);
 
+  // Fetch ALL players with projections and salaries for proper sorting (same logic as DraftPlayers)
   const { 
-    data: paginatedData, 
+    data: allPlayersData, 
     isLoading: playersLoading, 
     error: playersError 
-  } = usePlayersPaginated(currentPage, pageSize, {
+  } = usePlayersPaginated(1, 1000, {
     search: debouncedSearchTerm,
     position: positionFilter,
     team: teamFilter,
     showInactive: showInactive,
     leagueId
-  });
+  } as any);
+
+  // Calculate projected fantasy points for a player (same logic as DraftPlayers)
+  const calculateProjectedFantasyPoints = (player: any) => {
+    const projections = (player as any).nba_espn_projections?.[0];
+    if (!projections) return 0;
+
+    const {
+      proj_2026_gp = 0,      // Games played
+      proj_2026_pts = 0,     // Points per game
+      proj_2026_reb = 0,     // Rebounds per game
+      proj_2026_ast = 0,     // Assists per game
+      proj_2026_stl = 0,     // Steals per game
+      proj_2026_blk = 0,     // Blocks per game
+      proj_2026_to = 0,      // Turnovers per game
+      proj_2026_3pm = 0      // 3-pointers made per game
+    } = projections;
+
+    // Calculate total stats for the season
+    const totalPts = proj_2026_pts * proj_2026_gp;
+    const totalReb = proj_2026_reb * proj_2026_gp;
+    const totalAst = proj_2026_ast * proj_2026_gp;
+    const totalStl = proj_2026_stl * proj_2026_gp;
+    const totalBlk = proj_2026_blk * proj_2026_gp;
+    const totalTo = proj_2026_to * proj_2026_gp;
+    const total3pm = proj_2026_3pm * proj_2026_gp;
+
+    // Calculate field goals made (approximate from FG% and points)
+    // Assuming average 2-pt FG value of 2 points, we can estimate 2-pt FGs
+    const total2ptFg = Math.max(0, (totalPts - (total3pm * 3)) / 2);
+    const totalFg = total2ptFg + total3pm;
+
+    // Calculate free throws made (approximate from FT% and points)
+    // This is a rough estimate - in reality we'd need FTA data
+    const totalFt = Math.max(0, (totalPts - (totalFg * 2) - (total3pm * 1)) / 1);
+
+    // Apply fantasy scoring formula
+    const fantasyPoints = 
+      (total3pm * 3) +           // 3-pt FG = 3pts
+      (total2ptFg * 2) +         // 2-pt FG = 2pts  
+      (totalFt * 1) +            // FT = 1pt
+      (totalReb * 1.2) +         // Rebound = 1.2pts
+      (totalAst * 1.5) +         // Assist = 1.5pts
+      (totalBlk * 3) +           // Block = 3pts
+      (totalStl * 3) +           // Steal = 3pts
+      (totalTo * -1);            // Turnover = -1pt
+
+    return Math.round(fantasyPoints);
+  };
+
+  // Sort ALL players by projected fantasy points in descending order (same logic as DraftPlayers)
+  const allSortedPlayers = allPlayersData?.players ? [...allPlayersData.players].sort((a, b) => {
+    const aFantasy = calculateProjectedFantasyPoints(a);
+    const bFantasy = calculateProjectedFantasyPoints(b);
+    return bFantasy - aFantasy; // Descending order
+  }) : [];
+
+  // Implement client-side pagination for players (10 per page)
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const sortedPlayers = allSortedPlayers.slice(startIndex, endIndex);
 
   // Transform database players to display format (memoized)
   const players: Player[] = useMemo(() => {
-    if (!paginatedData?.players) return [];
+    if (!sortedPlayers) return [];
     
-    return paginatedData.players.map((player: DatabasePlayer) => ({
+    return sortedPlayers.map((player: DatabasePlayer) => ({
       id: player.id.toString(),
       name: player.name,
       position: player.position || 'N/A',
@@ -381,9 +512,9 @@ export default function Players({ leagueId }: PlayersProps) {
       isWatched: false,
       nba_player_id: player.nba_player_id, // Add this for avatar images
     }));
-  }, [paginatedData?.players]);
+  }, [sortedPlayers]);
 
-  const handleAddPlayer = async (playerId: string, playerName: string) => {
+  const handleAddPlayer = (playerId: string, playerName: string) => {
     console.log('🔍 handleAddPlayer called with:', { playerId, playerName, userTeam: userTeam?.id });
     
     if (!user) {
@@ -400,6 +531,13 @@ export default function Players({ leagueId }: PlayersProps) {
       return;
     }
 
+    if (!availableRosterSpots) {
+      setSnackbarMessage('Your roster is full. Please remove a player before adding a new one.');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
     console.log('🔍 Using player ID:', playerId);
     
     if (!playerId || playerId.trim() === '') {
@@ -410,20 +548,36 @@ export default function Players({ leagueId }: PlayersProps) {
       return;
     }
 
+    // Show confirmation modal
+    setPlayerToAdd({ id: playerId, name: playerName });
+    setConfirmModalOpen(true);
+  };
+
+  const handleConfirmAddPlayer = async () => {
+    if (!playerToAdd || !userTeam) return;
+
     try {
       await addPlayerMutation.mutateAsync({
-        playerId: playerId,
-        fantasyTeamId: userTeam.id, // Use the actual user's team ID
+        playerId: playerToAdd.id,
+        fantasyTeamId: userTeam.id,
       });
-      setSnackbarMessage(`Added ${playerName} to your roster!`);
+      setSnackbarMessage(`Added ${playerToAdd.name} to your roster!`);
       setSnackbarColor('success');
       setSnackbarOpen(true);
     } catch (error) {
       console.error('Error adding player:', error);
-      setSnackbarMessage(`Failed to add ${playerName}. Please try again.`);
+      setSnackbarMessage(`Failed to add ${playerToAdd.name}. Please try again.`);
       setSnackbarColor('danger');
       setSnackbarOpen(true);
+    } finally {
+      setConfirmModalOpen(false);
+      setPlayerToAdd(null);
     }
+  };
+
+  const handleCancelAddPlayer = () => {
+    setConfirmModalOpen(false);
+    setPlayerToAdd(null);
   };
 
   const handlePageChange = (newPage: number) => {
@@ -622,17 +776,19 @@ export default function Players({ leagueId }: PlayersProps) {
             playersError={playersError}
             onPlayerClick={handlePlayerClick}
             onAddToRoster={handleAddPlayer}
-            paginatedData={paginatedData}
+            paginatedData={allPlayersData}
             addPlayerMutation={addPlayerMutation}
             leagueId={leagueId}
             userTeamId={userTeam?.id}
+            calculateProjectedFantasyPoints={calculateProjectedFantasyPoints}
+            hasAvailableRosterSpot={availableRosterSpots || false}
           />
 
           {/* Pagination */}
-          {paginatedData && (
+          {allSortedPlayers.length > 0 && (
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 3 }}>
               <Typography level="body-sm" color="neutral">
-                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, paginatedData.totalCount)} of {paginatedData.totalCount} players
+                Showing {startIndex + 1} to {Math.min(endIndex, allSortedPlayers.length)} of {allSortedPlayers.length} players
               </Typography>
               <Stack direction="row" spacing={1}>
                 <Button
@@ -649,7 +805,7 @@ export default function Players({ leagueId }: PlayersProps) {
                   size="sm"
                   endDecorator={<NavigateNext />}
                   onClick={() => handlePageChange(currentPage + 1)}
-                  disabled={currentPage >= Math.ceil(paginatedData.totalCount / pageSize)}
+                  disabled={currentPage >= Math.ceil(allSortedPlayers.length / pageSize)}
                 >
                   Next
                 </Button>
@@ -760,6 +916,32 @@ export default function Players({ leagueId }: PlayersProps) {
       >
         {snackbarMessage}
       </Snackbar>
+
+      {/* Confirmation Modal */}
+      <Modal open={confirmModalOpen} onClose={handleCancelAddPlayer}>
+        <ModalDialog variant="outlined" role="alertdialog">
+          <Typography level="h4" component="h2">
+            Add Player?
+          </Typography>
+          <Divider />
+          <Typography level="body-md">
+            Are you sure you want to add <strong>{playerToAdd?.name}</strong> to your roster?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2 }}>
+            <Button variant="plain" color="neutral" onClick={handleCancelAddPlayer}>
+              Cancel
+            </Button>
+            <Button 
+              variant="solid" 
+              color="primary" 
+              onClick={handleConfirmAddPlayer}
+              loading={addPlayerMutation.isPending}
+            >
+              Add Player
+            </Button>
+          </Box>
+        </ModalDialog>
+      </Modal>
     </Box>
   );
 }
@@ -833,6 +1015,10 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
   const formatSalary = (salary: number | undefined) => {
     if (salary === undefined || salary === null) return 'N/A';
     return `$${(salary / 1000000).toFixed(1)}M`;
+  };
+
+  const getPlayerSalary = (player: any, year: string = '2025_26') => {
+    return (player as any)?.nba_hoopshype_salaries?.[0]?.[`salary_${year}`];
   };
 
   const formatHeight = (height: string | undefined) => {
@@ -965,7 +1151,7 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography level="body-sm" color="neutral">Salary</Typography>
                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                      {formatSalary(playerData.player.salary_2025_26)}
+                      {formatSalary(getPlayerSalary(playerData.player, '2025_26'))}
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1364,7 +1550,7 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
                         <Grid xs={12} sm={6}>
                           <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                             <Typography level="h3" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                              {playerData.player.contract_years_remaining || 0}
+                              {(playerData.player as any)?.nba_hoopshype_salaries?.[0]?.contract_years_remaining || 0}
                             </Typography>
                             <Typography level="body-sm" color="neutral">Years Remaining</Typography>
                           </Box>
@@ -1372,7 +1558,7 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
                         <Grid xs={12} sm={6}>
                           <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                             <Typography level="h3" sx={{ fontWeight: 'bold', color: 'success.500' }}>
-                              ${playerData.player.salary_2025_26 ? (playerData.player.salary_2025_26 / 1000000).toFixed(1) + 'M' : 'N/A'}
+                              {formatSalary(getPlayerSalary(playerData.player, '2025_26'))}
                             </Typography>
                             <Typography level="body-sm" color="neutral">Current Salary (2025-26)</Typography>
                           </Box>
@@ -1386,31 +1572,31 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
                       </Typography>
                       
                       <Grid container spacing={2}>
-                        {playerData.player.salary_2026_27 && (
+                        {getPlayerSalary(playerData.player, '2026_27') && (
                           <Grid xs={6} sm={3}>
                             <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                               <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
-                                ${(playerData.player.salary_2026_27 / 1000000).toFixed(1)}M
+                                {formatSalary(getPlayerSalary(playerData.player, '2026_27'))}
                               </Typography>
                               <Typography level="body-sm" color="neutral">2026-27</Typography>
                             </Box>
                           </Grid>
                         )}
-                        {playerData.player.salary_2027_28 && (
+                        {getPlayerSalary(playerData.player, '2027_28') && (
                           <Grid xs={6} sm={3}>
                             <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                               <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
-                                ${(playerData.player.salary_2027_28 / 1000000).toFixed(1)}M
+                                {formatSalary(getPlayerSalary(playerData.player, '2027_28'))}
                               </Typography>
                               <Typography level="body-sm" color="neutral">2027-28</Typography>
                             </Box>
                           </Grid>
                         )}
-                        {playerData.player.salary_2028_29 && (
+                        {getPlayerSalary(playerData.player, '2028_29') && (
                           <Grid xs={6} sm={3}>
                             <Box sx={{ textAlign: 'center', p: 2, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                               <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
-                                ${(playerData.player.salary_2028_29 / 1000000).toFixed(1)}M
+                                {formatSalary(getPlayerSalary(playerData.player, '2028_29'))}
                               </Typography>
                               <Typography level="body-sm" color="neutral">2028-29</Typography>
                             </Box>
@@ -1418,8 +1604,8 @@ function EnhancedPlayerDetail({ playerId, playerName, onBack, leagueId }: { play
                         )}
                       </Grid>
 
-                      {(!playerData.player.salary_2026_27 && 
-                        !playerData.player.salary_2027_28 && !playerData.player.salary_2028_29) && (
+                      {(!getPlayerSalary(playerData.player, '2026_27') && 
+                        !getPlayerSalary(playerData.player, '2027_28') && !getPlayerSalary(playerData.player, '2028_29')) && (
                         <Alert color="warning" sx={{ mt: 2 }}>
                           <Typography>
                             No future contract data available for this player.

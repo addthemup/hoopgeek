@@ -12,6 +12,11 @@ import {
 } from '@mui/joy';
 import { useLeague } from '../hooks/useLeagues';
 import { useAuth } from '../hooks/useAuth';
+import { useTeams } from '../hooks/useTeams';
+import { useCurrentFantasyWeek } from '../hooks/useCurrentFantasyWeek';
+import { useMatchups } from '../hooks/useMatchups';
+import { useMutation } from '@tanstack/react-query';
+import { supabase } from '../utils/supabase';
 import {
   People,
   Settings,
@@ -25,6 +30,7 @@ import {
   Assessment,
   Poll,
   Calculate,
+  AutoAwesome,
 } from '@mui/icons-material';
 import LeagueInvitationManager from '../components/LeagueInvitationManager';
 import TeamInvitationManager from '../components/TeamInvitationManager';
@@ -36,7 +42,13 @@ interface CommissionerToolsProps {
 export default function CommissionerTools({ leagueId }: CommissionerToolsProps) {
   const navigate = useNavigate();
   const { data: league, isLoading, error } = useLeague(leagueId);
+  const { data: teams } = useTeams(leagueId);
+  const { currentWeek: fantasyWeek, seasonPhase } = useCurrentFantasyWeek();
   const [activeView, setActiveView] = useState<'tools' | 'team-invites'>('tools');
+  
+  // Get current week matchups
+  const currentWeek = fantasyWeek?.week_number ?? 1; // Use nullish coalescing to preserve 0
+  const { data: currentWeekMatchups } = useMatchups(leagueId, currentWeek);
 
   // Mock data for tools - these would be real functions in production
   const leagueMembershipTools = [
@@ -125,6 +137,100 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
     },
   ];
 
+  // Auto-lineup for all teams mutation
+  const autoLineupAllTeamsMutation = useMutation({
+    mutationFn: async () => {
+      if (!teams || !currentWeekMatchups || !fantasyWeek) {
+        throw new Error('Missing required data for auto-lineup');
+      }
+
+      const weekNumber = currentWeek;
+      const seasonYear = fantasyWeek.season_year;
+      const seasonId = fantasyWeek.id; // Using fantasy week ID as season ID
+
+      console.log('🤖 Starting auto-lineup for all teams:', {
+        leagueId,
+        weekNumber,
+        weekName: fantasyWeek?.week_name,
+        seasonYear,
+        seasonId,
+        teamsCount: teams.length,
+        matchupsCount: currentWeekMatchups.length
+      });
+
+      const results = [];
+      
+      for (const team of teams) {
+        try {
+          // Find the matchup for this team
+          const matchup = currentWeekMatchups.find(m => 
+            m.fantasy_team1_id === team.id || m.fantasy_team2_id === team.id
+          );
+
+          if (!matchup) {
+            console.log(`⚠️ No matchup found for team ${team.team_name} in week ${weekNumber}`);
+            continue;
+          }
+
+          console.log(`🤖 Running auto-lineup for team: ${team.team_name}`);
+          
+          const { data, error } = await supabase.functions.invoke('auto-lineup', {
+            body: {
+              leagueId,
+              teamId: team.id,
+              weekNumber,
+              seasonYear,
+              seasonId,
+              matchupId: matchup.id
+            }
+          });
+
+          if (error) {
+            console.error(`❌ Auto-lineup failed for team ${team.team_name}:`, error);
+            results.push({ team: team.team_name, success: false, error: error.message });
+          } else {
+            console.log(`✅ Auto-lineup successful for team: ${team.team_name}`);
+            results.push({ team: team.team_name, success: true });
+          }
+        } catch (error) {
+          console.error(`❌ Auto-lineup error for team ${team.team_name}:`, error);
+          results.push({ 
+            team: team.team_name, 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Unknown error' 
+          });
+        }
+      }
+
+      return results;
+    },
+    onSuccess: (results) => {
+      const successful = results.filter(r => r.success).length;
+      const failed = results.filter(r => !r.success).length;
+      console.log(`✅ Auto-lineup completed: ${successful} successful, ${failed} failed`);
+    },
+    onError: (error) => {
+      console.error('❌ Auto-lineup for all teams failed:', error);
+    }
+  });
+
+  const handleAutoLineupAllTeams = () => {
+    if (!teams || teams.length === 0) {
+      alert('No teams found in this league');
+      return;
+    }
+
+    if (!currentWeekMatchups || currentWeekMatchups.length === 0) {
+      alert(`No matchups found for ${fantasyWeek?.week_name || `week ${currentWeek}`}`);
+      return;
+    }
+
+    const confirmMessage = `This will run auto-lineup for all ${teams.length} teams in ${fantasyWeek?.week_name || `week ${currentWeek}`}. Continue?`;
+    if (confirm(confirmMessage)) {
+      autoLineupAllTeamsMutation.mutate();
+    }
+  };
+
   const rosterTools = [
     {
       title: 'Edit Roster Settings',
@@ -132,6 +238,14 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
       icon: <SportsBasketball />,
       action: () => navigate(`/league/${leagueId}/roster-settings`),
       color: 'primary' as const,
+    },
+    {
+      title: 'Auto-Lineup All Teams',
+      description: `Automatically generate optimal lineups for all teams in ${fantasyWeek?.week_name || `week ${currentWeek}`}.`,
+      icon: <AutoAwesome />,
+      action: handleAutoLineupAllTeams,
+      color: 'success' as const,
+      loading: autoLineupAllTeamsMutation.isPending,
     },
     {
       title: 'Roster Moves',
@@ -198,14 +312,15 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
                 border: '1px solid',
                 borderColor: 'divider',
                 borderRadius: '8px',
-                cursor: 'pointer',
+                cursor: tool.loading ? 'not-allowed' : 'pointer',
+                opacity: tool.loading ? 0.7 : 1,
                 transition: 'all 0.2s ease',
-                '&:hover': {
+                '&:hover': tool.loading ? {} : {
                   borderColor: 'primary.500',
                   backgroundColor: 'primary.50',
                 },
               }}
-              onClick={tool.action}
+              onClick={tool.loading ? undefined : tool.action}
             >
               <Stack direction="row" spacing={2} alignItems="flex-start">
                 <Box
@@ -216,11 +331,12 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
                     mt: 0.5,
                   }}
                 >
-                  {tool.icon}
+                  {tool.loading ? '⏳' : tool.icon}
                 </Box>
                 <Box sx={{ flex: 1 }}>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold', mb: 0.5 }}>
                     {tool.title}
+                    {tool.loading && ' (Running...)'}
                   </Typography>
                   <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
                     {tool.description}

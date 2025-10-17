@@ -24,10 +24,10 @@ export function useLeagueMembers(leagueId: string) {
           user_id,
           team_name,
           is_commissioner,
-          joined_at
+          created_at
         `)
         .eq('league_id', leagueId)
-        .order('joined_at', { ascending: true })
+        .order('created_at', { ascending: true })
 
       if (membersError) {
         console.error('Error fetching league members:', membersError)
@@ -51,7 +51,7 @@ export function useLeagueMembers(leagueId: string) {
 
       // Get online status from draft lobby participants
       const { data: lobbyParticipants, error: lobbyError } = await supabase
-        .from('draft_lobby_participants')
+        .from('fantasy_draft_lobby_participants')
         .select(`
           user_id,
           is_online,
@@ -82,7 +82,7 @@ export function useLeagueMembers(leagueId: string) {
           user_id: member.user_id,
           team_name: member.team_name,
           is_commissioner: member.is_commissioner,
-          joined_at: member.joined_at,
+          joined_at: member.created_at,
           is_online: lobbyParticipant?.is_online || false,
           last_seen_at: lobbyParticipant?.last_seen_at || null,
           fantasy_team_id: team?.id || ''

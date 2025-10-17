@@ -29,3 +29,23 @@ dist-ssr
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Secrets and credentials
+**/client_secret*.json
+**/credentials*.json
+**/*_secret*.json
+*.pem
+*.key
+*.p12
+
+# Supabase local
+.supabase/
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Large game JSON files (optional - keep only a few for demo)
+# Uncomment if you want to exclude all game JSONs:
+# src/assets/json/*.json
+# !src/assets/json/games-index.json

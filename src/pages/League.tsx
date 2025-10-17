@@ -317,7 +317,11 @@ export default function League() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', px: 2 }}>
+    <Box sx={{ 
+      maxWidth: 1400, 
+      mx: 'auto', 
+      px: { xs: 0, sm: 2 } // No padding on mobile, 2 on small screens and up
+    }}>
       <LeagueNavigation 
         leagueId={leagueData?.id || id} 
         isCommissioner={isCommissioner}

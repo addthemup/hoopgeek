@@ -26,6 +26,7 @@ export function useCurrentFantasyWeek(): CurrentFantasyWeekData {
     queryKey: ['current-fantasy-week'],
     queryFn: async (): Promise<CurrentFantasyWeekData> => {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+      console.log('🗓️ useCurrentFantasyWeek: Current date:', today);
       
       // Get all fantasy weeks for the current season (2025)
       const { data: weeks, error: weeksError } = await supabase
@@ -40,6 +41,7 @@ export function useCurrentFantasyWeek(): CurrentFantasyWeekData {
       }
 
       if (!weeks || weeks.length === 0) {
+        console.log('⚠️ useCurrentFantasyWeek: No weeks found for season 2025');
         return {
           currentWeek: null,
           seasonPhase: 'offseason',
@@ -47,6 +49,8 @@ export function useCurrentFantasyWeek(): CurrentFantasyWeekData {
           error: null
         };
       }
+
+      console.log('📅 useCurrentFantasyWeek: Found weeks:', weeks.map(w => `${w.week_name} (${w.start_date} - ${w.end_date})`));
 
       // Find the current week based on today's date
       let currentWeek: FantasyWeek | null = null;
@@ -69,6 +73,8 @@ export function useCurrentFantasyWeek(): CurrentFantasyWeekData {
           } else if (week.is_regular_season) {
             seasonPhase = 'regular_season';
           }
+          
+          console.log(`✅ useCurrentFantasyWeek: Found current week: ${week.week_name} (${week.week_number}) - Phase: ${seasonPhase}`);
           break;
         }
       }
@@ -104,6 +110,11 @@ export function useCurrentFantasyWeek(): CurrentFantasyWeekData {
           }
         }
       }
+
+      console.log('🎯 useCurrentFantasyWeek: Final result:', {
+        currentWeek: currentWeek ? `${currentWeek.week_name} (${currentWeek.week_number})` : 'null',
+        seasonPhase
+      });
 
       return {
         currentWeek,

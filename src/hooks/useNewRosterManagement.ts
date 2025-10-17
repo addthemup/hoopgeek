@@ -49,7 +49,7 @@ export interface FantasyTeamRosterSpot {
     jersey_number?: string;
     salary_2025_26?: number;
     nba_player_id?: number;
-    espn_player_projections?: any[];
+    nba_espn_projections?: any[];
   };
 }
 
@@ -93,7 +93,7 @@ export function useTeamRosterSpots(teamId: string) {
             jersey_number,
             salary_2025_26,
             nba_player_id,
-            espn_player_projections
+            nba_espn_projections
           )
         `)
         .eq('fantasy_team_id', teamId)
@@ -131,7 +131,7 @@ export function useAddPlayerToRosterSpot() {
 
       // First, verify the player exists
       const { data: playerData, error: playerError } = await supabase
-        .from('players')
+        .from('nba_players')
         .select('id, name')
         .eq('id', playerId)
         .single();
