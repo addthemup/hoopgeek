@@ -18,8 +18,8 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const GAMES_DIR = path.join(__dirname, '../src/assets/json');
-const INDEX_OUTPUT = path.join(__dirname, '../src/assets/json/games-index.json');
+const GAMES_DIR = path.join(__dirname, '../public/games');
+const INDEX_OUTPUT = path.join(__dirname, '../public/games/games-index.json');
 
 console.log('🏀 Generating game index...\n');
 
