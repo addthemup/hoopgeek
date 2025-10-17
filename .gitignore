@@ -45,7 +45,7 @@ dist-ssr
 *.sql.gz
 *.dump
 
-# Large game JSON files (optional - keep only a few for demo)
-# Uncomment if you want to exclude all game JSONs:
-# src/assets/json/*.json
-# !src/assets/json/games-index.json
+# Large game JSON files - exclude from Git, keep local only
+# Keep only the lightweight index file
+public/games/*.json
+!public/games/games-index.json
