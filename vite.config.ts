@@ -10,4 +10,15 @@ export default defineConfig({
   optimizeDeps: {
     include: ['react', 'react-dom'],
   },
+  build: {
+    chunkSizeWarningLimit: 10000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          mui: ['@mui/joy', '@mui/icons-material'],
+        },
+      },
+    },
+  },
 })
