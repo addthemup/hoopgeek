@@ -53,7 +53,7 @@ export function DraftUserList({ leagueId, onUserMention }: DraftUserListProps) {
   }
 
   return (
-    <Box sx={{ p: 2, minHeight: '200px' }}>
+    <Box sx={{ p: 2 }}>
       <Typography level="title-sm" sx={{ mb: 2, fontWeight: 'bold' }}>
         League Members
       </Typography>

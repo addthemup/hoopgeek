@@ -3,7 +3,6 @@ import {
   Box,
   Typography,
   Card,
-  CardContent,
   Input,
   Button,
   Stack,
@@ -11,7 +10,6 @@ import {
   Chip,
   Divider,
   Alert,
-  Grid,
 } from '@mui/joy';
 import { Send, Chat } from '@mui/icons-material';
 import { useDraftChatMessages, useSendDraftChatMessage } from '../../hooks/useDraftChat';
@@ -166,12 +164,13 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   }
 
   return (
-    <Box 
+    <Card 
       sx={{ 
         display: 'flex', 
         flexDirection: 'column',
-        height: '100%',
-        overflow: 'hidden'
+        height: '600px',
+        overflow: 'hidden',
+        width: '100%'
       }}
     >
       {/* Chat Header */}
@@ -188,23 +187,44 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
       {/* Main Content Area */}
       <Box 
         sx={{ 
-          flex: 1, 
           display: 'flex',
+          flexDirection: 'row',
+          flex: 1,
           overflow: 'hidden',
-          minHeight: 0 
+          minHeight: 0
         }}
       >
-        <Grid container sx={{ flex: 1 }}>
         {/* User List - Left Column */}
-        <Grid xs={3} sx={{ borderRight: '1px solid', borderColor: 'divider', height: '100%', display: 'flex', flexDirection: 'column' }}>
-          <DraftUserList 
-            leagueId={leagueId} 
-            onUserMention={handleUserMention}
-          />
-        </Grid>
+        <Box 
+          sx={{ 
+            width: '240px',
+            borderRight: '1px solid', 
+            borderColor: 'divider', 
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: 'hidden',
+            flexShrink: 0
+          }}
+        >
+          <Box sx={{ overflowY: 'auto', overflowX: 'hidden', height: '100%' }}>
+            <DraftUserList 
+              leagueId={leagueId} 
+              onUserMention={handleUserMention}
+            />
+          </Box>
+        </Box>
 
         {/* Chat Area - Right Column */}
-        <Grid xs={9} sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+        <Box 
+          sx={{ 
+            flex: 1,
+            display: 'flex', 
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minHeight: 0,
+            minWidth: 0
+          }}
+        >
           {/* Messages Area */}
           <Box 
             sx={{ 
@@ -297,9 +317,8 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
               </Button>
             </Stack>
           </Box>
-        </Grid>
-        </Grid>
+        </Box>
       </Box>
-    </Box>
+    </Card>
   );
 }
