@@ -17,7 +17,7 @@ export interface RealtimeState {
   // Event handlers
   onDraftPick: ((pick: any) => void) | null
   onTradeOffer: ((trade: any) => void) | null
-  onChatMessage: ((message: any) => void) => null
+  onChatMessage: ((message: any) => void) | null
   onDraftStatusChange: ((status: any) => void) | null
   
   // Actions
@@ -37,27 +37,25 @@ export interface RealtimeState {
   reconnect: () => void
 }
 
-// Initial state
-const initialState: RealtimeState = {
-  connection: {
-    isConnected: false,
-    isConnecting: false,
-    lastConnected: null,
-    connectionAttempts: 0,
-    maxReconnectAttempts: 5,
-    reconnectDelay: 1000,
-  },
-  onDraftPick: null,
-  onTradeOffer: null,
-  onChatMessage: null,
-  onDraftStatusChange: null,
+// Initial connection state
+const initialConnection: RealtimeConnection = {
+  isConnected: false,
+  isConnecting: false,
+  lastConnected: null,
+  connectionAttempts: 0,
+  maxReconnectAttempts: 5,
+  reconnectDelay: 1000,
 }
 
 // Create the store
 export const useRealtimeStore = create<RealtimeState>()(
   devtools(
     (set, get) => ({
-      ...initialState,
+      connection: initialConnection,
+      onDraftPick: null,
+      onTradeOffer: null,
+      onChatMessage: null,
+      onDraftStatusChange: null,
 
       setConnected: (connected: boolean) => {
         set(state => ({
