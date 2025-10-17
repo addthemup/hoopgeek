@@ -32,6 +32,33 @@ interface TeamRosterProps {
   teamId?: string;
 }
 
+// Component to handle player avatar with proper error handling
+function PlayerAvatar({ player, isEmpty }: { player: any; isEmpty: boolean }) {
+  const [imageError, setImageError] = useState(false);
+  
+  const imageUrl = !isEmpty && player?.nba_player_id && !imageError
+    ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`
+    : undefined;
+
+  return (
+    <Avatar 
+      size="sm" 
+      src={imageUrl}
+      sx={{ 
+        bgcolor: isEmpty ? 'neutral.300' : 'primary.500',
+        width: 32,
+        height: 32,
+        '& img': {
+          objectFit: 'cover'
+        }
+      }}
+      onError={() => setImageError(true)}
+    >
+      {isEmpty ? '?' : player?.name?.charAt(0)}
+    </Avatar>
+  );
+}
+
 export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
   const { data: teams } = useTeams(leagueId);
   const { data: league } = useLeague(leagueId);
@@ -385,16 +412,10 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
                       </td>
                       <td>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Avatar 
-                            size="sm" 
-                            sx={{ 
-                              bgcolor: isEmpty ? 'neutral.300' : 'primary.500',
-                              width: 32,
-                              height: 32
-                            }}
-                          >
-                            {isEmpty ? '?' : player?.name?.charAt(0)}
-                          </Avatar>
+                          <PlayerAvatar 
+                            player={player}
+                            isEmpty={isEmpty}
+                          />
                           <Box>
                             <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                               {isEmpty ? 'Empty' : player?.name}
