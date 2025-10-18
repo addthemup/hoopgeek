@@ -186,7 +186,8 @@ export default function TopNavigation() {
         top: 0,
         zIndex: 1000,
         borderBottom: '1px solid',
-        borderColor: 'primary.300'
+        borderColor: 'primary.300',
+        overflowX: 'hidden'
       }}
     >
       {/* Main Navigation Bar */}
@@ -197,10 +198,11 @@ export default function TopNavigation() {
         justifyContent: 'space-between',
         maxWidth: '1400px',
         mx: 'auto',
-        width: '100%'
+        width: '100%',
+        gap: 2
       }}>
         {/* Logo and Brand */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           <Typography 
             level="h3" 
             sx={{ 
@@ -215,31 +217,23 @@ export default function TopNavigation() {
           >
             🏀 HoopGeek
           </Typography>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="warning"
-            sx={{ 
-              fontWeight: 'bold',
-              textTransform: 'uppercase',
-              letterSpacing: '0.5px'
-            }}
-          >
-            Basketball Mecca
-          </Chip>
         </Box>
 
         {/* Desktop Navigation */}
         <Box sx={{ 
           display: { xs: 'none', md: 'flex' },
           alignItems: 'center',
-          gap: 1
+          gap: 1,
+          flex: 1,
+          justifyContent: 'center',
+          minWidth: 0,
+          overflow: 'hidden'
         }}>
           {navigationItems.map(item => renderNavigationItem(item))}
         </Box>
 
         {/* Search and User Actions */}
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexShrink: 0 }}>
           {/* Search */}
           <IconButton
             variant="plain"
@@ -285,15 +279,21 @@ export default function TopNavigation() {
                 onClick={() => navigate('/settings')}
                 sx={{ 
                   color: 'inherit', 
-                  display: { xs: 'none', sm: 'flex' },
+                  display: { xs: 'none', lg: 'flex' },
                   '&:hover': {
                     textDecoration: 'underline'
-                  }
+                  },
+                  whiteSpace: 'nowrap'
                 }}
               >
                 {user.email}
               </Button>
-              <Button variant="soft" size="sm" onClick={handleSignOut}>
+              <Button 
+                variant="soft" 
+                size="sm" 
+                onClick={handleSignOut}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
                 Sign Out
               </Button>
             </Stack>

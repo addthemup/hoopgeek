@@ -9,7 +9,6 @@ import {
   Alert,
   LinearProgress,
   Chip,
-  Stack,
   Table,
   Sheet,
 } from '@mui/joy';
@@ -278,86 +277,68 @@ export default function Lineups({ leagueId }: LineupsProps) {
 
   return (
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
-      {/* Header */}
-                <Card variant="outlined" sx={{ mb: 3 }}>
-                  <CardContent sx={{ p: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
-            {/* Week Info */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Typography level="title-lg" sx={{ fontWeight: 'bold' }}>
-                            {getWeekDisplayText(fantasyWeek, seasonPhase)} Lineup
-                          </Typography>
-                          <Chip 
-                            variant="soft" 
-                            color={getSeasonPhaseColor(seasonPhase)}
-                            size="sm"
-                          >
-                            {seasonPhase === 'preseason' ? 'Preseason' : 
-                             seasonPhase === 'playoffs' ? 'Playoffs' : 
-                             seasonPhase === 'regular_season' ? 'Regular Season' : 'Offseason'}
-                          </Chip>
-                        
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Button
-                            variant="outlined"
-                            size="sm"
-                            onClick={() => setCurrentWeek(Math.max(0, currentWeek - 1))}
-                            disabled={currentWeek <= 0}
-                            sx={{ minWidth: 'auto', px: 1 }}
-                          >
-                            ←
-                          </Button>
-                          <Typography level="body-sm" sx={{ minWidth: '60px', textAlign: 'center' }}>
-                            {currentWeek === 0 ? 'Preseason' : `Week ${currentWeek}`} of {totalWeeks}
-                          </Typography>
-                          <Button
-                            variant="outlined"
-                            size="sm"
-                            onClick={() => setCurrentWeek(Math.min(totalWeeks, currentWeek + 1))}
-                            disabled={currentWeek >= totalWeeks}
-                            sx={{ minWidth: 'auto', px: 1 }}
-                          >
-                            →
-                          </Button>
-                        </Box>
-                      </Box>
+      {/* Compact Header */}
+      <Box sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: 1,
+        mb: 2,
+        p: 1,
+        bgcolor: 'background.surface',
+        borderRadius: 'sm',
+        border: '1px solid',
+        borderColor: 'divider'
+      }}>
+        {/* Left: Week Navigation */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button
+            variant="plain"
+            size="sm"
+            onClick={() => setCurrentWeek(Math.max(0, currentWeek - 1))}
+            disabled={currentWeek <= 0}
+            sx={{ minWidth: 'auto', px: 0.5 }}
+          >
+            ←
+          </Button>
+          <Chip 
+            variant="soft" 
+            color={getSeasonPhaseColor(seasonPhase)}
+            size="sm"
+            sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}
+          >
+            {currentWeek === 0 ? 'Preseason' : `Week ${currentWeek}`}
+          </Chip>
+          <Button
+            variant="plain"
+            size="sm"
+            onClick={() => setCurrentWeek(Math.min(totalWeeks, currentWeek + 1))}
+            disabled={currentWeek >= totalWeeks}
+            sx={{ minWidth: 'auto', px: 0.5 }}
+          >
+            →
+          </Button>
+        </Box>
 
-            {/* Matchup Info */}
-                      {currentMatchup && opponentTeam && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Box sx={{ textAlign: 'right' }}>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {userTeam.team_name}
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                    {userTeam.wins}-{userTeam.losses}
-                            </Typography>
-                          </Box>
-                          
-                <Typography level="title-sm" sx={{ fontWeight: 'bold', color: 'primary.500' }}>
-                              VS
-                            </Typography>
-                          
-                <Box sx={{ textAlign: 'left' }}>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                              {opponentTeam.team_name}
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                    {opponentTeam.wins}-{opponentTeam.losses}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      )}
+        {/* Center: Matchup (if exists) */}
+        {currentMatchup && opponentTeam && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+              {userTeam.team_name.split(' ').pop()}
+            </Typography>
+            <Typography level="body-xs" color="neutral">vs</Typography>
+            <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+              {opponentTeam.team_name.split(' ').pop()}
+            </Typography>
+          </Box>
+        )}
 
-            {/* League Scoring Format Display */}
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Chip variant="soft" color="primary" size="sm">
-                {selectedScoringFormat.name} Scoring
-              </Chip>
-            </Stack>
-                    </Box>
-                  </CardContent>
-                </Card>
+        {/* Right: Scoring Format */}
+        <Chip variant="soft" color="primary" size="sm" sx={{ fontSize: '0.7rem' }}>
+          {selectedScoringFormat.name}
+        </Chip>
+      </Box>
 
       {/* Basketball Court Component */}
       <BasketballCourt

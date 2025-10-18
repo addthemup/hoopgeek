@@ -995,7 +995,11 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
   const renderStep6 = () => {
     // If league was just created, show invite link
     if (createdLeague) {
-      const inviteUrl = `${window.location.origin}/join/${createdLeague.inviteCode}`;
+      // Use production domain or localhost for development
+      const baseUrl = window.location.hostname === 'localhost' 
+        ? window.location.origin 
+        : 'https://hoop-geek.com';
+      const inviteUrl = `${baseUrl}/join/${createdLeague.inviteCode}`;
       
       const handleCopy = () => {
         navigator.clipboard.writeText(inviteUrl);

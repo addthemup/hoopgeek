@@ -9,15 +9,20 @@ import {
   Typography,
   Avatar,
   Chip,
-  IconButton,
-  Tooltip,
   CircularProgress,
   Button,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  Sheet,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemContent,
+  ListItemDecorator,
 } from '@mui/joy';
-import { Clear } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
-import PlayerJersey from './PlayerJersey';
 import { useLineupSettings } from '../hooks/useLineupSettings';
 import { useAutoLineup } from '../hooks/useAutoLineup';
 
@@ -32,17 +37,12 @@ interface Player {
   avatar: string;
 }
 
-interface CourtPlayer extends Player {
-  x: number; // Percentage position (0-100)
-  y: number; // Percentage position (0-100)
-  lineupPositionId?: string;
-  jersey_num?: number | string;
-}
-
 interface LineupPosition {
   id: string;
   player_id: string;
   lineup_type: LineupType;
+  position: string;
+  position_order: number;
   position_x: number;
   position_y: number;
   player_name: string;
@@ -66,7 +66,8 @@ type LineupType = 'starters' | 'rotation' | 'bench';
 
 export default function BasketballCourt({ leagueId, teamId, availablePlayers, currentWeek, currentMatchup, seasonYear }: BasketballCourtProps) {
   const [activeTab, setActiveTab] = useState<LineupType>('starters');
-  const [draggedPlayer, setDraggedPlayer] = useState<Player | null>(null);
+  const [selectedPosition, setSelectedPosition] = useState<{ position: string; positionOrder: number } | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   
   // Get lineup settings including position unit assignments
   const { data: lineupSettings } = useLineupSettings(leagueId);
@@ -74,9 +75,6 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
   // Debug logging for lineup settings
   console.log('🔍 BasketballCourt: Lineup settings:', lineupSettings);
   console.log('🔍 BasketballCourt: Position unit assignments:', lineupSettings?.position_unit_assignments);
-  const [isDragging, setIsDragging] = useState(false);
-  const [selectedJerseyId, setSelectedJerseyId] = useState<string | null>(null);
-  const [draggedCourtPlayer, setDraggedCourtPlayer] = useState<CourtPlayer | null>(null);
 
   const queryClient = useQueryClient();
   
@@ -155,6 +153,26 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     }
   };
   
+  // Helper function to sort positions in desired order: G, F, C, UTIL
+  const sortPositions = (positions: string[]): string[] => {
+    const positionOrder: { [key: string]: number } = {
+      'G': 1,
+      'PG': 1,
+      'SG': 1,
+      'F': 2,
+      'SF': 2,
+      'PF': 2,
+      'C': 3,
+      'UTIL': 4,
+    };
+    
+    return positions.sort((a, b) => {
+      const orderA = positionOrder[a] || 999;
+      const orderB = positionOrder[b] || 999;
+      return orderA - orderB;
+    });
+  };
+
   // Helper function to get position requirements for a unit
   const getPositionRequirements = (unit: LineupType): string[] => {
     if (!lineupSettings?.position_unit_assignments) {
@@ -180,21 +198,29 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     });
     
     console.log(`🔍 Final positions for ${unit}:`, positions);
-    return positions.sort();
+    return sortPositions(positions);
   };
 
   // Helper function to get default positions when no assignments are configured
   const getDefaultPositions = (unit: LineupType): string[] => {
+    let positions: string[] = [];
+    
     switch (unit) {
       case 'starters':
-        return ['PG', 'SG', 'SF', 'PF', 'C'];
+        positions = ['PG', 'SG', 'SF', 'PF', 'C'];
+        break;
       case 'rotation':
-        return ['G', 'F', 'UTIL', 'UTIL', 'UTIL'];
+        positions = ['G', 'F', 'UTIL', 'UTIL', 'UTIL'];
+        break;
       case 'bench':
-        return ['UTIL', 'UTIL', 'UTIL'];
+        positions = ['UTIL', 'UTIL', 'UTIL'];
+        break;
       default:
-        return [];
+        positions = [];
     }
+    
+    // Sort positions in desired order: G, F, C, UTIL
+    return sortPositions(positions);
   };
 
   // Helper function to calculate position and position_order based on lineup type and court position
@@ -236,74 +262,6 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     return { position, position_order };
   };
 
-  // Helper function to check if a player is available for a specific unit
-  const isPlayerAvailableForUnit = (player: Player, targetUnit: LineupType): boolean => {
-    // Check if player is already assigned to a different unit
-    const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
-    if (existingAssignment && existingAssignment.lineup_type !== targetUnit) {
-      return false; // Player is already in a different unit
-    }
-    
-    // Check if the target unit has space
-    const currentCount = allLineupPositions?.filter(pos => pos.lineup_type === targetUnit).length || 0;
-    const maxCount = getMaxPlayersForLineupType(targetUnit);
-    
-    if (currentCount >= maxCount) {
-      return false; // Unit is full
-    }
-    
-    // Check if player's position is allowed in this unit
-    const positionRequirements = lineupSettings?.position_unit_assignments?.[targetUnit] || {};
-    const playerPosition = player.position;
-    
-    // If no specific position requirements, allow any position
-    if (Object.keys(positionRequirements).length === 0) {
-      return true;
-    }
-    
-    // Check if player's position is in the requirements
-    // Use originalPosition if available (for dual positions), otherwise use simplified position
-    const positionToCheck = player.originalPosition || playerPosition;
-    
-    // For dual positions, check if ANY of the player's positions are allowed
-    if (positionToCheck.includes('-')) {
-      const playerPositions = positionToCheck.split('-').map(p => p.trim());
-      // Map each position to simplified form and check if any are allowed
-      const simplifiedPositions = playerPositions.map(pos => {
-        const posLower = pos.toLowerCase();
-        if (posLower.includes('guard')) return 'G';
-        if (posLower.includes('forward')) return 'F';
-        if (posLower.includes('center')) return 'C';
-        return pos; // Already simplified
-      });
-      return simplifiedPositions.some(pos => positionRequirements[pos] > 0);
-    }
-    
-    // For single positions, check if the position is allowed
-    return positionRequirements[playerPosition] > 0;
-  };
-  
-  // Helper function to get max players for lineup type
-  const getMaxPlayersForLineupType = (lineupType: LineupType): number => {
-    if (!lineupSettings) return 5; // Default fallback
-    
-    switch (lineupType) {
-      case 'starters':
-        return lineupSettings.starters_count;
-      case 'rotation':
-        return lineupSettings.rotation_count;
-      case 'bench':
-        return lineupSettings.bench_count;
-      default:
-        return 5;
-    }
-  };
-
-  // Helper function to check if a position is filled
-  const isPositionFilled = (position: string, unit: LineupType): boolean => {
-    const playersInUnit = allLineupPositions?.filter(pos => pos.lineup_type === unit) || [];
-    return playersInUnit.some(pos => pos.player_position === position);
-  };
 
   // Fetch ALL lineup positions (for all units) to check player availability
   const { data: allLineupPositions, isLoading: lineupLoading, error: lineupError } = useQuery<LineupPosition[]>({
@@ -352,31 +310,21 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
   // Filter lineup positions for the current active tab
   const lineupPositions = allLineupPositions?.filter(pos => pos.lineup_type === activeTab) || [];
 
-  // Transform lineup positions to court players
-  const playersOnCourt: CourtPlayer[] = lineupPositions?.map(pos => ({
-    id: pos.player_id,
-    name: pos.player_name,
-    team: pos.player_team,
-    position: pos.player_position,
-    nbaPlayerId: pos.nba_player_id,
-    avatar: pos.player_avatar,
-    jerseyNumber: pos.jersey_number,
-    jersey_num: pos.jersey_number,
-    x: pos.position_x,
-    y: pos.position_y,
-    lineupPositionId: pos.id,
-  })) || [];
-
-  // Debug logging for court players
+  // Debug logging
   console.log('🔍 BasketballCourt: Active tab:', activeTab);
   console.log('🔍 BasketballCourt: Lineup positions for active tab:', lineupPositions);
-  console.log('🔍 BasketballCourt: Players on court:', playersOnCourt);
 
   // Mutation to add/update lineup position
   const upsertLineupPosition = useMutation({
-    mutationFn: async ({ playerId, x, y }: { playerId: string; x: number; y: number }) => {
-      // Calculate position and position_order based on lineup type and court position
-      const { position, position_order } = calculatePositionAndOrder(activeTab, x, y);
+    mutationFn: async ({ playerId, position, positionOrder, x, y }: { 
+      playerId: string; 
+      position: string; 
+      positionOrder: number; 
+      x: number; 
+      y: number; 
+    }) => {
+      // Use the provided position and position_order directly
+      const position_order = positionOrder;
       
       // Get required data for the function call
       const weekNumber = currentWeek || 1;
@@ -463,96 +411,158 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     },
   });
 
-  // Check if player is on court
-  const isPlayerOnCourt = (playerId: string) => {
-    return playersOnCourt.some(p => p.id === playerId);
+  // Handle opening modal for position selection
+  const handlePositionClick = (position: string, positionOrder: number) => {
+    setSelectedPosition({ position, positionOrder });
+    setIsModalOpen(true);
   };
 
-  // Drag handlers
-  const handleDragStart = (player: Player) => {
-    setDraggedPlayer(player);
-    setIsDragging(true);
-  };
-
-  const handleDragEnd = () => {
-    setIsDragging(false);
-    setDraggedPlayer(null);
-    setDraggedCourtPlayer(null);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDropOnCourt = (e: React.DragEvent) => {
-    e.preventDefault();
+  // Handle selecting a player from the modal
+  const handlePlayerSelect = async (player: Player) => {
+    if (!selectedPosition) return;
     
-    // Get drop position relative to court
-    const courtElement = e.currentTarget as HTMLElement;
-    const rect = courtElement.getBoundingClientRect();
-    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-
-    // If dragging a player from roster
-    if (draggedPlayer && !isPlayerOnCourt(draggedPlayer.id)) {
-      // Check if player is available for this unit
-      if (!isPlayerAvailableForUnit(draggedPlayer, activeTab)) {
-        console.warn(`Player ${draggedPlayer.name} is not available for ${activeTab} unit`);
-        setIsDragging(false);
-        setDraggedPlayer(null);
-        return;
-      }
-      
-      const nbaPlayerId = draggedPlayer.nbaPlayerId?.toString();
-      if (!nbaPlayerId) {
-        console.error('❌ BasketballCourt: No NBA player ID found for player:', draggedPlayer);
-        return;
-      }
-      
-      upsertLineupPosition.mutate({
-        playerId: nbaPlayerId,
-        x,
-        y
-      });
+    const nbaPlayerId = player.nbaPlayerId?.toString();
+    if (!nbaPlayerId) {
+      console.error('❌ No NBA player ID found for player:', player);
+      return;
     }
     
-    // If repositioning a jersey already on court
-    if (draggedCourtPlayer) {
-      const nbaPlayerId = draggedCourtPlayer.nbaPlayerId?.toString();
-      if (!nbaPlayerId) {
-        console.error('❌ BasketballCourt: No NBA player ID found for court player:', draggedCourtPlayer);
-        return;
-      }
-      
-      upsertLineupPosition.mutate({
-        playerId: nbaPlayerId,
-        x,
-        y
+    // DUPLICATE PREVENTION: Check if player is already assigned to ANY position in ANY lineup type
+    const existingAssignment = allLineupPositions?.find(
+      pos => pos.player_id === player.id
+    );
+    
+    if (existingAssignment) {
+      console.log('⚠️ Player already assigned to another position:', {
+        player: player.name,
+        currentLineupType: existingAssignment.lineup_type,
+        currentPosition: existingAssignment.position,
+        currentPositionOrder: existingAssignment.position_order,
+        newLineupType: activeTab,
+        newPosition: selectedPosition.position,
+        newPositionOrder: selectedPosition.positionOrder
       });
+      
+      // Remove player from their previous position first
+      console.log('🔄 Removing player from previous position before reassigning...');
+      await removeLineupPosition.mutateAsync(existingAssignment.player_id);
+      
+      // Explicitly invalidate and wait for the query to refetch
+      console.log('🔄 Invalidating query cache and waiting for refetch...');
+      await queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, teamId] });
+      
+      // Additional small delay to ensure DB and cache are in sync
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
-
-    setIsDragging(false);
+    
+    // Set a default position on court based on position type
+    const x = 50; // Center horizontally
+    const y = selectedPosition.position === 'G' ? 75 : selectedPosition.position === 'C' ? 25 : 50;
+    
+    console.log('✅ Adding player to new position:', {
+      position: selectedPosition.position,
+      positionOrder: selectedPosition.positionOrder,
+      playerId: nbaPlayerId
+    });
+    
+    await upsertLineupPosition.mutateAsync({
+      playerId: nbaPlayerId,
+      position: selectedPosition.position,
+      positionOrder: selectedPosition.positionOrder,
+      x,
+      y
+    });
+    
+    setIsModalOpen(false);
+    setSelectedPosition(null);
   };
 
-  const handleJerseyDragStart = (e: React.DragEvent, player: CourtPlayer) => {
-    e.stopPropagation();
-    setDraggedCourtPlayer(player);
-    setIsDragging(true);
-    setSelectedJerseyId(null);
+  // Handle clearing a position (removing player from that spot)
+  const handleClearPosition = async () => {
+    if (!selectedPosition) return;
+    
+    // Find the player currently in this position slot by matching position AND position_order
+    const assignedPlayer = lineupPositions.find(
+      pos => pos.position === selectedPosition.position && pos.position_order === selectedPosition.positionOrder
+    );
+    
+    if (assignedPlayer) {
+      await removeLineupPosition.mutateAsync(assignedPlayer.player_id);
+    }
+    
+    setIsModalOpen(false);
+    setSelectedPosition(null);
   };
 
-  const handleJerseyClick = (e: React.MouseEvent, playerId: string) => {
-    e.stopPropagation();
-    setSelectedJerseyId(prev => prev === playerId ? null : playerId);
-  };
-
-  const handleRemoveFromCourt = (playerId: string) => {
+  // Handle removing a player from lineup
+  const handleRemovePlayer = (playerId: string) => {
     removeLineupPosition.mutate(playerId);
-    setSelectedJerseyId(null);
   };
 
-  const handleCourtClick = () => {
-    setSelectedJerseyId(null);
+  // Helper to get lineup type label with multiplier
+  const getLineupTypeLabel = (lineupType: LineupType): string => {
+    switch (lineupType) {
+      case 'starters': return 'Starters x1';
+      case 'rotation': return 'Rotation x0.5';
+      case 'bench': return 'Bench x0.25';
+      default: return lineupType;
+    }
+  };
+
+  // Get available players for a specific position WITH assignment status
+  const getAvailablePlayersForPosition = (position: string): (Player & { assignmentInfo?: string })[] => {
+    console.log('🔍 getAvailablePlayersForPosition called:', {
+      position,
+      totalPlayers: availablePlayers.length,
+      allLineupPositionsCount: allLineupPositions?.length || 0,
+      allLineupPositions: allLineupPositions
+    });
+    
+    return availablePlayers
+      .filter(player => {
+        // Check position eligibility
+        if (position === 'UTIL') {
+          console.log(`✅ ${player.name} eligible for UTIL`);
+          return true; // UTIL accepts any position
+        }
+        
+        // Check if player's position matches
+        const playerPosition = player.position;
+        const originalPosition = player.originalPosition || '';
+        
+        // Handle dual positions (e.g., "Guard-Forward")
+        if (originalPosition.includes('-')) {
+          const positions = originalPosition.split('-');
+          const isEligible = positions.some(pos => {
+            const posLower = pos.trim().toLowerCase();
+            if (position === 'G' && posLower.includes('guard')) return true;
+            if (position === 'F' && posLower.includes('forward')) return true;
+            if (position === 'C' && posLower.includes('center')) return true;
+            return false;
+          });
+          console.log(`${isEligible ? '✅' : '🚫'} ${player.name} (${originalPosition}) for ${position}`);
+          return isEligible;
+        }
+        
+        // Direct match
+        const isMatch = playerPosition === position;
+        console.log(`${isMatch ? '✅' : '🚫'} ${player.name} (${playerPosition}) for ${position}`);
+        return isMatch;
+      })
+      .map(player => {
+        // Check if player is already assigned to ANY lineup type
+        const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
+        
+        if (existingAssignment) {
+          console.log(`📍 ${player.name} is assigned to ${existingAssignment.lineup_type} at ${existingAssignment.position}`);
+          return {
+            ...player,
+            assignmentInfo: `${getLineupTypeLabel(existingAssignment.lineup_type as LineupType)}`
+          };
+        }
+        
+        return player;
+      });
   };
 
   const getLineupTypeColor = (type: LineupType) => {
@@ -564,23 +574,18 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     }
   };
 
-  const getLineupTypeLabel = (type: LineupType) => {
-    switch (type) {
-      case 'starters': return 'Starters';
-      case 'rotation': return 'Rotation';
-      case 'bench': return 'Bench';
-      default: return type;
-    }
-  };
+  // Get available players filtered by selected position (for modal)
+  const filteredPlayers = selectedPosition 
+    ? getAvailablePlayersForPosition(selectedPosition.position)
+    : [];
 
   return (
-    <Card variant="outlined" sx={{ height: '100%' }}>
-      <CardContent sx={{ p: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <>
+      <Card variant="outlined" sx={{ height: '100%' }}>
+        <CardContent sx={{ p: 0, height: '100%', display: 'flex', flexDirection: 'column' }}>
 
-        {/* Tabs Row with Auto Button and Position Requirements */}
-        <Box sx={{ borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center' }}>
-          {/* Tabs */}
-          <Box sx={{ flex: 1 }}>
+          {/* Simplified Tabs Row */}
+          <Box sx={{ borderBottom: '1px solid', borderColor: 'divider' }}>
             <Tabs
               value={activeTab}
               onChange={(_, value) => setActiveTab(value as LineupType)}
@@ -588,40 +593,16 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
             >
               <TabList>
                 {(['starters', 'rotation', 'bench'] as LineupType[]).map((type) => {
-                  // Count players for this specific lineup type
-                  const currentCount = allLineupPositions?.filter(pos => pos.lineup_type === type).length || 0;
-                  const maxCount = getMaxPlayersForLineupType(type);
                   const multiplier = lineupSettings ? 
                     (type === 'starters' ? lineupSettings.starters_multiplier :
                      type === 'rotation' ? lineupSettings.rotation_multiplier :
                      lineupSettings.bench_multiplier) : 1.0;
-                  const positionRequirements = getPositionRequirements(type);
                   
                   return (
                     <Tab key={type} value={type} sx={{ flex: 1 }}>
-                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Chip
-                            size="sm"
-                            variant="soft"
-                            color={getLineupTypeColor(type)}
-                            sx={{ minWidth: 20, height: 20 }}
-                          >
-                            {currentCount}/{maxCount}
-                          </Chip>
-                          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                            {getLineupTypeLabel(type)}
-                          </Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                            {multiplier}x
-                          </Typography>
-                        </Box>
-                        {positionRequirements.length > 0 && (
-                          <Typography level="body-xs" color="neutral" sx={{ textAlign: 'center', lineHeight: 1.2 }}>
-                            {positionRequirements.join(', ')}
-                          </Typography>
-                        )}
-                      </Box>
+                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                        {getLineupTypeLabel(type)} {multiplier}x
+                      </Typography>
                     </Tab>
                   );
                 })}
@@ -629,422 +610,307 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
             </Tabs>
           </Box>
 
-          {/* Auto Button and Position Requirements */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, px: 2, py: 1 }}>
-            {/* Auto Lineup Button */}
+          {/* Position Slot Avatars Row - Full Width */}
+          <Box sx={{ 
+            p: 2, 
+            borderBottom: '1px solid', 
+            borderColor: 'divider',
+          }}>
+            <Box sx={{ 
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
+                sm: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
+                md: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
+              },
+              gap: { xs: 1, sm: 2 },
+              width: '100%'
+            }}>
+              {getPositionRequirements(activeTab).map((position, index) => {
+                // Find if this position is filled by matching position AND position_order
+                const positionOrder = index + 1;
+                const assignedPlayer = lineupPositions.find(
+                  pos => pos.position === position && pos.position_order === positionOrder
+                );
+                
+                console.log(`🔍 Position ${position} #${positionOrder}:`, assignedPlayer ? assignedPlayer.player_name : 'empty');
+                
+                return (
+                  <Box
+                    key={`${position}-${index}`}
+                    onClick={() => handlePositionClick(position, positionOrder)}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      cursor: 'pointer',
+                      transition: 'transform 0.2s',
+                      p: 1,
+                      borderRadius: 'md',
+                      '&:hover': {
+                        transform: 'scale(1.05)',
+                        bgcolor: 'background.level1',
+                      },
+                      '&:active': {
+                        transform: 'scale(0.98)',
+                      },
+                    }}
+                  >
+                    <Box sx={{ position: 'relative' }}>
+                      <Avatar
+                        src={assignedPlayer?.player_avatar}
+                        size="lg"
+                        sx={{
+                          width: { xs: 56, sm: 64, md: 72 },
+                          height: { xs: 56, sm: 64, md: 72 },
+                          bgcolor: assignedPlayer ? 'primary.500' : 'neutral.300',
+                          border: '3px solid',
+                          borderColor: assignedPlayer ? 'primary.700' : 'neutral.400',
+                          opacity: (upsertLineupPosition.isPending || removeLineupPosition.isPending) ? 0.5 : 1,
+                        }}
+                      >
+                        {assignedPlayer ? assignedPlayer.player_name.charAt(0) : '?'}
+                      </Avatar>
+                      {(upsertLineupPosition.isPending || removeLineupPosition.isPending) && (
+                        <CircularProgress
+                          size="sm"
+                          sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                          }}
+                        />
+                      )}
+                    </Box>
+                    <Chip
+                      size="sm"
+                      variant="solid"
+                      color={assignedPlayer ? getLineupTypeColor(activeTab) : 'neutral'}
+                      sx={{ 
+                        fontWeight: 'bold',
+                        fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                      }}
+                    >
+                      {position}
+                    </Chip>
+                    {assignedPlayer && (
+                      <Typography level="body-xs" sx={{ 
+                        maxWidth: '100%',
+                        overflow: 'hidden', 
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        textAlign: 'center',
+                        fontSize: { xs: '0.65rem', sm: '0.75rem' }
+                      }}>
+                        {assignedPlayer.player_name.split(' ').pop()}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          </Box>
+
+          {/* Auto Lineup Button */}
+          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
             <Button
               variant="solid"
               color="primary"
               startDecorator="🤖"
               size="sm"
+              fullWidth
               onClick={handleAutoLineup}
               loading={autoLineupMutation.isPending}
               disabled={!currentMatchup || !lineupSettings}
-              sx={{ 
-                minWidth: 'auto',
-                px: 2,
-                fontSize: '0.8rem'
-              }}
             >
-              Auto
+              Auto Fill Lineup
             </Button>
-
-            {/* Position Requirements for Active Tab */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography level="body-xs" color="neutral" sx={{ fontWeight: 'bold' }}>
-                {getLineupTypeLabel(activeTab)}:
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 0.5 }}>
-                {getPositionRequirements(activeTab).map((position, index) => {
-                  const isFilled = isPositionFilled(position, activeTab);
-                  return (
-                    <Chip
-                      key={index}
-                      size="sm"
-                      variant="soft"
-                      color={isFilled ? getLineupTypeColor(activeTab) : 'danger'}
-                      sx={{ 
-                        fontSize: '0.7rem', 
-                        height: 20,
-                        opacity: isFilled ? 1 : 0.8
-                      }}
-                    >
-                      {position}
-                    </Chip>
-                  );
-                })}
-              </Box>
-            </Box>
-          </Box>
-        </Box>
-
-        {/* Court + Roster Container */}
-        <Box sx={{ 
-          display: 'flex', 
-          height: '500px',
-          overflow: 'hidden'
-        }}>
-          {/* Player Roster - Left Side */}
-          <Box
-            sx={{
-              width: '100px',
-              height: '100%',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 1,
-              p: 1,
-              overflowY: 'auto',
-              borderRight: '1px solid',
-              borderColor: 'divider',
-              bgcolor: 'background.level1',
-              flexShrink: 0
-            }}
-          >
-            {availablePlayers.map((player) => {
-              const onCourt = isPlayerOnCourt(player.id);
-              const isAvailable = isPlayerAvailableForUnit(player, activeTab);
-              const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
-              const assignedUnit = existingAssignment?.lineup_type;
-              
-              return (
-                <Tooltip 
-                  key={player.id} 
-                  title={
-                    <Box>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{player.name}</Typography>
-                      <Typography level="body-xs">
-                        {player.originalPosition || player.position} - {player.team}
-                      </Typography>
-                      {assignedUnit && (
-                        <Typography level="body-xs" color="warning">
-                          Assigned to: {assignedUnit}
-                        </Typography>
-                      )}
-                      {!isAvailable && !assignedUnit && (
-                        <Typography level="body-xs" color="danger">
-                          Not available for this unit
-                        </Typography>
-                      )}
-                    </Box>
-                  } 
-                  placement="right"
-                >
-                  <Box
-                    draggable={isAvailable}
-                    onDragStart={() => isAvailable && handleDragStart(player)}
-                    onDragEnd={handleDragEnd}
-                    sx={{
-                      position: 'relative',
-                      cursor: isAvailable ? 'grab' : 'not-allowed',
-                      opacity: isAvailable ? 1 : 0.4,
-                      transition: 'all 0.2s',
-                      '&:hover': isAvailable ? {
-                        transform: 'scale(1.05)',
-                        opacity: 0.9,
-                      } : {},
-                    }}
-                  >
-                    <Avatar
-                      src={player.avatar}
-                      sx={{ 
-                        width: 72, 
-                        height: 72,
-                        border: '2px solid',
-                        borderColor: onCourt ? 'primary.500' : 'divider',
-                        '& img': { objectFit: 'cover' }
-                      }}
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                        const parent = target.parentElement;
-                        if (parent) {
-                          parent.textContent = player.name.charAt(0);
-                        }
-                      }}
-                    >
-                      {player.name.charAt(0)}
-                    </Avatar>
-                    
-                    {/* Position badge */}
-                    <Chip
-                      size="sm"
-                      variant="solid"
-                      sx={{
-                        position: 'absolute',
-                        bottom: -4,
-                        right: -4,
-                        minWidth: 24,
-                        height: 24,
-                        fontSize: '0.7rem',
-                        fontWeight: 'bold',
-                        bgcolor: onCourt ? 'primary.500' : 'neutral.700',
-                      }}
-                    >
-                      {player.originalPosition || player.position}
-                    </Chip>
-                  </Box>
-                </Tooltip>
-              );
-            })}
           </Box>
 
-          {/* Half Court - Right Side */}
-          <Box
-            onDragOver={handleDragOver}
-            onDrop={handleDropOnCourt}
-            onClick={handleCourtClick}
-            sx={{
-              position: 'relative',
-              flex: 1,
-              height: '100%',
-              background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
-              border: '2px solid #dee2e6',
-              overflow: 'hidden',
-            }}
-          >
-
-            {/* Court Lines - Half Court Design */}
-            <Box sx={{ position: 'relative', width: '100%', height: '100%' }}>
-              {/* Three-point line */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '20%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '60%',
-                  height: '40%',
-                  border: '3px solid #212529',
-                  borderRadius: '50%',
-                  background: 'transparent',
-                  borderTop: 'none',
-                }}
-              />
-              
-              {/* Free throw line */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '35%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '25%',
-                  height: '15%',
-                  border: '3px solid #212529',
-                  borderBottom: 'none',
-                  background: 'transparent',
-                }}
-              />
-              
-              {/* Basket */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '45%',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '8%',
-                  height: '8%',
-                  border: '4px solid #dc3545',
-                  borderRadius: '50%',
-                  background: 'transparent',
-                }}
-              />
-              
-              {/* Center line */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '0',
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  width: '3px',
-                  height: '100%',
-                  bgcolor: '#212529',
-                }}
-              />
-              
-              {/* Court markings */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: '4px',
-                  height: '4px',
-                  bgcolor: '#212529',
-                  borderRadius: '50%',
-                }}
-              />
-            </Box>
-
-            {/* Drop Zone Hint */}
-            {isDragging && playersOnCourt.length === 0 && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  textAlign: 'center',
-                  pointerEvents: 'none',
-                  zIndex: 10,
-                }}
-              >
-                <Typography 
-                  level="h4" 
-                  sx={{ 
-                    color: '#6c757d',
-                    fontWeight: 'bold',
-                    textShadow: '1px 1px 2px rgba(255,255,255,0.8)',
-                  }}
-                >
-                  Drop Player Here
-                </Typography>
-                <Typography 
-                  level="body-md" 
-                  sx={{
-                    color: '#6c757d',
-                    textShadow: '1px 1px 2px rgba(255,255,255,0.8)',
-                  }}
-                >
-                  Position them on the court
-                </Typography>
-              </Box>
-            )}
-
-            {/* Players on Court */}
-            {playersOnCourt.map((player) => {
-              const isSelected = selectedJerseyId === player.id;
-              
-              return (
-                <Box
-                  key={player.id}
-                  draggable
-                  onDragStart={(e) => handleJerseyDragStart(e, player)}
-                  onClick={(e) => handleJerseyClick(e, player.id)}
-                  sx={{
-                    position: 'absolute',
-                    left: `${player.x}%`,
-                    top: `${player.y}%`,
-                    transform: 'translate(-50%, -50%)',
-                    cursor: 'grab',
-                    transition: 'all 0.2s',
-                    '&:hover': {
-                      transform: 'translate(-50%, -50%) scale(1.05)',
-                      filter: 'brightness(1.05)',
-                    },
-                    '&:active': {
-                      cursor: 'grabbing',
-                    },
-                    zIndex: isSelected ? 100 : 10,
-                  }}
-                >
-                  <PlayerJersey
-                    playerName={player.name}
-                    jerseyNumber={player.jerseyNumber}
-                    nbaTeam={player.team}
-                    position={player.position}
-                    size="medium"
-                  />
-                  
-                  {/* Remove Button (X) - shown when selected */}
-                  {isSelected && (
-                    <IconButton
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveFromCourt(player.id);
-                      }}
-                      sx={{
-                        position: 'absolute',
-                        top: -12,
-                        right: -12,
-                        width: 28,
-                        height: 28,
-                        borderRadius: '50%',
-                        bgcolor: 'danger.500',
-                        color: 'white',
-                        border: '2px solid white',
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                        fontSize: '1.2rem',
-                        fontWeight: 'bold',
-                        transition: 'all 0.2s',
-                        '&:hover': {
-                          bgcolor: 'danger.600',
-                          transform: 'scale(1.15)',
-                        }
-                      }}
-                    >
-                      ×
-                    </IconButton>
-                  )}
-                </Box>
-              );
-            })}
-
-            {/* Roster Configuration Overlay - Top Right */}
-            <Box sx={{ 
-              position: 'absolute', 
-              top: 16, 
-              right: 16, 
-              zIndex: 5, // Higher than court but lower than jerseys (which are zIndex 10+)
-              bgcolor: 'rgba(255, 255, 255, 0.9)',
-              backdropFilter: 'blur(4px)',
-              borderRadius: 'md',
-              p: 1.5,
-              border: '1px solid',
-              borderColor: 'divider',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-            }}>
-              <Typography level="body-xs" color="neutral" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                {getLineupTypeLabel(activeTab)} Requirements:
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {getPositionRequirements(activeTab).map((position, index) => {
-                  const isFilled = isPositionFilled(position, activeTab);
-                  return (
-                    <Chip
-                      key={index}
-                      size="sm"
-                      variant="soft"
-                      color={isFilled ? getLineupTypeColor(activeTab) : 'danger'}
-                      sx={{ 
-                        fontSize: '0.7rem', 
-                        height: 18,
-                        opacity: isFilled ? 1 : 0.8
-                      }}
-                    >
-                      {position}
-                    </Chip>
-                  );
-                })}
-              </Box>
-            </Box>
-
-            {/* Loading overlay */}
-            {lineupLoading && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  bgcolor: 'rgba(255, 255, 255, 0.8)',
-                  zIndex: 1000,
-                }}
-              >
+          {/* Lineup Summary / Stats Area */}
+          <Box sx={{ 
+            flex: 1,
+            p: 2,
+            overflowY: 'auto'
+          }}>
+            {lineupLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
                 <CircularProgress />
               </Box>
+            ) : (
+              <Box>
+                <Typography level="title-md" sx={{ mb: 2, fontWeight: 'bold' }}>
+                  Current Lineup
+                </Typography>
+                
+                {lineupPositions.length === 0 ? (
+                  <Typography level="body-sm" color="neutral">
+                    Tap a position above to add players to your lineup
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {lineupPositions.map((pos, index) => (
+                      <Card key={index} variant="outlined" size="sm">
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                          <Avatar
+                            src={pos.player_avatar}
+                            size="md"
+                            sx={{ width: 48, height: 48 }}
+                          >
+                            {pos.player_name.charAt(0)}
+                          </Avatar>
+                          <Box sx={{ flex: 1 }}>
+                            <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                              {pos.player_name}
+                            </Typography>
+                            <Typography level="body-xs" color="neutral">
+                              {pos.player_team} • {pos.player_position}
+                            </Typography>
+                          </Box>
+                          <Button
+                            variant="soft"
+                            color="danger"
+                            size="sm"
+                            onClick={() => handleRemovePlayer(pos.player_id)}
+                          >
+                            Remove
+                          </Button>
+                        </Box>
+                      </Card>
+                    ))}
+                  </Box>
+                )}
+              </Box>
             )}
           </Box>
-        </Box>
-      </CardContent>
-    </Card>
+
+        </CardContent>
+      </Card>
+
+      {/* Player Selection Modal */}
+      <Modal
+        open={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+      >
+        <ModalDialog
+          sx={{
+            maxWidth: 500,
+            maxHeight: '80vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <ModalClose />
+          <Typography level="title-lg" sx={{ mb: 1 }}>
+            Select Player for {selectedPosition?.position} Position
+          </Typography>
+          
+          {/* Info message about player assignments */}
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: 'primary.50', borderRadius: 'sm', border: '1px solid', borderColor: 'primary.200' }}>
+            <Typography level="body-xs" color="primary">
+              💡 Players with a badge are already in a lineup. Selecting them will move them from their current position.
+            </Typography>
+          </Box>
+          
+          {/* Clear Position Option (if position is currently filled) */}
+          {selectedPosition && lineupPositions[selectedPosition.positionOrder - 1] && (
+            <Box sx={{ mb: 2 }}>
+              <Button
+                variant="soft"
+                color="danger"
+                fullWidth
+                onClick={handleClearPosition}
+                startDecorator="✕"
+                loading={removeLineupPosition.isPending}
+              >
+                Clear This Position
+              </Button>
+            </Box>
+          )}
+          
+          <Sheet
+            sx={{
+              flex: 1,
+              overflow: 'auto',
+              borderRadius: 'sm',
+            }}
+          >
+            {filteredPlayers.length === 0 ? (
+              <Box sx={{ p: 3, textAlign: 'center' }}>
+                <Typography level="body-sm" color="neutral">
+                  No available players for this position
+                </Typography>
+              </Box>
+            ) : (
+              <List>
+                {filteredPlayers.map((player) => {
+                  const isAssigned = !!player.assignmentInfo;
+                  return (
+                  <ListItem key={player.id}>
+                    <ListItemButton
+                      onClick={() => handlePlayerSelect(player)}
+                      disabled={upsertLineupPosition.isPending}
+                      sx={{
+                        borderRadius: 'sm',
+                        bgcolor: isAssigned ? 'warning.50' : 'transparent',
+                        border: isAssigned ? '1px solid' : 'none',
+                        borderColor: isAssigned ? 'warning.300' : 'transparent',
+                        '&:hover': {
+                          bgcolor: isAssigned ? 'warning.100' : 'primary.50',
+                        },
+                      }}
+                    >
+                      <ListItemDecorator>
+                        <Avatar
+                          src={player.avatar}
+                          size="md"
+                          sx={{ width: 48, height: 48 }}
+                        >
+                          {player.name.charAt(0)}
+                        </Avatar>
+                      </ListItemDecorator>
+                      <ListItemContent>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                            {player.name}
+                          </Typography>
+                          {player.assignmentInfo && (
+                            <Chip 
+                              size="sm" 
+                              variant="solid" 
+                              color="warning"
+                              sx={{ fontSize: '0.65rem' }}
+                            >
+                              {player.assignmentInfo}
+                            </Chip>
+                          )}
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Chip size="sm" variant="soft">
+                            {player.team}
+                          </Chip>
+                          <Typography level="body-xs" color="neutral">
+                            {player.originalPosition || player.position}
+                          </Typography>
+                          {player.jerseyNumber && (
+                            <Typography level="body-xs" color="neutral">
+                              #{player.jerseyNumber}
+                            </Typography>
+                          )}
+                        </Box>
+                      </ListItemContent>
+                    </ListItemButton>
+                  </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </Sheet>
+        </ModalDialog>
+      </Modal>
+    </>
   );
 }

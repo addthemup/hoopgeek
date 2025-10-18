@@ -9,6 +9,9 @@ import {
   Stack,
   Button,
   Alert,
+  Input,
+  IconButton,
+  Chip,
 } from '@mui/joy';
 import { useLeague } from '../hooks/useLeagues';
 import { useAuth } from '../hooks/useAuth';
@@ -31,8 +34,11 @@ import {
   Poll,
   Calculate,
   AutoAwesome,
+  Link as LinkIcon,
+  ContentCopy,
+  Check,
+  Email,
 } from '@mui/icons-material';
-import LeagueInvitationManager from '../components/LeagueInvitationManager';
 import TeamInvitationManager from '../components/TeamInvitationManager';
 
 interface CommissionerToolsProps {
@@ -45,6 +51,7 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
   const { data: teams } = useTeams(leagueId);
   const { currentWeek: fantasyWeek, seasonPhase } = useCurrentFantasyWeek();
   const [activeView, setActiveView] = useState<'tools' | 'team-invites'>('tools');
+  const [copied, setCopied] = useState(false);
   
   // Get current week matchups
   const currentWeek = fantasyWeek?.week_number ?? 1; // Use nullish coalescing to preserve 0
@@ -437,10 +444,127 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
         <TeamInvitationManager leagueId={leagueId} />
       ) : (
         <>
-          {/* League Invitation Manager */}
-          <Card variant="outlined" sx={{ mb: 4 }}>
+          {/* League Invite Link */}
+          <Card variant="outlined" sx={{ mb: 4, bgcolor: 'background.level1' }}>
             <CardContent>
-              <LeagueInvitationManager leagueId={leagueId} />
+              <Stack spacing={2}>
+                {/* Header */}
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <LinkIcon color="primary" />
+                    <Typography level="title-md" sx={{ fontWeight: 'bold' }}>
+                      League Invite Link
+                    </Typography>
+                  </Stack>
+                  <Chip size="sm" color="success" variant="soft">
+                    Ready to Share
+                  </Chip>
+                </Box>
+
+                {/* Description */}
+                <Typography level="body-sm" color="neutral">
+                  Share this link with anyone you want to invite to <strong>{leagueData?.name || league?.name}</strong>. 
+                  First {leagueData?.max_teams || 'available'} people to join get a team!
+                </Typography>
+
+                {/* URL Display with Copy Button */}
+                {leagueData?.invite_code && (
+                  <>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Input
+                        value={(() => {
+                          const baseUrl = window.location.hostname === 'localhost' 
+                            ? window.location.origin 
+                            : 'https://hoop-geek.com';
+                          return `${baseUrl}/join/${leagueData.invite_code}`;
+                        })()}
+                        readOnly
+                        sx={{ flex: 1 }}
+                        endDecorator={
+                          <IconButton
+                            size="sm"
+                            variant="plain"
+                            onClick={() => {
+                              const baseUrl = window.location.hostname === 'localhost' 
+                                ? window.location.origin 
+                                : 'https://hoop-geek.com';
+                              const inviteUrl = `${baseUrl}/join/${leagueData.invite_code}`;
+                              navigator.clipboard.writeText(inviteUrl);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            }}
+                            sx={{ minWidth: 32 }}
+                          >
+                            {copied ? <Check color="success" /> : <ContentCopy />}
+                          </IconButton>
+                        }
+                      />
+                    </Box>
+
+                    {copied && (
+                      <Alert color="success" variant="soft" size="sm">
+                        <Typography level="body-xs">
+                          ✓ Link copied to clipboard!
+                        </Typography>
+                      </Alert>
+                    )}
+
+                    {/* Stats */}
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1 }}>
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <People sx={{ fontSize: 18, color: 'neutral.500' }} />
+                        <Typography level="body-sm" color="neutral">
+                          {teams?.filter(t => t.user_id).length || 0} / {leagueData?.max_teams || 0} teams joined
+                        </Typography>
+                      </Stack>
+                      <Typography level="body-xs" color="neutral">
+                        Code: <strong>{leagueData.invite_code}</strong>
+                      </Typography>
+                    </Box>
+
+                    {/* Share Buttons */}
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        size="sm"
+                        variant="outlined"
+                        onClick={() => {
+                          const baseUrl = window.location.hostname === 'localhost' 
+                            ? window.location.origin 
+                            : 'https://hoop-geek.com';
+                          const inviteUrl = `${baseUrl}/join/${leagueData.invite_code}`;
+                          navigator.clipboard.writeText(inviteUrl);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        fullWidth
+                      >
+                        {copied ? 'Copied!' : 'Copy Link'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outlined"
+                        onClick={() => {
+                          const baseUrl = window.location.hostname === 'localhost' 
+                            ? window.location.origin 
+                            : 'https://hoop-geek.com';
+                          const inviteUrl = `${baseUrl}/join/${leagueData.invite_code}`;
+                          const subject = encodeURIComponent(`Join my fantasy basketball league: ${leagueData?.name || league?.name}`);
+                          const body = encodeURIComponent(
+                            `You're invited to join my fantasy basketball league!\n\n` +
+                            `League: ${leagueData?.name || league?.name}\n\n` +
+                            `Click here to join: ${inviteUrl}`
+                          );
+                          window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                        }}
+                        fullWidth
+                        startDecorator={<Email />}
+                      >
+                        Share via Email
+                      </Button>
+                    </Stack>
+                  </>
+                )}
+              </Stack>
             </CardContent>
           </Card>
 

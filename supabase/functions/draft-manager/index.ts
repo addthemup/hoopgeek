@@ -245,6 +245,52 @@ serve(async (req) => {
     if (activeError) {
       console.error('❌ Error fetching active drafts:', activeError);
     } else if (activeDrafts && activeDrafts.length > 0) {
+      // AUTO-RECOVERY: Fix any picks with null time_expires
+      console.log('🔧 Checking for stalled picks (null time_expires)...');
+      for (const draft of activeDrafts) {
+        const currentPick = draft.fantasy_draft_order;
+        if (currentPick && !currentPick.time_expires && !currentPick.is_completed) {
+          console.log(`⚠️ STALLED PICK DETECTED: League ${draft.league_id}, Pick #${currentPick.pick_number} has null time_expires`);
+          
+          // Get the team for this pick to check autodraft status
+          const { data: teams } = await supabase
+            .from('fantasy_teams')
+            .select('id, team_name, autodraft_enabled')
+            .eq('league_id', draft.league_id)
+            .order('id');
+          
+          const team = teams?.[currentPick.team_position - 1];
+          
+          // Get league settings for timing
+          const { data: settings } = await supabase
+            .from('fantasy_leagues')
+            .select('draft_time_per_pick')
+            .eq('id', draft.league_id)
+            .single();
+          
+          // Use 3-second timer if team has autodraft enabled, otherwise use full timer
+          const timePerPick = team?.autodraft_enabled ? 3 : (settings?.draft_time_per_pick || 60);
+          const expiresAt = new Date(Date.now() + timePerPick * 1000);
+          
+          console.log(`🔧 AUTO-FIXING: Setting time_expires to ${timePerPick}s from now (${expiresAt.toISOString()})`);
+          
+          // Fix the pick
+          const { error: fixError } = await supabase
+            .from('fantasy_draft_order')
+            .update({
+              time_started: new Date().toISOString(),
+              time_expires: expiresAt.toISOString()
+            })
+            .eq('id', currentPick.id);
+          
+          if (fixError) {
+            console.error(`❌ Failed to fix stalled pick:`, fixError);
+          } else {
+            console.log(`✅ Fixed stalled pick #${currentPick.pick_number} - draft will resume automatically`);
+          }
+        }
+      }
+      
       console.log(`⚡ Found ${activeDrafts.length} active draft(s) with picks to process:`);
       activeDrafts.forEach(d => {
         console.log(`   - League ${d.league_id}: Pick #${d.current_pick_number} (expires: ${d.fantasy_draft_order?.time_expires || 'not set'})`);
@@ -578,7 +624,8 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
 
       const draftedPlayerIds = draftedPlayers?.map((p: any) => p.player_id) || [];
       
-      // Get ANY available player that fits under the cap, sorted by salary (highest first)
+      // Get ANY available player that fits under the cap
+      // Note: We can't order by related table columns in PostgREST, so fetch top 20 and sort in JS
       let fallbackQuery = supabase
         .from('nba_players')
         .select(`
@@ -587,14 +634,20 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
           nba_espn_projections(proj_2026_pts, proj_2026_reb, proj_2026_ast, proj_2026_gp)
         `)
         .eq('is_active', true)
-        .lte('nba_hoopshype_salaries.salary_2025_26', remainingCap)
-        .order('nba_hoopshype_salaries(salary_2025_26)', { ascending: false });
+        .lte('nba_hoopshype_salaries.salary_2025_26', remainingCap);
       
       if (draftedPlayerIds.length > 0) {
         fallbackQuery = fallbackQuery.not('id', 'in', `(${draftedPlayerIds.join(',')})`);
       }
       
-      const { data: fallbackPlayers, error: fallbackError } = await fallbackQuery.limit(1);
+      const { data: fallbackPlayersRaw, error: fallbackError } = await fallbackQuery.limit(20);
+      
+      // Sort by salary in JavaScript (highest first) and take the best player
+      const fallbackPlayers = fallbackPlayersRaw?.sort((a: any, b: any) => {
+        const salaryA = a.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0;
+        const salaryB = b.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0;
+        return salaryB - salaryA;
+      }).slice(0, 1);
       
       if (fallbackError || !fallbackPlayers || fallbackPlayers.length === 0) {
         // Still no players available - this shouldn't happen if canTeamAffordPlayers returned true
