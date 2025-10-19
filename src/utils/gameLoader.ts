@@ -203,9 +203,17 @@ function transformGameData(raw: any): FullGameData {
     script: raw.script,
     
     thumbnail_url: raw.thumbnail_url,
-    video_url: raw.video_url || 
-               raw.script?.video_script?.[0]?.mp4 || // Use first video from script
-               null,
+    video_url: raw.video_url || (() => {
+      // For finished games, use LAST video (game-winning play/buzzer)
+      // Otherwise use first video
+      if (raw.script?.video_script && Array.isArray(raw.script.video_script)) {
+        const videos = raw.script.video_script.filter((play: any) => play.mp4);
+        if (videos.length > 0) {
+          return videos[videos.length - 1].mp4; // Use last video
+        }
+      }
+      return null;
+    })(),
     views: raw.views || 0,
     likes: raw.likes || 0
   };

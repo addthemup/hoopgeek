@@ -75,13 +75,22 @@ function GameCard({ game, onClick }: GameCardProps) {
     return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nba/500/${tricode}.png&h=100&w=100`
   }
   
-  // Get first video URL from script (or use thumbnail as fallback)
+  // Get video URL - use LAST play for finished games (with winner), first play otherwise
   const getVideoUrl = () => {
-    // Check if there's a video URL in the game data
+    // If game has a winner (finished game), get the LAST video from play-by-play
+    if (game.script?.video_script && Array.isArray(game.script.video_script)) {
+      const videos = game.script.video_script.filter((play: any) => play.mp4)
+      
+      if (videos.length > 0) {
+        // For finished games with a winner, show the last play
+        // This is typically the game-winning play or final buzzer
+        return videos[videos.length - 1].mp4
+      }
+    }
+    
+    // Fallback to pre-set video_url if available
     if (game.video_url) return game.video_url
     
-    // Otherwise, try to get from script (you'll need to pass this through gameLoader)
-    // For now, return null and we'll use image fallback
     return null
   }
   

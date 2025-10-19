@@ -93,9 +93,21 @@ for (const file of files) {
       
       // Media (if available)
       thumbnail_url: data.thumbnail_url || null,
-      video_url: data.video_url || 
-                 data.script?.video_script?.[0]?.mp4 || // Use first video from script
-                 null,
+      video_url: data.video_url || (() => {
+        // For finished games, use LAST video (game-winning play/buzzer)
+        if (data.script?.video_script && Array.isArray(data.script.video_script)) {
+          const videos = data.script.video_script.filter(play => play.mp4);
+          if (videos.length > 0) {
+            return videos[videos.length - 1].mp4; // Use last video
+          }
+        }
+        return null;
+      })(),
+      
+      // Include script data for video selection in frontend
+      script: data.script ? {
+        video_script: data.script.video_script || []
+      } : undefined,
       
       // Engagement (default to 0 for now)
       views: data.views || 0,
