@@ -196,21 +196,24 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
         throw entriesError;
       }
 
-      // Fetch usernames from user_profiles table
-      const userIds = [...new Set(entries?.map(e => e.user_id) || [])];
-      const { data: profiles } = await supabase
-        .from('user_profiles')
-        .select('user_id, username, display_name')
-        .in('user_id', userIds);
-
+      // Build profile map - use current user's data for their entry, generic names for others
       const profileMap = new Map(
-        profiles?.map(p => [
-          p.user_id, 
-          p.username || p.display_name || 'Player'
-        ]) || []
+        entries?.map(e => {
+          let displayName: string | null = null;
+          
+          // For the current user, use their auth data
+          if (e.user_id === user?.id) {
+            displayName = user?.user_metadata?.display_name || 
+                         user?.user_metadata?.username || 
+                         user?.email?.split('@')[0] || 
+                         'You';
+          }
+          
+          return [e.user_id, displayName];
+        }) || []
       );
       
-      console.log('👥 Fetched profiles:', profiles?.length, profileMap);
+      console.log('👥 Built profile map:', profileMap);
 
       const entriesWithScores = await Promise.all(
         (entries || []).map(async (entry) => {
@@ -301,8 +304,8 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
       const sorted = entriesWithScores.sort((a, b) => b.live_score - a.live_score);
       sorted.forEach((entry, index) => {
         entry.rank = index + 1;
-        // If user_name is still "Anonymous", show rank-based name
-        if (entry.user_name === 'Anonymous') {
+        // If user_name is still "Anonymous" or null, show rank-based name
+        if (!entry.user_name || entry.user_name === 'Anonymous') {
           entry.user_name = `Player ${index + 1}`;
         }
       });

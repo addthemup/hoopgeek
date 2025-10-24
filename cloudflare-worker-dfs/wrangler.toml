@@ -15,9 +15,11 @@ compatibility_date = "2025-10-23"
 # ============================================================================
 
 [triggers]
-# Runs every 5 minutes from 6pm-1am ET (covers all NBA game times)
+# Runs every 5 minutes from 6pm-5am ET (covers all NBA game times + post-game finalization)
 # This is less frequent than live-stats since status changes are less time-sensitive
-crons = ["*/5 18-23,0-1 * * *"]
+# 23:00-23:59 UTC = 6-7 PM ET
+# 00:00-10:59 UTC = 7 PM - 5 AM ET
+crons = ["*/5 23 * * *", "*/5 0-10 * * *"]
 
 # Free tier limits:
 # - 100,000 requests/day (plenty for this use case)
