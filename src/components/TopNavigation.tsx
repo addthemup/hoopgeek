@@ -95,12 +95,7 @@ export default function TopNavigation() {
       label: 'Fantasy',
       icon: <SportsBasketball />,
       path: '/fantasy',
-      description: 'Fantasy basketball leagues',
-      children: [
-        { id: 'dashboard', label: 'My Leagues', icon: <Group />, path: '/dashboard' },
-        { id: 'create-league', label: 'Create League', icon: <EmojiEvents />, path: '/create-league' },
-        { id: 'players', label: 'Player Database', icon: <People />, path: '/players' }
-      ]
+      description: 'Fantasy basketball leagues'
     },
     {
       id: 'betting',
@@ -178,17 +173,21 @@ export default function TopNavigation() {
       variant="solid" 
       color="primary" 
       sx={{ 
-        position: 'sticky',
+        position: 'fixed',
         top: 0,
-        zIndex: 1000,
+        left: 0,
+        right: 0,
+        zIndex: 1100,
         borderBottom: '1px solid',
         borderColor: 'primary.300',
-        overflowX: 'hidden'
+        overflowX: 'hidden',
+        width: '100%'
       }}
     >
       {/* Main Navigation Bar */}
       <Box sx={{ 
-        p: 2,
+        px: 2,
+        py: 1.25,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -295,196 +294,242 @@ export default function TopNavigation() {
 
       {/* Search Bar */}
       {searchOpen && (
-        <Box sx={{ 
-          p: 2, 
-          borderTop: '1px solid',
-          borderColor: 'primary.300',
-          bgcolor: 'primary.600'
-        }}>
+        <>
+          {/* Backdrop - click to close search and allow scrolling */}
+          <Box 
+            onClick={() => {
+              setSearchOpen(false)
+              setSearchQuery('')
+            }}
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              bgcolor: 'rgba(0, 0, 0, 0.4)',
+              zIndex: 999,
+              // Allow scrolling on the page underneath
+              pointerEvents: 'auto'
+            }}
+          />
+          
           <Box sx={{ 
-            maxWidth: '600px', 
-            mx: 'auto', 
-            position: 'relative'
+            p: 2, 
+            borderTop: '1px solid',
+            borderColor: 'primary.300',
+            bgcolor: 'primary.600',
+            position: 'relative',
+            zIndex: 1001
           }}>
-            <Input
-              placeholder="Search players by name... (e.g., LeBron James, Steph Curry)"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && searchResults && searchResults.length > 0) {
-                  // Navigate to first result on Enter
-                  navigate(`/player/${searchResults[0].id}`)
-                  setSearchOpen(false)
-                  setSearchQuery('')
-                }
-              }}
-              startDecorator={<Search />}
-              endDecorator={
-                <IconButton
-                  variant="plain"
-                  size="sm"
-                  onClick={() => {
+            <Box sx={{ 
+              maxWidth: '600px', 
+              mx: 'auto', 
+              position: 'relative'
+            }}>
+              <Input
+                placeholder="Search players by name... (e.g., LeBron James, Steph Curry)"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && searchResults && searchResults.length > 0) {
+                    // Navigate to first result on Enter
+                    navigate(`/player/${searchResults[0].id}`)
                     setSearchOpen(false)
                     setSearchQuery('')
-                  }}
-                >
-                  <Close />
-                </IconButton>
-              }
-              autoFocus
-              sx={{ 
-                bgcolor: 'background.surface',
-                '--Input-focusedThickness': '2px'
-              }}
-            />
-            
-            {/* Search Results - Floating Dropdown */}
-            {searchQuery.length >= 2 && (
-              <Box sx={{
-                position: 'fixed',
-                top: '140px', // Adjust based on navbar height
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '600px',
-                maxWidth: 'calc(100vw - 32px)',
-                maxHeight: '400px',
-                overflowY: 'auto',
-                bgcolor: 'background.surface',
-                borderRadius: 'sm',
-                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                border: '1px solid',
-                borderColor: 'neutral.300',
-                zIndex: 9999
-              }}>
-                {searchLoading ? (
-                  <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size="sm" />
-                    <Typography level="body-sm">Searching players...</Typography>
-                  </Box>
-                ) : searchResults && searchResults.length > 0 ? (
-                  <List sx={{ p: 0 }}>
-                    {searchResults.map((player: PlayerSearchResult) => (
-                      <ListItem key={player.id} sx={{ p: 0 }}>
-                        <ListItemButton
-                          onClick={() => {
-                            navigate(`/player/${player.id}`)
-                            setSearchOpen(false)
-                            setSearchQuery('')
-                          }}
-                          sx={{
-                            p: 2,
-                            '&:hover': {
-                              bgcolor: 'primary.50'
-                            }
-                          }}
-                        >
-                          <ListItemDecorator>
-                            <Avatar
-                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                              alt={player.name}
-                              size="sm"
-                            />
-                          </ListItemDecorator>
-                          <ListItemContent>
-                            <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
-                              {player.name}
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                              {player.team_name || 'Free Agent'} • {player.position || 'N/A'}
-                            </Typography>
-                          </ListItemContent>
-                        </ListItemButton>
-                      </ListItem>
-                    ))}
-                  </List>
-                ) : (
-                  <Box sx={{ p: 3 }}>
-                    <Typography level="body-sm" color="neutral">
-                      No players found matching "{searchQuery}"
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            )}
-            {searchQuery.length === 1 && (
-              <Box sx={{
-                position: 'fixed',
-                top: '140px', // Adjust based on navbar height
-                left: '50%',
-                transform: 'translateX(-50%)',
-                width: '600px',
-                maxWidth: 'calc(100vw - 32px)',
-                bgcolor: 'background.surface',
-                borderRadius: 'sm',
-                p: 2,
-                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                border: '1px solid',
-                borderColor: 'neutral.300',
-                zIndex: 9999
-              }}>
-                <Typography level="body-sm" color="neutral">
-                  💡 Type at least 2 characters to start searching...
-                </Typography>
-              </Box>
-            )}
+                  }
+                  if (e.key === 'Escape') {
+                    setSearchOpen(false)
+                    setSearchQuery('')
+                  }
+                }}
+                startDecorator={<Search />}
+                endDecorator={
+                  <IconButton
+                    variant="plain"
+                    size="sm"
+                    onClick={() => {
+                      setSearchOpen(false)
+                      setSearchQuery('')
+                    }}
+                  >
+                    <Close />
+                  </IconButton>
+                }
+                autoFocus
+                sx={{ 
+                  bgcolor: 'background.surface',
+                  '--Input-focusedThickness': '2px'
+                }}
+              />
+              
+              {/* Search Results - Floating Dropdown */}
+              {searchQuery.length >= 2 && (
+                <Box sx={{
+                  position: 'fixed',
+                  top: '140px', // Adjust based on navbar height
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '600px',
+                  maxWidth: 'calc(100vw - 32px)',
+                  maxHeight: '400px',
+                  overflowY: 'auto',
+                  bgcolor: 'background.surface',
+                  borderRadius: 'sm',
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                  border: '1px solid',
+                  borderColor: 'neutral.300',
+                  zIndex: 10000
+                }}>
+                  {searchLoading ? (
+                    <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size="sm" />
+                      <Typography level="body-sm">Searching players...</Typography>
+                    </Box>
+                  ) : searchResults && searchResults.length > 0 ? (
+                    <List sx={{ p: 0 }}>
+                      {searchResults.map((player: PlayerSearchResult) => (
+                        <ListItem key={player.id} sx={{ p: 0 }}>
+                          <ListItemButton
+                            onClick={() => {
+                              navigate(`/player/${player.id}`)
+                              setSearchOpen(false)
+                              setSearchQuery('')
+                            }}
+                            sx={{
+                              p: 2,
+                              '&:hover': {
+                                bgcolor: 'primary.50'
+                              }
+                            }}
+                          >
+                            <ListItemDecorator>
+                              <Avatar
+                                src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                alt={player.name}
+                                size="sm"
+                              />
+                            </ListItemDecorator>
+                            <ListItemContent>
+                              <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
+                                {player.name}
+                              </Typography>
+                              <Typography level="body-xs" color="neutral">
+                                {player.team_name || 'Free Agent'} • {player.position || 'N/A'}
+                              </Typography>
+                            </ListItemContent>
+                          </ListItemButton>
+                        </ListItem>
+                      ))}
+                    </List>
+                  ) : (
+                    <Box sx={{ p: 3 }}>
+                      <Typography level="body-sm" color="neutral">
+                        No players found matching "{searchQuery}"
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
+              )}
+              {searchQuery.length === 1 && (
+                <Box sx={{
+                  position: 'fixed',
+                  top: '140px', // Adjust based on navbar height
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: '600px',
+                  maxWidth: 'calc(100vw - 32px)',
+                  bgcolor: 'background.surface',
+                  borderRadius: 'sm',
+                  p: 2,
+                  boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                  border: '1px solid',
+                  borderColor: 'neutral.300',
+                  zIndex: 10000
+                }}>
+                  <Typography level="body-sm" color="neutral">
+                    💡 Type at least 2 characters to start searching...
+                  </Typography>
+                </Box>
+              )}
+            </Box>
           </Box>
-        </Box>
+        </>
       )}
 
       {/* Mobile Navigation Menu */}
       {mobileMenuOpen && (
-        <Box sx={{ 
-          p: 2, 
-          borderTop: '1px solid',
-          borderColor: 'primary.300',
-          bgcolor: 'primary.600'
-        }}>
-          <Stack spacing={1}>
-            {navigationItems.map(item => (
-              <Box key={item.id}>
-                {renderNavigationItem(item, true)}
-                {item.children && (
-                  <Box sx={{ ml: 4, mt: 1 }}>
-                    <Stack spacing={0.5}>
-                      {item.children.map(child => (
-                        <Button
-                          key={child.id}
-                          variant="plain"
-                          color="neutral"
-                          startDecorator={child.icon}
-                          onClick={() => {
-                            navigate(child.path)
-                            setMobileMenuOpen(false)
-                          }}
-                          sx={{
-                            justifyContent: 'flex-start',
-                            color: 'inherit',
-                            px: 2,
-                            py: 1
-                          }}
-                        >
-                          {child.label}
-                        </Button>
-                      ))}
-                    </Stack>
-                  </Box>
-                )}
-              </Box>
-            ))}
-            {!user && (
-              <>
-                <ListDivider />
-                <Button 
-                  variant="solid" 
-                  onClick={handleSignIn}
-                  sx={{ justifyContent: 'flex-start' }}
-                >
-                  Sign In
-                </Button>
-              </>
-            )}
-          </Stack>
-        </Box>
+        <>
+          {/* Backdrop for mobile menu */}
+          <Box 
+            onClick={() => setMobileMenuOpen(false)}
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              bgcolor: 'rgba(0, 0, 0, 0.4)',
+              zIndex: 998,
+              pointerEvents: 'auto'
+            }}
+          />
+          
+          <Box sx={{ 
+            p: 2, 
+            borderTop: '1px solid',
+            borderColor: 'primary.300',
+            bgcolor: 'primary.600',
+            position: 'relative',
+            zIndex: 1001
+          }}>
+            <Stack spacing={1}>
+              {navigationItems.map(item => (
+                <Box key={item.id}>
+                  {renderNavigationItem(item, true)}
+                  {item.children && (
+                    <Box sx={{ ml: 4, mt: 1 }}>
+                      <Stack spacing={0.5}>
+                        {item.children.map(child => (
+                          <Button
+                            key={child.id}
+                            variant="plain"
+                            color="neutral"
+                            startDecorator={child.icon}
+                            onClick={() => {
+                              navigate(child.path)
+                              setMobileMenuOpen(false)
+                            }}
+                            sx={{
+                              justifyContent: 'flex-start',
+                              color: 'inherit',
+                              px: 2,
+                              py: 1
+                            }}
+                          >
+                            {child.label}
+                          </Button>
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                </Box>
+              ))}
+              {!user && (
+                <>
+                  <ListDivider />
+                  <Button 
+                    variant="solid" 
+                    onClick={handleSignIn}
+                    sx={{ justifyContent: 'flex-start' }}
+                  >
+                    Sign In
+                  </Button>
+                </>
+              )}
+            </Stack>
+          </Box>
+        </>
       )}
     </Sheet>
   )

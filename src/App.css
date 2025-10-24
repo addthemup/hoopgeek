@@ -4,6 +4,16 @@
   padding: 0;
 }
 
+/* Fixed Navigation */
+.fixed-navigation {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1100 !important;
+  width: 100%;
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;

@@ -6,6 +6,7 @@ import { CssVarsProvider } from '@mui/joy/styles'
 import { newspaperTheme } from './theme'
 import App from './App.tsx'
 import './index.css'
+import './App.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

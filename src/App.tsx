@@ -107,7 +107,6 @@ function App() {
       minHeight: '100vh',
       width: '100%',
       maxWidth: '100vw',
-      overflowX: 'hidden',
       position: 'relative',
       backgroundColor: 'var(--newsprint-bg)',
       // Newspaper texture overlay
@@ -129,7 +128,7 @@ function App() {
         right: 0,
         height: '3px',
         background: 'linear-gradient(90deg, #000 0%, #000 33%, #8B0000 33%, #8B0000 34%, #000 34%, #000 100%)',
-        zIndex: 9999,
+        zIndex: 10000,
       }
     }}>
       <Routes>

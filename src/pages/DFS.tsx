@@ -11,123 +11,54 @@ import {
   LinearProgress,
   Sheet,
 } from '@mui/joy';
-import {
-  EmojiEvents,
-  People,
-  CheckCircle,
-} from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { useNBAScoreboard } from '../hooks/useNBAScoreboard';
-import { useState } from 'react';
 import TodaysContests from '../components/DFS/TodaysContests';
 import TeamOfTheWeek from '../components/DFS/TeamOfTheWeek';
 import UserStatsAndEntries from '../components/DFS/UserStatsAndEntries';
+import NBAGamesCarousel from '../components/DFS/NBAGamesCarousel';
 
 export default function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: nbaScoreboard, isLoading: scoreboardLoading } = useNBAScoreboard();
-  const [selectedPool, setSelectedPool] = useState<string | null>(null);
 
 
 
   return (
-    <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 1, md: 3 } }}>
+    <Box sx={{ maxWidth: 1400, mx: 'auto', p: { xs: 1, md: 3 }, pt: { xs: 1, md: 1.5 } }}>
+      {/* NBA Games Row - At the Very Top */}
+      <Box sx={{ mb: 2 }}>
+        {scoreboardLoading ? (
+          <Box sx={{ textAlign: 'center', py: 2 }}>
+            <LinearProgress />
+            <Typography level="body-sm" sx={{ mt: 1 }}>
+              Loading games...
+            </Typography>
+          </Box>
+        ) : nbaScoreboard && nbaScoreboard.games.length > 0 ? (
+          <NBAGamesCarousel games={nbaScoreboard.games} />
+        ) : (
+          <Card variant="outlined">
+            <CardContent>
+              <Box sx={{ textAlign: 'center', py: 2 }}>
+                <Typography level="body-md" color="neutral">
+                  No games scheduled today
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
+      </Box>
+
+      {/* Main Content Grid */}
       <Grid container spacing={3}>
         {/* Left Column - Main Content */}
         <Grid xs={12} lg={8}>
           <Stack spacing={3}>
             {/* Today's Contests - REAL DATA */}
             <TodaysContests />
-
-            {/* NBA Scoreboard */}
-            <Card>
-              <CardContent>
-                <Typography 
-                  level="h3" 
-                  sx={{ 
-                    fontWeight: 'bold', 
-                    mb: 2,
-                    fontFamily: '"Libre Baskerville", Georgia, serif'
-                  }}
-                >
-                  🏀 Live NBA Games
-                </Typography>
-                
-                {scoreboardLoading ? (
-                  <Box sx={{ textAlign: 'center', py: 2 }}>
-                    <LinearProgress />
-                    <Typography level="body-sm" sx={{ mt: 1 }}>
-                      Loading games...
-                    </Typography>
-                  </Box>
-                ) : nbaScoreboard && nbaScoreboard.games.length > 0 ? (
-                  <Stack spacing={2}>
-                    {nbaScoreboard.games.map((game) => (
-                      <Sheet key={game.gameId} variant="outlined" sx={{ p: 2 }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                          <Chip 
-                            size="sm" 
-                            color={game.gameStatus === 2 ? 'danger' : game.gameStatus === 3 ? 'success' : 'neutral'}
-                            variant="soft"
-                          >
-                            {game.gameStatus === 1 ? 'Scheduled' : 
-                             game.gameStatus === 2 ? '🔴 Live' : 'Final'}
-                          </Chip>
-                          <Typography level="body-xs" color="neutral">
-                            {game.gameStatusText}
-                          </Typography>
-                        </Stack>
-                        <Grid container spacing={2} alignItems="center">
-                          <Grid xs={5}>
-                            <Stack direction="row" spacing={1} alignItems="center">
-                              <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.500', fontSize: '0.75rem' }}>
-                                {game.awayTeam.abbreviation}
-                              </Avatar>
-                              <Box>
-                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                  {game.awayTeam.name}
-                                </Typography>
-                                <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                                  {game.awayTeam.points}
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Grid>
-                          <Grid xs={2} sx={{ textAlign: 'center' }}>
-                            <Typography level="body-xs" color="neutral">
-                              VS
-                            </Typography>
-                          </Grid>
-                          <Grid xs={5}>
-                            <Stack direction="row" spacing={1} alignItems="center" justifyContent="flex-end">
-                              <Box sx={{ textAlign: 'right' }}>
-                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                  {game.homeTeam.name}
-                                </Typography>
-                                <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                                  {game.homeTeam.points}
-                                </Typography>
-                              </Box>
-                              <Avatar sx={{ width: 32, height: 32, bgcolor: 'secondary.500', fontSize: '0.75rem' }}>
-                                {game.homeTeam.abbreviation}
-                              </Avatar>
-                            </Stack>
-                          </Grid>
-                        </Grid>
-                      </Sheet>
-                    ))}
-                  </Stack>
-                ) : (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography level="body-md" color="neutral">
-                      No games scheduled today
-                    </Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
           </Stack>
         </Grid>
 

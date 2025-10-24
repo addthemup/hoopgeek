@@ -8,14 +8,16 @@ export default function Layout() {
       minHeight: '100vh',
       width: '100%',
       maxWidth: '100vw',
-      overflowX: 'hidden'
+      display: 'flex',
+      flexDirection: 'column'
     }}>
       <TopNavigation />
       <Box component="main" sx={{ 
-        p: { xs: 0, sm: 3 },
+        flex: 1,
         width: '100%',
         maxWidth: '100%',
-        overflowX: 'hidden'
+        overflowX: 'hidden',
+        marginTop: '65px' // Account for fixed navigation height
       }}>
         <Outlet />
       </Box>

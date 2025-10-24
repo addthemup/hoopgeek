@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -20,6 +20,25 @@ import { useDFSUserStats } from '../../hooks/useDFSUserStats';
 import { useDFSUserEntries } from '../../hooks/useDFSUserEntries';
 import { formatSalary } from '../../hooks/useDFSLineupSalary';
 import PoolDetailsModal from './PoolDetailsModal';
+import { supabase } from '../../utils/supabase';
+
+// FanDuel Scoring
+const FANDUEL_SCORING = {
+  pts: 1,
+  fg3m: 1,
+  reb: 1.2,
+  ast: 1.5,
+  stl: 3,
+  blk: 3,
+  tov: -1,
+};
+
+function calculateFantasyPoints(stats: any, scoring: typeof FANDUEL_SCORING): number {
+  return Object.entries(scoring).reduce((total, [stat, multiplier]) => {
+    const value = parseFloat(stats[stat]) || 0;
+    return total + (value * multiplier);
+  }, 0);
+}
 
 // Component to handle player avatar with NBA headshots
 function PlayerAvatar({ player }: { player: { nba_player_id: number; player_name: string } }) {
@@ -56,6 +75,7 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
   const [activeTab, setActiveTab] = useState<number>(0);
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [liveScores, setLiveScores] = useState<Map<string, { score: number; rank: number }>>(new Map());
   const navigate = useNavigate();
   
   const { data: stats, isLoading: statsLoading } = useDFSUserStats(userId);
@@ -81,6 +101,99 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
   const upcomingEntries = entries?.filter(entry => 
     entry.pool_status === 'scheduled'
   ) || [];
+
+  // Calculate live scores and ranks
+  useEffect(() => {
+    if (!liveEntries || liveEntries.length === 0) return;
+
+    const calculateLiveScores = async () => {
+      const scoresMap = new Map<string, { score: number; rank: number }>();
+
+      // Group entries by pool_id to calculate ranks
+      const entriesByPool = new Map<string, typeof liveEntries>();
+      liveEntries.forEach(entry => {
+        if (!entriesByPool.has(entry.pool_id)) {
+          entriesByPool.set(entry.pool_id, []);
+        }
+        entriesByPool.get(entry.pool_id)!.push(entry);
+      });
+
+      // Process each pool
+      for (const [poolId, poolEntries] of entriesByPool.entries()) {
+        // Fetch pool games
+        const { data: poolGames } = await supabase
+          .from('dfs_pool_games')
+          .select('game_id')
+          .eq('pool_id', poolId);
+        
+        const gameIds = poolGames?.map(g => g.game_id) || [];
+        if (gameIds.length === 0) continue;
+
+        // Fetch ALL entries for this pool to calculate ranks
+        const { data: allPoolEntries } = await supabase
+          .from('dfs_entries')
+          .select('id, user_id')
+          .eq('pool_id', poolId)
+          .eq('is_submitted', true);
+
+        const allScores: Array<{ entryId: string; score: number }> = [];
+
+        // Calculate scores for all entries
+        for (const entry of allPoolEntries || []) {
+          const { data: lineup } = await supabase
+            .from('dfs_lineups')
+            .select(`
+              id,
+              dfs_lineup_positions (
+                player_id,
+                nba_player_id,
+                player_name,
+                unit,
+                unit_multiplier
+              )
+            `)
+            .eq('entry_id', entry.id)
+            .maybeSingle();
+
+          const positions = lineup?.dfs_lineup_positions || [];
+          let totalScore = 0;
+
+          for (const player of positions) {
+            const { data: liveStats } = await supabase
+              .from('live_player_stats')
+              .select('stats')
+              .eq('nba_player_id', player.nba_player_id)
+              .in('game_id', gameIds)
+              .maybeSingle();
+
+            if (liveStats?.stats) {
+              const rawFantasyPoints = calculateFantasyPoints(liveStats.stats, FANDUEL_SCORING);
+              totalScore += rawFantasyPoints * (player.unit_multiplier || 1);
+            }
+          }
+
+          allScores.push({ entryId: entry.id, score: totalScore });
+        }
+
+        // Sort by score and assign ranks
+        allScores.sort((a, b) => b.score - a.score);
+        allScores.forEach((entry, index) => {
+          scoresMap.set(entry.entryId, {
+            score: entry.score,
+            rank: index + 1,
+          });
+        });
+      }
+
+      setLiveScores(scoresMap);
+    };
+
+    calculateLiveScores();
+
+    // Refresh every 30 seconds
+    const interval = setInterval(calculateLiveScores, 30000);
+    return () => clearInterval(interval);
+  }, [liveEntries]);
 
   const getDifficultyColor = (tier: string) => {
     switch (tier) {
@@ -379,13 +492,13 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                       <Grid xs={3}>
                         <Typography level="body-xs" color="neutral">Live Points</Typography>
                         <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.600' }}>
-                          {entry.final_points || '0.0'}
+                          {liveScores.get(entry.id)?.score.toFixed(1) || '0.0'}
                         </Typography>
                       </Grid>
                       <Grid xs={3}>
                         <Typography level="body-xs" color="neutral">Current Rank</Typography>
                         <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                          {entry.final_rank ? `#${entry.final_rank}` : '-'}
+                          {liveScores.get(entry.id)?.rank ? `#${liveScores.get(entry.id)?.rank}` : '-'}
                         </Typography>
                       </Grid>
                       <Grid xs={3}>
@@ -459,13 +572,6 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                         Lineup locked
                       </Typography>
                     )}
-
-                    {/* Click to view leaderboard */}
-                    <Box sx={{ mt: 2, p: 1.5, bgcolor: 'danger.50', borderRadius: 'sm', textAlign: 'center' }}>
-                      <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.700' }}>
-                        👉 Click to view live leaderboard
-                      </Typography>
-                    </Box>
                   </Sheet>
                 ))}
               </Stack>
