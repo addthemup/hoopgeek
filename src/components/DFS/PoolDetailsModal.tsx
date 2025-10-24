@@ -803,19 +803,8 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
                         </Typography>
                       </Box>
                       {pool.status === 'live' && (
-                        <Chip
-                          color="danger"
-                          variant="solid"
-                          size="sm"
-                          sx={{
-                            animation: 'pulse 2s ease-in-out infinite',
-                            '@keyframes pulse': {
-                              '0%, 100%': { opacity: 1 },
-                              '50%': { opacity: 0.7 },
-                            },
-                          }}
-                        >
-                          🔴 LIVE
+                        <Chip color="danger" variant="solid" size="sm">
+                          LIVE
                         </Chip>
                       )}
                     </Stack>
@@ -845,15 +834,8 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
 
                               {/* Players Table */}
                               <Table size="sm" sx={{ 
-                                '& th': { py: 0.25, fontSize: '0.65rem', fontWeight: 'bold', bgcolor: 'neutral.50' }, 
                                 '& td': { py: 0.5, fontSize: '0.7rem' } 
                               }}>
-                                <thead>
-                                  <tr>
-                                    <th>Player</th>
-                                    <th style={{ textAlign: 'right' }}>Pts</th>
-                                  </tr>
-                                </thead>
                                 <tbody>
                                   {unitPlayers.map((player) => {
                                     console.log('🎯 Player data (LIVE):', {
@@ -870,7 +852,7 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
                                             <Avatar 
                                               size="sm"
                                               src={player.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
-                                              sx={{ width: 24, height: 24 }}
+                                              sx={{ width: 26, height: 26 }}
                                             >
                                               {player.player_name.charAt(0)}
                                             </Avatar>
@@ -946,23 +928,13 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
                     </Typography>
                   </Box>
                   {pool.status === 'live' && (
-                    <Chip
-                      color="danger"
-                      variant="solid"
-                      sx={{
-                        animation: 'pulse 2s ease-in-out infinite',
-                        '@keyframes pulse': {
-                          '0%, 100%': { opacity: 1 },
-                          '50%': { opacity: 0.7 },
-                        },
-                      }}
-                    >
-                      🔴 LIVE
+                    <Chip color="danger" variant="solid">
+                      LIVE
                     </Chip>
                   )}
                   {pool.status === 'completed' && (
                     <Chip color="success" variant="solid">
-                      ✅ FINAL
+                      FINAL
                     </Chip>
                   )}
                 </Stack>
