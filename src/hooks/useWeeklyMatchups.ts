@@ -3,14 +3,14 @@ import { supabase } from '../utils/supabase';
 
 export interface WeeklyMatchup {
   id: string;
-  fantasy_week: number;
-  matchup_date: string;
-  status: 'scheduled' | 'live' | 'completed';
-  matchup_type: 'regular' | 'playoff' | 'championship';
+  week_number: number;
+  season_year: number;
+  matchup_start_date: string;
+  status: 'scheduled' | 'live' | 'completed' | 'cancelled';
   fantasy_team1_id: string;
   fantasy_team2_id: string;
-  fantasy_team1_score: number | null;
-  fantasy_team2_score: number | null;
+  team1_score: number | null;
+  team2_score: number | null;
   team1: {
     id: string;
     team_name: string;
@@ -37,22 +37,22 @@ export function useWeeklyMatchups(leagueId: string, weekNumber?: number) {
         .from('fantasy_matchups')
         .select(`
           id,
-          fantasy_week,
-          matchup_date,
+          week_number,
+          season_year,
+          matchup_start_date,
           status,
-          matchup_type,
           fantasy_team1_id,
           fantasy_team2_id,
-          fantasy_team1_score,
-          fantasy_team2_score,
+          team1_score,
+          team2_score,
           team1:fantasy_teams!fantasy_team1_id(id, team_name, user_id, wins, losses),
           team2:fantasy_teams!fantasy_team2_id(id, team_name, user_id, wins, losses)
         `)
         .eq('league_id', leagueId)
-        .order('matchup_date', { ascending: true });
+        .order('matchup_start_date', { ascending: true });
 
       if (weekNumber !== undefined) {
-        query = query.eq('fantasy_week', weekNumber);
+        query = query.eq('week_number', weekNumber);
       }
 
       const { data, error } = await query;
@@ -64,14 +64,14 @@ export function useWeeklyMatchups(leagueId: string, weekNumber?: number) {
 
       return (data || []).map((matchup: any) => ({
         id: matchup.id,
-        fantasy_week: matchup.fantasy_week,
-        matchup_date: matchup.matchup_date,
+        week_number: matchup.week_number,
+        season_year: matchup.season_year,
+        matchup_start_date: matchup.matchup_start_date,
         status: matchup.status,
-        matchup_type: matchup.matchup_type,
         fantasy_team1_id: matchup.fantasy_team1_id,
         fantasy_team2_id: matchup.fantasy_team2_id,
-        fantasy_team1_score: matchup.fantasy_team1_score,
-        fantasy_team2_score: matchup.fantasy_team2_score,
+        team1_score: matchup.team1_score,
+        team2_score: matchup.team2_score,
         team1: Array.isArray(matchup.team1) ? matchup.team1[0] : matchup.team1,
         team2: Array.isArray(matchup.team2) ? matchup.team2[0] : matchup.team2,
       }));
@@ -87,14 +87,15 @@ export function useCurrentWeek(leagueId: string) {
     queryFn: async (): Promise<number> => {
       if (!leagueId) return 1;
 
-      // Get the league's season year
-      const { data: league } = await supabase
-        .from('fantasy_leagues')
+      // Get the league's current season
+      const { data: season } = await supabase
+        .from('fantasy_league_seasons')
         .select('season_year')
-        .eq('id', leagueId)
+        .eq('league_id', leagueId)
+        .eq('is_active', true)
         .single();
 
-      const seasonYear = league?.season_year || new Date().getFullYear();
+      const seasonYear = season?.season_year || new Date().getFullYear();
 
       // Get current date
       const today = new Date();
@@ -104,7 +105,7 @@ export function useCurrentWeek(leagueId: string) {
         .from('fantasy_season_weeks')
         .select('week_number, start_date, end_date')
         .eq('season_year', seasonYear)
-        .order('week_number', { ascending: true });
+        .order('week_number', { ascending: true});
 
       if (error || !weeks) {
         console.error('Error fetching season weeks:', error);
@@ -124,13 +125,13 @@ export function useCurrentWeek(leagueId: string) {
       // If no current week found, return the first week with scheduled matchups
       const { data: matchups } = await supabase
         .from('fantasy_matchups')
-        .select('fantasy_week')
+        .select('week_number')
         .eq('league_id', leagueId)
         .eq('status', 'scheduled')
-        .order('fantasy_week', { ascending: true })
+        .order('week_number', { ascending: true })
         .limit(1);
 
-      return matchups?.[0]?.fantasy_week || 1;
+      return matchups?.[0]?.week_number || 1;
     },
     enabled: !!leagueId,
   });

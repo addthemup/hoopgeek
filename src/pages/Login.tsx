@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { 
   Box, 
   Typography, 
@@ -25,8 +25,17 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, user } = useAuth()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const redirectUrl = searchParams.get('redirect') || '/dashboard'
+
+  // If user is already logged in, redirect them
+  useEffect(() => {
+    if (user) {
+      navigate(redirectUrl)
+    }
+  }, [user, navigate, redirectUrl])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -47,7 +56,7 @@ export default function Login() {
         if (error) {
           setError(error.message)
         } else {
-          navigate('/dashboard')
+          navigate(redirectUrl)
         }
       }
     } catch (err) {
@@ -65,7 +74,7 @@ export default function Login() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          redirectTo: `${window.location.origin}${redirectUrl}`,
         },
       })
 

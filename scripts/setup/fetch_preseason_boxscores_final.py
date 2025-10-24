@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """
-Fetch NBA Preseason Box Scores using known game IDs from schedule
+Fetch NBA Box Scores for completed games (October 2 - October 20, 2025)
 This script fetches box score data using the NBA API BoxScoreTraditionalV3 endpoint
 """
 
 import os
 import sys
-import json
 import time
 from datetime import datetime
 from typing import List, Dict, Optional
@@ -37,6 +36,39 @@ def setup_supabase() -> Client:
     print(f"✅ Supabase client initialized with URL: {url[:30]}...")
     return create_client(url, key)
 
+def get_completed_games(supabase: Client) -> List[Dict]:
+    """Get all completed games from database between Oct 2 - Oct 20, 2025"""
+    try:
+        print("📋 Fetching completed games from database...")
+        
+        # Query for completed games (game_status = 3 means Final)
+        result = supabase.table('nba_games') \
+            .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_id, away_team_id, game_status_text') \
+            .eq('season_year', 2026) \
+            .eq('game_status', 3) \
+            .gte('game_date', '2025-10-02') \
+            .lte('game_date', '2025-10-20T23:59:59') \
+            .order('game_date', desc=False) \
+            .execute()
+        
+        games = []
+        for game in result.data:
+            games.append({
+                'game_id': game['game_id'],
+                'date': game['game_date'].split('T')[0],  # Just the date part
+                'home_team': game['home_team_tricode'],
+                'away_team': game['away_team_tricode'],
+                'home_team_id': game['home_team_id'],
+                'away_team_id': game['away_team_id']
+            })
+        
+        print(f"✅ Found {len(games)} completed games")
+        return games
+        
+    except Exception as e:
+        print(f"❌ Error fetching games: {e}")
+        return []
+
 def convert_minutes_to_integer(minutes_str):
     """Convert MM:SS format to integer minutes"""
     if not minutes_str or minutes_str == "":
@@ -53,42 +85,12 @@ def convert_minutes_to_integer(minutes_str):
     except:
         return None
 
-def get_or_create_game(supabase: Client, game_id: str, game_info: Dict):
-    """Get existing game or create new one"""
+def check_if_box_score_exists(supabase: Client, game_id: str) -> bool:
+    """Check if box score data already exists for this game"""
     try:
-        # First, try to find existing game
-        result = supabase.table('nba_games').select('game_id').eq('game_id', game_id).execute()
-        
-        if result.data and len(result.data) > 0:
-            return True  # Game exists
-        
-        # If not found, create new game
-        new_game = {
-            'game_id': game_id,
-            'game_code': game_id,
-            'game_date': game_info['date'],
-            'season_year': 2025,
-            'home_team_tricode': game_info['home_team'],
-            'away_team_tricode': game_info['away_team'],
-            'home_team_name': f"{game_info['home_team']} Team",  # Placeholder
-            'away_team_name': f"{game_info['away_team']} Team",  # Placeholder
-            'home_team_id': 1,  # Placeholder - will need proper team IDs
-            'away_team_id': 2,  # Placeholder - will need proper team IDs
-            'game_status': 3,  # Final
-            'game_status_text': 'Final'
-        }
-        
-        result = supabase.table('nba_games').insert(new_game).execute()
-        
-        if result.data and len(result.data) > 0:
-            print(f"✅ Created game: {game_id}")
-            return True
-        else:
-            print(f"❌ Failed to create game: {game_id}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ Error with game {game_id}: {e}")
+        result = supabase.table('nba_boxscores').select('game_id').eq('game_id', game_id).limit(1).execute()
+        return len(result.data) > 0
+    except:
         return False
 
 def get_or_create_player(supabase: Client, nba_player_id: int, player_name: str, team_id: int):
@@ -209,9 +211,12 @@ def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict
                 'plus_minus_points': to_int_or_none(player_stat.get('plusMinusPoints')),
             }
             
-            # Insert into nba_boxscores
+            # Insert into nba_boxscores (upsert to avoid duplicates)
             try:
-                result = supabase.table('nba_boxscores').insert(transformed_player).execute()
+                result = supabase.table('nba_boxscores').upsert(
+                    transformed_player,
+                    on_conflict='game_id,nba_player_id'
+                ).execute()
                 
                 if result.data:
                     stored_count += 1
@@ -230,61 +235,66 @@ def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict
         return 0
 
 def main():
-    """Main function to fetch preseason box scores"""
-    print("🏀 NBA Preseason Box Score Import (2025-10-02 to 2025-10-13)")
+    """Main function to fetch box scores for completed games"""
+    print("🏀 NBA Box Score Import (October 2 - October 20, 2025)")
     print("=" * 60)
     
     # Setup
     supabase = setup_supabase()
     
-    # Load preseason games from our extracted list
-    try:
-        with open('preseason_games_2025.json', 'r') as f:
-            preseason_games = json.load(f)
-        print(f"📋 Loaded {len(preseason_games)} preseason games")
-    except FileNotFoundError:
-        print("❌ preseason_games_2025.json not found. Run extract_preseason_games.py first.")
+    # Get completed games from database
+    games = get_completed_games(supabase)
+    
+    if not games:
+        print("❌ No completed games found!")
         return
     
     total_players_imported = 0
     successful_games = 0
+    skipped_games = 0
     
-    print(f"\n🎮 Processing {len(preseason_games)} games...")
+    print(f"\n🎮 Processing {len(games)} games...")
     print("-" * 60)
     
-    for i, game_info in enumerate(preseason_games, 1):
+    for i, game_info in enumerate(games, 1):
         game_id = game_info['game_id']
         date = game_info['date']
         matchup = f"{game_info['away_team']} @ {game_info['home_team']}"
         
-        print(f"\n[{i}/{len(preseason_games)}] 🎮 {game_id}: {matchup} ({date})")
+        print(f"\n[{i}/{len(games)}] 🎮 {game_id}: {matchup} ({date})")
         
-        # Step 1: Create or verify game exists
-        if not get_or_create_game(supabase, game_id, game_info):
-            print(f"❌ Failed to create game {game_id}. Skipping.")
+        # Check if we already have box score data for this game
+        if check_if_box_score_exists(supabase, game_id):
+            print(f"⏭️  Box score already exists for {game_id}. Skipping.")
+            skipped_games += 1
             continue
         
-        # Step 2: Fetch box score
+        # Fetch box score
         box_score_data = fetch_box_score(game_id)
         
         if box_score_data:
-            # Step 3: Store in database
+            # Store in database
             stored_count = store_box_score_data(supabase, box_score_data, game_info)
             total_players_imported += stored_count
             successful_games += 1
         else:
             print(f"❌ Failed to fetch box score for game {game_id}")
         
-        # Rate limiting
+        # Rate limiting - be nice to NBA API
         time.sleep(1)
     
-    print(f"\n🎯 Import Summary:")
-    print(f"   Total games processed: {len(preseason_games)}")
-    print(f"   Successful games: {successful_games}")
+    print(f"\n{'=' * 60}")
+    print(f"🎯 Import Summary:")
+    print(f"   Total games found: {len(games)}")
+    print(f"   Games skipped (already imported): {skipped_games}")
+    print(f"   Games processed: {len(games) - skipped_games}")
+    print(f"   Successful imports: {successful_games}")
     print(f"   Total players imported: {total_players_imported}")
-    print(f"   Success rate: {(successful_games/len(preseason_games)*100):.1f}%")
+    if len(games) - skipped_games > 0:
+        print(f"   Success rate: {(successful_games/(len(games) - skipped_games)*100):.1f}%")
+    print(f"{'=' * 60}")
     
-    print(f"\n✅ Preseason box score import completed!")
+    print(f"\n✅ Box score import completed!")
 
 if __name__ == "__main__":
     main()

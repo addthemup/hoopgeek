@@ -136,6 +136,29 @@ serve(async (req) => {
 
     console.log('✅ Lineup settings:', lineupSettings);
 
+    // Parse position_unit_assignments if it's a string
+    let positionAssignments = lineupSettings.position_unit_assignments;
+    if (typeof positionAssignments === 'string') {
+      try {
+        positionAssignments = JSON.parse(positionAssignments);
+        console.log('✅ Parsed position_unit_assignments from string');
+      } catch (parseError) {
+        console.error('❌ Failed to parse position_unit_assignments:', parseError);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Invalid position_unit_assignments format' 
+          }),
+          { 
+            status: 500, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+    }
+
+    console.log('✅ Position assignments:', positionAssignments);
+
     // 2. Get current roster players
     console.log('🤖 Fetching current roster players...');
     const { data: rosterPlayers, error: rosterError } = await supabase
@@ -245,7 +268,6 @@ serve(async (req) => {
     console.log('✅ Players sorted by fantasy points:', playersWithPoints.length);
 
     // 8. Generate optimal lineup
-    const positionAssignments = lineupSettings.position_unit_assignments;
     const optimalLineup = generateOptimalLineup(playersWithPoints, positionAssignments);
 
     console.log('✅ Optimal lineup generated:', optimalLineup);

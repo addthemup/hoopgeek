@@ -1,0 +1,42 @@
+name = "hoopgeek-live-stats"
+main = "update-live-stats.js"
+compatibility_date = "2024-01-01"
+
+# ============================================================================
+# CRON TRIGGERS - Runs every minute during NBA game hours
+# ============================================================================
+
+# Schedule: Every minute during NBA game hours (covers all US timezones)
+# Runs 23:00-10:00 UTC = 6:00 PM ET - 5:00 AM ET (covers all NBA games including West Coast)
+[triggers]
+crons = ["* 23 * * *", "* 0-10 * * *"]
+
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
+# Set these in Cloudflare Dashboard OR via wrangler CLI:
+#   wrangler secret put SUPABASE_URL
+#   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+
+# Note: Don't put actual secrets here! Use wrangler secrets or dashboard.
+# These are just placeholders to show what's needed.
+
+[vars]
+# SUPABASE_URL will be set via secrets
+# SUPABASE_SERVICE_ROLE_KEY will be set via secrets
+
+# ============================================================================
+# WORKER CONFIGURATION
+# ============================================================================
+
+# Free tier limits:
+# - 100,000 requests/day (plenty for this use case)
+# - 10ms CPU time per request (usually sufficient)
+# - Unlimited cron triggers
+
+# Free tier limits:
+# - 10ms CPU time per request (sufficient for API calls + DB upserts)
+# - If you need more, upgrade to Workers Unbound ($5/month):
+# [limits]
+# cpu_ms = 30000  # 30 seconds CPU time
+

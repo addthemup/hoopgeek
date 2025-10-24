@@ -27,8 +27,8 @@
     "Name": "Kevin Durant",
     "Team": "Phoenix Suns",
     "2025-26": "$54,708,608",
-    "2026-27": null,
-    "2027-28": null,
+    "2026-27": "$43,186,175",
+    "2027-28": "$43,186,175",
     "2028-29": null
   },
   {
@@ -992,15 +992,7 @@
     "2028-29": null
   },
   {
-    "Name": "Damian Lillard",
-    "Team": "Portland Trail Blazers",
-    "2025-26": "$14,104,000",
-    "2026-27": "$13,398,800",
-    "2027-28": "$14,104,000",
-    "2028-29": null
-  },
-  {
-    "Name": "Dennis Schroder",
+    "Name": "Dennis Schroeder",
     "Team": "Chicago Bulls",
     "2025-26": "$14,104,000",
     "2026-27": "$14,809,200",
@@ -1032,7 +1024,7 @@
     "2028-29": "$13,050,000"
   },
   {
-    "Name": "Herbert Jones",
+    "Name": "Herb Jones",
     "Team": "Brooklyn Nets",
     "2025-26": "$13,937,574",
     "2026-27": "$14,898,786",
@@ -1120,7 +1112,7 @@
     "2028-29": "$24,408,490"
   },
   {
-    "Name": "Mitchell Robinson",
+    "Name": "M. Robinson",
     "Team": "Minnesota Timberwolves",
     "2025-26": "$12,954,546",
     "2026-27": null,
@@ -1136,7 +1128,7 @@
     "2028-29": null
   },
   {
-    "Name": "Dorian Finney-Smith",
+    "Name": "D. Finney-Smith",
     "Team": "Phoenix Suns",
     "2025-26": "$12,700,000",
     "2026-27": "$13,335,000",
@@ -1243,9 +1235,9 @@
     "Name": "Keegan Murray",
     "Team": "Chicago Bulls",
     "2025-26": "$11,144,093",
-    "2026-27": "$14,699,059",
-    "2027-28": null,
-    "2028-29": null
+    "2026-27": "$24,137,931",
+    "2027-28": "$26,068,966",
+    "2028-29": "$28,000,000"
   },
   {
     "Name": "VJ Edgecombe",
@@ -1296,7 +1288,7 @@
     "2028-29": null
   },
   {
-    "Name": "Wendell Carter Jr.",
+    "Name": "Wendell Carter",
     "Team": "New Orleans Pelicans",
     "2025-26": "$10,850,000",
     "2026-27": "$18,102,000",
@@ -1344,7 +1336,7 @@
     "2028-29": null
   },
   {
-    "Name": "T.J. McConnell",
+    "Name": "TJ McConnell",
     "Team": "Houston Rockets",
     "2025-26": "$10,200,000",
     "2026-27": "$11,000,000",
@@ -1400,7 +1392,7 @@
     "2028-29": null
   },
   {
-    "Name": "Derrick Jones Jr.",
+    "Name": "Derrick Jones",
     "Team": "LA Clippers",
     "2025-26": "$10,000,000",
     "2026-27": "$10,476,190",
@@ -1547,12 +1539,12 @@
     "Name": "Shaedon Sharpe",
     "Team": "Portland Trail Blazers",
     "2025-26": "$8,399,983",
-    "2026-27": "$11,264,377",
-    "2027-28": null,
-    "2028-29": null
+    "2026-27": "$20,089,286",
+    "2027-28": "$21,696,429",
+    "2028-29": "$23,303,571"
   },
   {
-    "Name": "Kelly Oubre Jr.",
+    "Name": "Kelly Oubre",
     "Team": "Philadelphia 76ers",
     "2025-26": "$8,382,150",
     "2026-27": null,
@@ -1597,14 +1589,6 @@
     "2025-26": "$8,177,778",
     "2026-27": "$7,466,667",
     "2027-28": "$7,466,667",
-    "2028-29": null
-  },
-  {
-    "Name": "Deandre Ayton",
-    "Team": "Los Angeles Lakers",
-    "2025-26": "$8,104,000",
-    "2026-27": "$8,104,000",
-    "2027-28": null,
     "2028-29": null
   },
   {
@@ -1984,7 +1968,7 @@
     "2028-29": null
   },
   {
-    "Name": "Guerschon Yabusele",
+    "Name": "G. Yabusele",
     "Team": "Minnesota Timberwolves",
     "2025-26": "$5,500,000",
     "2026-27": "$5,775,000",
@@ -2032,14 +2016,6 @@
     "2028-29": null
   },
   {
-    "Name": "Bradley Beal",
-    "Team": "LA Clippers",
-    "2025-26": "$5,354,000",
-    "2026-27": "$5,621,700",
-    "2027-28": null,
-    "2028-29": null
-  },
-  {
     "Name": "Paul Reed",
     "Team": "Detroit Pistons",
     "2025-26": "$5,335,894",
@@ -2072,10 +2048,2258 @@
     "2028-29": "$8,107,918"
   },
   {
-    "Name": "Marcus Smart",
-    "Team": "Los Angeles Lakers",
+    "Name": "Kevin Porter Jr.",
+    "Team": "Milwaukee Bucks",
     "2025-26": "$5,134,000",
     "2026-27": "$5,390,700",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Moritz Wagner",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$5,000,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Nick Richards",
+    "Team": "Phoenix Suns",
+    "2025-26": "$5,000,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Andre Drummond",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$5,000,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Gradey Dick",
+    "Team": "Washington Wizards",
+    "2025-26": "$4,990,379",
+    "2026-27": "$7,131,251",
+    "2027-28": "$10,575,645",
+    "2028-29": null
+  },
+  {
+    "Name": "Malaki Branham",
+    "Team": "Orlando Magic",
+    "2025-26": "$4,962,033",
+    "2026-27": "$7,110,593",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Devin Carter",
+    "Team": "Chicago Bulls",
+    "2025-26": "$4,923,720",
+    "2026-27": "$5,158,080",
+    "2027-28": "$7,370,896",
+    "2028-29": "$10,931,038"
+  },
+  {
+    "Name": "Christian Braun",
+    "Team": "Denver Nuggets",
+    "2025-26": "$4,921,797",
+    "2026-27": "$7,092,309",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Carter Bryant",
+    "Team": "Sacramento Kings",
+    "2025-26": "$4,900,320",
+    "2026-27": "$5,145,360",
+    "2027-28": "$5,390,640",
+    "2028-29": "$7,983,539"
+  },
+  {
+    "Name": "Walker Kessler",
+    "Team": "Utah Jazz",
+    "2025-26": "$4,878,938",
+    "2026-27": "$7,064,703",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jordan Hawkins",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$4,741,216",
+    "2026-27": "$7,021,740",
+    "2027-28": "$10,469,414",
+    "2028-29": null
+  },
+  {
+    "Name": "Bub Carrington",
+    "Team": "Orlando Magic",
+    "2025-26": "$4,677,600",
+    "2026-27": "$4,900,560",
+    "2027-28": "$7,257,729",
+    "2028-29": "$10,821,273"
+  },
+  {
+    "Name": "Thomas Sorber",
+    "Team": "San Antonio Spurs",
+    "2025-26": "$4,655,040",
+    "2026-27": "$4,887,720",
+    "2027-28": "$5,120,400",
+    "2028-29": "$7,849,573"
+  },
+  {
+    "Name": "Kobe Bufkin",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$4,503,668",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jose Alvarado",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$4,500,000",
+    "2026-27": "$4,500,000",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Nikola Jovic",
+    "Team": "Indiana Pacers",
+    "2025-26": "$4,445,417",
+    "2026-27": "$16,200,000",
+    "2027-28": "$14,904,000",
+    "2028-29": "$15,096,000"
+  },
+  {
+    "Name": "Kel'el Ware",
+    "Team": "Indiana Pacers",
+    "2025-26": "$4,443,360",
+    "2026-27": "$4,654,920",
+    "2027-28": "$7,135,992",
+    "2028-29": "$10,689,716"
+  },
+  {
+    "Name": "Yang Hansen",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$4,422,360",
+    "2026-27": "$4,643,520",
+    "2027-28": "$4,864,920",
+    "2028-29": "$7,462,788"
+  },
+  {
+    "Name": "Peyton Watson",
+    "Team": "Denver Nuggets",
+    "2025-26": "$4,356,476",
+    "2026-27": "$6,534,714",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Miles McBride",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$4,333,333",
+    "2026-27": "$3,956,523",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Keyonte George",
+    "Team": "Utah Jazz",
+    "2025-26": "$4,278,754",
+    "2026-27": "$6,563,608",
+    "2027-28": "$9,878,230",
+    "2028-29": null
+  },
+  {
+    "Name": "Jared McCain",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$4,221,360",
+    "2026-27": "$4,422,600",
+    "2027-28": "$6,784,268",
+    "2028-29": "$10,210,323"
+  },
+  {
+    "Name": "Joan Beringer",
+    "Team": "Miami Heat",
+    "2025-26": "$4,201,080",
+    "2026-27": "$4,411,200",
+    "2027-28": "$4,621,200",
+    "2028-29": "$7,098,163"
+  },
+  {
+    "Name": "Kevin Love",
+    "Team": "Utah Jazz",
+    "2025-26": "$4,150,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dalton Knecht",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$4,010,160",
+    "2026-27": "$4,201,080",
+    "2027-28": "$6,452,859",
+    "2028-29": "$9,756,722"
+  },
+  {
+    "Name": "Ryan Rollins",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$4,000,000",
+    "2026-27": "$4,000,000",
+    "2027-28": "$4,000,000",
+    "2028-29": null
+  },
+  {
+    "Name": "Dwight Powell",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$4,000,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "W. Clayton",
+    "Team": "Utah Jazz",
+    "2025-26": "$3,991,320",
+    "2026-27": "$4,190,520",
+    "2027-28": "$4,390,320",
+    "2028-29": "$6,752,312"
+  },
+  {
+    "Name": "Jaime Jaquez Jr.",
+    "Team": "Indiana Pacers",
+    "2025-26": "$3,861,600",
+    "2026-27": "$5,939,141",
+    "2027-28": "$9,021,541",
+    "2028-29": null
+  },
+  {
+    "Name": "Nolan Traore",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$3,811,560",
+    "2026-27": "$4,002,000",
+    "2027-28": "$4,193,040",
+    "2028-29": "$6,457,282"
+  },
+  {
+    "Name": "Tristan da Silva",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$3,809,520",
+    "2026-27": "$3,991,200",
+    "2027-28": "$6,138,466",
+    "2028-29": "$9,324,329"
+  },
+  {
+    "Name": "Cole Anthony",
+    "Team": "Toronto Raptors",
+    "2025-26": "$3,700,000",
+    "2026-27": "$3,700,000",
+    "2027-28": "$3,700,000",
+    "2028-29": null
+  },
+  {
+    "Name": "Taurean Prince",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$3,697,105",
+    "2026-27": "$3,881,960",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Gary Trent Jr.",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$3,697,105",
+    "2026-27": "$3,881,960",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Brandin Podziemski",
+    "Team": "Golden State Warriors",
+    "2025-26": "$3,687,960",
+    "2026-27": "$5,679,458",
+    "2027-28": "$8,666,111",
+    "2028-29": null
+  },
+  {
+    "Name": "S. Mykhailiuk",
+    "Team": "Utah Jazz",
+    "2025-26": "$3,675,000",
+    "2026-27": "$3,850,000",
+    "2027-28": "$4,025,000",
+    "2028-29": null
+  },
+  {
+    "Name": "K. Jakucionis",
+    "Team": "Indiana Pacers",
+    "2025-26": "$3,658,800",
+    "2026-27": "$3,841,680",
+    "2027-28": "$4,024,440",
+    "2028-29": "$6,205,687"
+  },
+  {
+    "Name": "Ja'Kobe Walter",
+    "Team": "Washington Wizards",
+    "2025-26": "$3,638,160",
+    "2026-27": "$3,811,800",
+    "2027-28": "$5,870,172",
+    "2028-29": "$8,957,882"
+  },
+  {
+    "Name": "R. Westbrook",
+    "Team": "Chicago Bulls",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Bismack Biyombo",
+    "Team": "Sacramento Kings",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Doug McDermott",
+    "Team": "Chicago Bulls",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chris Paul",
+    "Team": "LA Clippers",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Kyle Lowry",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "S. Dinwiddie",
+    "Team": "Team 5312",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tim Hardaway Jr.",
+    "Team": "Denver Nuggets",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Gary Harris",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$3,634,153",
+    "2026-27": "$3,815,861",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Larry Nance Jr.",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Eric Gordon",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Garrett Temple",
+    "Team": "Washington Wizards",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Mason Plumlee",
+    "Team": "Team 5312",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Joe Ingles",
+    "Team": "Miami Heat",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jeff Green",
+    "Team": "Phoenix Suns",
+    "2025-26": "$3,634,153",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Cam Whitmore",
+    "Team": "Orlando Magic",
+    "2025-26": "$3,539,976",
+    "2026-27": "$5,458,643",
+    "2027-28": "$8,368,099",
+    "2028-29": null
+  },
+  {
+    "Name": "Will Riley",
+    "Team": "Orlando Magic",
+    "2025-26": "$3,512,520",
+    "2026-27": "$3,688,320",
+    "2027-28": "$3,864,000",
+    "2028-29": "$6,155,352"
+  },
+  {
+    "Name": "Jaylon Tyson",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$3,492,480",
+    "2026-27": "$3,658,560",
+    "2027-28": "$5,641,500",
+    "2028-29": "$8,648,419"
+  },
+  {
+    "Name": "Jaxson Hayes",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$3,449,323",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Noah Clowney",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$3,398,406",
+    "2026-27": "$5,413,661",
+    "2027-28": "$8,342,451",
+    "2028-29": null
+  },
+  {
+    "Name": "Drake Powell",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$3,372,240",
+    "2026-27": "$3,540,600",
+    "2027-28": "$3,709,320",
+    "2028-29": "$6,101,832"
+  },
+  {
+    "Name": "Yves Missi",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$3,353,040",
+    "2026-27": "$3,512,760",
+    "2027-28": "$5,595,827",
+    "2028-29": "$8,623,169"
+  },
+  {
+    "Name": "Blake Wesley",
+    "Team": "Orlando Magic",
+    "2025-26": "$3,347,458",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Gary Payton II",
+    "Team": "Golden State Warriors",
+    "2025-26": "$3,303,774",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dante Exum",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$3,303,774",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Thomas Bryant",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$3,287,409",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chris Boucher",
+    "Team": "Boston Celtics",
+    "2025-26": "$3,287,409",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dariq Whitehead",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$3,262,560",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Asa Newell",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$3,237,480",
+    "2026-27": "$3,399,480",
+    "2027-28": "$3,560,880",
+    "2028-29": "$6,042,814"
+  },
+  {
+    "Name": "DaRon Holmes",
+    "Team": "Denver Nuggets",
+    "2025-26": "$3,218,760",
+    "2026-27": "$3,372,120",
+    "2027-28": "$5,547,137",
+    "2028-29": "$8,586,968"
+  },
+  {
+    "Name": "Kris Murray",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$3,132,000",
+    "2026-27": "$5,315,004",
+    "2027-28": "$8,265,502",
+    "2028-29": null
+  },
+  {
+    "Name": "Nique Clifford",
+    "Team": "Chicago Bulls",
+    "2025-26": "$3,108,120",
+    "2026-27": "$3,263,400",
+    "2027-28": "$3,418,800",
+    "2028-29": "$5,979,481"
+  },
+  {
+    "Name": "Nassir Little",
+    "Team": "Phoenix Suns",
+    "2025-26": "$3,107,143",
+    "2026-27": "$3,107,143",
+    "2027-28": "$3,107,143",
+    "2028-29": "$3,107,143"
+  },
+  {
+    "Name": "AJ Johnson",
+    "Team": "Orlando Magic",
+    "2025-26": "$3,090,480",
+    "2026-27": "$3,237,120",
+    "2027-28": "$5,493,393",
+    "2028-29": "$8,542,226"
+  },
+  {
+    "Name": "De'Anthony Melton",
+    "Team": "Golden State Warriors",
+    "2025-26": "$3,080,921",
+    "2026-27": "$3,451,779",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Landry Shamet",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Josh Okogie",
+    "Team": "Phoenix Suns",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Marvin Bagley",
+    "Team": "Orlando Magic",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Drew Eubanks",
+    "Team": "Chicago Bulls",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Bruce Brown",
+    "Team": "Denver Nuggets",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Aaron Holiday",
+    "Team": "Phoenix Suns",
+    "2025-26": "$3,080,921",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Ajay Mitchell",
+    "Team": "San Antonio Spurs",
+    "2025-26": "$3,000,000",
+    "2026-27": "$2,850,000",
+    "2027-28": "$2,850,000",
+    "2028-29": null
+  },
+  {
+    "Name": "Kyle Filipowski",
+    "Team": "Utah Jazz",
+    "2025-26": "$3,000,000",
+    "2026-27": "$3,000,000",
+    "2027-28": "$3,000,000",
+    "2028-29": null
+  },
+  {
+    "Name": "Julian Champagnie",
+    "Team": "Sacramento Kings",
+    "2025-26": "$3,000,000",
+    "2026-27": "$3,000,000",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jase Richardson",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$2,983,320",
+    "2026-27": "$3,132,360",
+    "2027-28": "$3,282,000",
+    "2028-29": "$5,910,882"
+  },
+  {
+    "Name": "Kyshawn George",
+    "Team": "Orlando Magic",
+    "2025-26": "$2,966,760",
+    "2026-27": "$3,108,000",
+    "2027-28": "$5,435,892",
+    "2028-29": "$8,490,863"
+  },
+  {
+    "Name": "Tony Bradley",
+    "Team": "Houston Rockets",
+    "2025-26": "$2,940,876",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Marcus Sasser",
+    "Team": "Detroit Pistons",
+    "2025-26": "$2,886,431",
+    "2026-27": "$5,198,462",
+    "2027-28": "$8,156,386",
+    "2028-29": null
+  },
+  {
+    "Name": "Ben Saraf",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,884,560",
+    "2026-27": "$3,028,560",
+    "2027-28": "$3,172,920",
+    "2028-29": "$5,720,776"
+  },
+  {
+    "Name": "Thanasis Antetokounmpo",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,874,436",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Amir Coffey",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,874,436",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Javonte Green",
+    "Team": "Detroit Pistons",
+    "2025-26": "$2,874,436",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "J. McLaughlin",
+    "Team": "Sacramento Kings",
+    "2025-26": "$2,874,436",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Pacome Dadiet",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,847,600",
+    "2026-27": "$2,983,680",
+    "2027-28": "$5,373,608",
+    "2028-29": "$5,620,793"
+  },
+  {
+    "Name": "Danny Wolf",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,801,280",
+    "2026-27": "$2,941,440",
+    "2027-28": "$3,081,840",
+    "2028-29": "$5,559,640"
+  },
+  {
+    "Name": "Ben Sheppard",
+    "Team": "Houston Rockets",
+    "2025-26": "$2,790,720",
+    "2026-27": "$5,031,668",
+    "2027-28": "$7,930,389",
+    "2028-29": null
+  },
+  {
+    "Name": "Hugo Gonzalez",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,783,880",
+    "2026-27": "$2,923,560",
+    "2027-28": "$3,062,640",
+    "2028-29": "$5,528,065"
+  },
+  {
+    "Name": "Liam McNeeley",
+    "Team": "Team 5312",
+    "2025-26": "$2,763,960",
+    "2026-27": "$2,902,080",
+    "2027-28": "$3,040,320",
+    "2028-29": "$5,487,778"
+  },
+  {
+    "Name": "Dillon Jones",
+    "Team": "Orlando Magic",
+    "2025-26": "$2,753,280",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Y. Niederhauser",
+    "Team": "LA Clippers",
+    "2025-26": "$2,743,800",
+    "2026-27": "$2,880,960",
+    "2027-28": "$3,018,480",
+    "2028-29": "$5,448,356"
+  },
+  {
+    "Name": "Nick Smith Jr.",
+    "Team": "Team 5312",
+    "2025-26": "$2,710,680",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Brice Sensabaugh",
+    "Team": "Utah Jazz",
+    "2025-26": "$2,693,460",
+    "2026-27": "$4,861,695",
+    "2027-28": "$7,730,095",
+    "2028-29": null
+  },
+  {
+    "Name": "Julian Strawther",
+    "Team": "Denver Nuggets",
+    "2025-26": "$2,674,148",
+    "2026-27": "$4,826,838",
+    "2027-28": "$7,722,940",
+    "2028-29": null
+  },
+  {
+    "Name": "Terrance Shannon Jr.",
+    "Team": "Miami Heat",
+    "2025-26": "$2,674,080",
+    "2026-27": "$2,801,640",
+    "2027-28": "$5,054,159",
+    "2028-29": "$8,000,733"
+  },
+  {
+    "Name": "Anthony Gill",
+    "Team": "Orlando Magic",
+    "2025-26": "$2,667,947",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "James Wiseman",
+    "Team": "Houston Rockets",
+    "2025-26": "$2,667,947",
+    "2026-27": "$3,018,158",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jae'Sean Tate",
+    "Team": "Phoenix Suns",
+    "2025-26": "$2,667,947",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Ryan Dunn",
+    "Team": "Phoenix Suns",
+    "2025-26": "$2,657,760",
+    "2026-27": "$2,784,240",
+    "2027-28": "$5,025,553",
+    "2028-29": "$7,990,629"
+  },
+  {
+    "Name": "Kobe Brown",
+    "Team": "LA Clippers",
+    "2025-26": "$2,654,692",
+    "2026-27": "$4,791,718",
+    "2027-28": "$7,666,748",
+    "2028-29": null
+  },
+  {
+    "Name": "Isaiah Collier",
+    "Team": "Utah Jazz",
+    "2025-26": "$2,638,200",
+    "2026-27": "$2,763,960",
+    "2027-28": "$4,988,948",
+    "2028-29": "$7,982,316"
+  },
+  {
+    "Name": "B. Scheierman",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,619,000",
+    "2026-27": "$2,744,040",
+    "2027-28": "$4,952,992",
+    "2028-29": "$7,924,787"
+  },
+  {
+    "Name": "Xavier Tillman",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,546,675",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Cam Spencer",
+    "Team": "Toronto Raptors",
+    "2025-26": "$2,537,989",
+    "2026-27": "$2,411,090",
+    "2027-28": "$2,616,754",
+    "2028-29": "$2,830,685"
+  },
+  {
+    "Name": "Bones Hyland",
+    "Team": "Miami Heat",
+    "2025-26": "$2,461,463",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jaden Springer",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$2,461,463",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Lindy Waters III",
+    "Team": "Sacramento Kings",
+    "2025-26": "$2,461,463",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jock Landale",
+    "Team": "Toronto Raptors",
+    "2025-26": "$2,461,463",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "S. Mamukelashvili",
+    "Team": "Washington Wizards",
+    "2025-26": "$2,461,463",
+    "2026-27": "$2,801,346",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jericho Sims",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,461,463",
+    "2026-27": "$2,801,346",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Trendon Watford",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$2,461,463",
+    "2026-27": "$2,801,346",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Luka Garza",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,461,463",
+    "2026-27": "$2,801,346",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dru Smith",
+    "Team": "Indiana Pacers",
+    "2025-26": "$2,378,870",
+    "2026-27": "$2,584,539",
+    "2027-28": "$2,934,742",
+    "2028-29": null
+  },
+  {
+    "Name": "Josh Minott",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,378,870",
+    "2026-27": "$2,584,539",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Collin Gillespie",
+    "Team": "Phoenix Suns",
+    "2025-26": "$2,378,870",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jordan Goodwin",
+    "Team": "Phoenix Suns",
+    "2025-26": "$2,349,578",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jay Huff",
+    "Team": "Houston Rockets",
+    "2025-26": "$2,349,578",
+    "2026-27": "$2,667,944",
+    "2027-28": "$3,005,085",
+    "2028-29": null
+  },
+  {
+    "Name": "Vit Krejci",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$2,349,578",
+    "2026-27": "$2,667,944",
+    "2027-28": "$3,005,085",
+    "2028-29": null
+  },
+  {
+    "Name": "Neemias Queta",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,349,578",
+    "2026-27": "$2,667,944",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "AJ Green",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,301,587",
+    "2026-27": "$10,044,643",
+    "2027-28": "$10,848,214",
+    "2028-29": "$11,651,786"
+  },
+  {
+    "Name": "V. Williams",
+    "Team": "Toronto Raptors",
+    "2025-26": "$2,301,587",
+    "2026-27": "$2,489,752",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Keon Ellis",
+    "Team": "Chicago Bulls",
+    "2025-26": "$2,301,587",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chris Livingston",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,296,274",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Sion James",
+    "Team": "Team 5312",
+    "2025-26": "$2,296,274",
+    "2026-27": "$2,411,090",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Ryan Kalkbrenner",
+    "Team": "Team 5312",
+    "2025-26": "$2,296,274",
+    "2026-27": "$2,411,090",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Moussa Diabate",
+    "Team": "Team 5312",
+    "2025-26": "$2,270,735",
+    "2026-27": "$2,461,462",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Brandon Williams",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$2,270,735",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Scotty Pippen Jr.",
+    "Team": "Toronto Raptors",
+    "2025-26": "$2,270,735",
+    "2026-27": "$2,461,462",
+    "2027-28": "$2,789,215",
+    "2028-29": null
+  },
+  {
+    "Name": "Gui Santos",
+    "Team": "Golden State Warriors",
+    "2025-26": "$2,221,677",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Duop Reath",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$2,221,677",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Toumani Camara",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$2,221,677",
+    "2026-27": "$18,303,571",
+    "2027-28": "$19,767,857",
+    "2028-29": "$21,232,143"
+  },
+  {
+    "Name": "GG Jackson",
+    "Team": "Toronto Raptors",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Julian Phillips",
+    "Team": "Charlotte Hornets",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Leonard Miller",
+    "Team": "Miami Heat",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jalen Pickett",
+    "Team": "Denver Nuggets",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Hunter Tyson",
+    "Team": "Denver Nuggets",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jordan Walsh",
+    "Team": "Boston Celtics",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Andre Jackson Jr",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Trayce Jackson-Davis",
+    "Team": "Golden State Warriors",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Craig Porter",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Rayan Rupert",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$2,221,677",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jalen Wilson",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,221,677",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Mouhamed Gueye",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$2,221,677",
+    "2026-27": "$2,406,205",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "JaVale McGee",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$2,208,856",
+    "2026-27": "$2,208,856",
+    "2027-28": "$2,208,856",
+    "2028-29": null
+  },
+  {
+    "Name": "Tyrese Martin",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,191,897",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tyler Kolek",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$2,191,897",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Jaylen Clark",
+    "Team": "Miami Heat",
+    "2025-26": "$2,191,897",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "N'Faly Dante",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$2,048,494",
+    "2026-27": "$2,411,090",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Keaton Wallace",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$2,048,494",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Nigel Hayes",
+    "Team": "Phoenix Suns",
+    "2025-26": "$2,048,494",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Justin Edwards",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$2,048,494",
+    "2026-27": "$2,411,090",
+    "2027-28": "$2,616,754",
+    "2028-29": null
+  },
+  {
+    "Name": "Quinten Post",
+    "Team": "Golden State Warriors",
+    "2025-26": "$1,955,377",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jamison Battle",
+    "Team": "Washington Wizards",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Bobi Klintman",
+    "Team": "Detroit Pistons",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Karlo Matkovic",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Adem Bona",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Ariel Hukporti",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$1,955,377",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Johnny Furphy",
+    "Team": "Houston Rockets",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Tyler Smith",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Cam Christie",
+    "Team": "LA Clippers",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Jaylen Wells",
+    "Team": "Toronto Raptors",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Jonathan Mogbo",
+    "Team": "Washington Wizards",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Oso Ighodaro",
+    "Team": "Phoenix Suns",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jamal Shead",
+    "Team": "Washington Wizards",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Bronny James",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": "$2,486,995",
+    "2028-29": null
+  },
+  {
+    "Name": "Isaac Jones",
+    "Team": "Chicago Bulls",
+    "2025-26": "$1,955,377",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Pelle Larsson",
+    "Team": "Indiana Pacers",
+    "2025-26": "$1,955,377",
+    "2026-27": "$2,296,271",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Keshad Johnson",
+    "Team": "Indiana Pacers",
+    "2025-26": "$1,955,377",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chaz Lanier",
+    "Team": "Detroit Pistons",
+    "2025-26": "$1,372,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Mohamed Diawara",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$1,272,870",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Will Richard",
+    "Team": "Golden State Warriors",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Nikola Djurisic",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": null
+  },
+  {
+    "Name": "Kam Jones",
+    "Team": "Houston Rockets",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Adou Thiero",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": null
+  },
+  {
+    "Name": "Rasheer Fleming",
+    "Team": "Phoenix Suns",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Micah Peavy",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Noah Penda",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Maxime Raynaud",
+    "Team": "Chicago Bulls",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": null
+  },
+  {
+    "Name": "Johni Broome",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "Tyrese Proctor",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$1,272,870",
+    "2026-27": "$2,150,917",
+    "2027-28": "$2,525,901",
+    "2028-29": "$2,735,698"
+  },
+  {
+    "Name": "O. Prosper",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$1,002,360",
+    "2026-27": "$1,002,360",
+    "2027-28": "$1,002,360",
+    "2028-29": null
+  },
+  {
+    "Name": "EJ Liddell",
+    "Team": "Phoenix Suns",
+    "2025-26": "$706,898",
+    "2026-27": "$706,898",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Vasilije Micic",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$666,667",
+    "2026-27": "$666,667",
+    "2027-28": "$666,667",
+    "2028-29": null
+  },
+  {
+    "Name": "Jahmyl Telfort",
+    "Team": "LA Clippers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chris Youngblood",
+    "Team": "San Antonio Spurs",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Trentyn Flowers",
+    "Team": "Charlotte Hornets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Pat Spencer",
+    "Team": "Golden State Warriors",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Sharife Cooper",
+    "Team": "Orlando Magic",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tosan Evbuomwan",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Trey Jemison",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Kevin McCullar",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Johnny Juzang",
+    "Team": "Miami Heat",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Alex Toohey",
+    "Team": "Golden State Warriors",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Colin Castleton",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jahmir Young",
+    "Team": "Indiana Pacers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Ron Harper Jr",
+    "Team": "Boston Celtics",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Daniss Jenkins",
+    "Team": "Detroit Pistons",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Riley Minix",
+    "Team": "Sacramento Kings",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Harrison Ingram",
+    "Team": "Sacramento Kings",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Enrique Freeman",
+    "Team": "Miami Heat",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "John Tonje",
+    "Team": "Utah Jazz",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Bryce McGowens",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Daeqwon Plowden",
+    "Team": "Chicago Bulls",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Colby Jones",
+    "Team": "Detroit Pistons",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jordan Miller",
+    "Team": "LA Clippers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jamal Cain",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "JD Davison",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Isaiah Crawford",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Antonio Reeves",
+    "Team": "Team 5312",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "David Jones",
+    "Team": "Sacramento Kings",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Orlando Robinson",
+    "Team": "New Orleans Pelicans",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Christian Koloko",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Curtis Jones",
+    "Team": "Denver Nuggets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "PJ Hall",
+    "Team": "Toronto Raptors",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Caleb Houstan",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Drew Peterson",
+    "Team": "Team 5312",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jacob Toppin",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tristan Vukcevic",
+    "Team": "Orlando Magic",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Javon Small",
+    "Team": "Toronto Raptors",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Alijah Martin",
+    "Team": "Washington Wizards",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Kobe Sanders",
+    "Team": "LA Clippers",
+    "2025-26": "$636,435",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dominick Barlow",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Branden Carlson",
+    "Team": "San Antonio Spurs",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Isaiah Livers",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Quenton Jackson",
+    "Team": "Houston Rockets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Moussa Cisse",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jabari Walker",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Isaiah Stevens",
+    "Team": "Chicago Bulls",
+    "2025-26": "$636,435",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Koby Brea",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jamir Watkins",
+    "Team": "Orlando Magic",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Kevon Harris",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tyson Etienne",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Trey Alexander",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Spencer Jones",
+    "Team": "Denver Nuggets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Brooks Barnhizer",
+    "Team": "San Antonio Spurs",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Hunter Dickinson",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Mark Sears",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Ryan Nembhard",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Miles Kelly",
+    "Team": "Los Angeles Lakers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Eli Ndiaye",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Luke Travers",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Vladislav Goldin",
+    "Team": "Indiana Pacers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Dylan Cardwell",
+    "Team": "Chicago Bulls",
+    "2025-26": "$636,435",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "CJ Huntley",
+    "Team": "Phoenix Suns",
+    "2025-26": "$636,435",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Lachlan Olbrich",
+    "Team": "Charlotte Hornets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tamar Bates",
+    "Team": "Denver Nuggets",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Hunter Sallis",
+    "Team": "Philadelphia 76ers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Caleb Love",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Chucky Hepburn",
+    "Team": "Washington Wizards",
+    "2025-26": "$636,435",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Oscar Tshiebwe",
+    "Team": "Utah Jazz",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Amari Williams",
+    "Team": "Boston Celtics",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Taelon Peter",
+    "Team": "Houston Rockets",
+    "2025-26": "$636,434",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Myron Gardner",
+    "Team": "Indiana Pacers",
+    "2025-26": "$636,434",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Rocco Zikarsky",
+    "Team": "Miami Heat",
+    "2025-26": "$636,434",
+    "2026-27": "$679,042",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Emanuel Miller",
+    "Team": "Charlotte Hornets",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Pete Nance",
+    "Team": "Milwaukee Bucks",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Nae'qwan Tomlin",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Sidy Cissoko",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jackson Rowe",
+    "Team": "Golden State Warriors",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Tolu Smith",
+    "Team": "Detroit Pistons",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "RayJ Dennis",
+    "Team": "Houston Rockets",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Elijah Harkless",
+    "Team": "Utah Jazz",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "KJ Simpson",
+    "Team": "Team 5312",
+    "2025-26": "$636,434",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Mamadi Diakite",
+    "Team": "Toronto Raptors",
+    "2025-26": "$464,050",
+    "2026-27": "$464,050",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Ricky Rubio",
+    "Team": "Cleveland Cavaliers",
+    "2025-26": "$424,672",
+    "2026-27": "$424,672",
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Didi Louzada",
+    "Team": "Portland Trail Blazers",
+    "2025-26": "$268,032",
+    "2026-27": "$268,032",
+    "2027-28": "$268,032",
+    "2028-29": null
+  },
+  {
+    "Name": "Richaun Holmes",
+    "Team": "Orlando Magic",
+    "2025-26": "$250,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Maxwell Lewis",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$100,000",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Yuri Collins",
+    "Team": "Minnesota Timberwolves",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "RJ Luis Jr",
+    "Team": "Boston Celtics",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "David Roddy",
+    "Team": "Atlanta Hawks",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Lester Quinones",
+    "Team": "Brooklyn Nets",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Patrick Baldwin Jr.",
+    "Team": "LA Clippers",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Seth Lundy",
+    "Team": "LA Clippers",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Jaylen Martin",
+    "Team": "Orlando Magic",
+    "2025-26": "$85,300",
+    "2026-27": null,
+    "2027-28": null,
+    "2028-29": null
+  },
+  {
+    "Name": "Zyon Pullin",
+    "Team": "Toronto Raptors",
+    "2025-26": "$85,300",
+    "2026-27": null,
     "2027-28": null,
     "2028-29": null
   }

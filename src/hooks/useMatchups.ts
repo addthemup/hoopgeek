@@ -5,6 +5,7 @@ import { FantasyTeam } from '../types';
 export interface Matchup {
   id: string;
   league_id: string;
+  season_id: string;
   fantasy_team1_id: string;
   fantasy_team2_id: string;
   week_number: number;

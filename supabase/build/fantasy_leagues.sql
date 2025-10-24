@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS fantasy_leagues (
     -- Additional Settings
     trades_enabled BOOLEAN DEFAULT true,
     public_league BOOLEAN DEFAULT false,
+    commissioner_notes TEXT, -- Commissioner notes visible to all league members
     
     -- System Fields
     invite_code TEXT UNIQUE NOT NULL,

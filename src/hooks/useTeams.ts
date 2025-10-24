@@ -25,10 +25,18 @@ export function useTeams(leagueId: string) {
       }
 
       console.log(`✅ Successfully fetched ${data?.length || 0} teams`)
+      console.log('📊 Teams data:', data?.map(t => ({ 
+        id: t.id, 
+        name: t.team_name, 
+        user_id: t.user_id,
+        league_id: t.league_id 
+      })))
       return data as FantasyTeam[]
     },
     enabled: !!leagueId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 30, // Reduced to 30 seconds for better freshness
+    refetchOnMount: 'always', // Always refetch when component mounts
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   })
 }
 

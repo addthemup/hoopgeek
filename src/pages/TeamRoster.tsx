@@ -26,10 +26,17 @@ import FuturePicks from '../components/Team/FuturePicks';
 import TeamPerformanceRadial from '../components/Team/TeamPerformanceRadial';
 import { useCurrentFantasyWeek } from '../hooks/useCurrentFantasyWeek';
 import { useMatchups } from '../hooks/useMatchups';
+import Trades from './Trades';
 
 interface TeamRosterProps {
   leagueId: string;
   teamId?: string;
+}
+
+interface TradeContext {
+  player: any;
+  teamId: string;
+  teamName: string;
 }
 
 // Component to handle player avatar with proper error handling
@@ -63,6 +70,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
   const { data: teams } = useTeams(leagueId);
   const { data: league } = useLeague(leagueId);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
+  const [tradeContext, setTradeContext] = useState<TradeContext | null>(null);
   
   // Determine which team to display
   const selectedTeam = teamId 
@@ -105,46 +113,20 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
     fantasyWeek?.week_number
   );
 
-  // Calculate actual salary from roster
-  const { data: actualSalary } = useQuery({
-    queryKey: ['team-salary-usage', selectedTeam?.id],
-    queryFn: async () => {
-      if (!selectedTeam?.id) return 0;
-
-      try {
-        const { data: rosterData, error } = await supabase
-          .from('fantasy_roster_spots')
-          .select(`
-            player:player_id (
-              nba_hoopshype_salaries (
-                salary_2025_26
-              )
-            )
-          `)
-          .eq('fantasy_team_id', selectedTeam.id)
-          .not('player_id', 'is', null);
-
-        if (error) {
-          console.error(`Error fetching roster for salary calculation:`, error);
-          return 0;
-        }
-
-        const totalSalary = rosterData?.reduce((sum, rosterSpot) => {
-          const player = rosterSpot.player as any;
-          const salaryData = player?.nba_hoopshype_salaries?.[0];
-          const playerSalary = salaryData?.salary_2025_26 || 0;
-          return sum + playerSalary;
-        }, 0) || 0;
-
-        return totalSalary;
-      } catch (error) {
-        console.error(`Error calculating salary:`, error);
-        return 0;
-      }
-    },
-    enabled: !!selectedTeam?.id,
-    staleTime: 1000 * 60 * 2, // 2 minutes
-  });
+  // Calculate actual salary from roster data
+  const actualSalary = useMemo(() => {
+    if (!roster) return 0;
+    
+    const total = roster.reduce((sum, rosterSpot) => {
+      const player = rosterSpot.player as any;
+      const salaryData = player?.nba_hoopshype_salaries?.[0];
+      const playerSalary = salaryData?.salary_2025_26 || 0;
+      return sum + playerSalary;
+    }, 0);
+    
+    console.log('💰 Calculated total salary:', total, 'from', roster.filter(r => r.player).length, 'players');
+    return total;
+  }, [roster]);
 
   const getPositionColor = (position: string) => {
     switch (position) {
@@ -245,6 +227,19 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
     setSelectedPlayer(null);
   };
 
+  const handleInitiateTrade = (player: any, teamId: string, teamName: string) => {
+    setTradeContext({ player, teamId, teamName });
+  };
+
+  const handleBackFromTrades = () => {
+    setTradeContext(null);
+  };
+
+  // Show trades page if trade context is set
+  if (tradeContext) {
+    return <Trades leagueId={leagueId} tradeContext={tradeContext} onBack={handleBackFromTrades} />;
+  }
+
   // Show player detail if a player is selected
   if (selectedPlayer) {
     return (
@@ -288,45 +283,136 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       <Card
         variant="outlined"
         sx={{
-          mb: 4,
-          p: 3,
-          background: 'linear-gradient(135deg, #1a2a6c 0%, #b21f1f 50%, #fdbb2d 100%)',
-          color: 'white',
-          boxShadow: 'lg',
+          mb: 3,
+          overflow: 'hidden',
+          boxShadow: 'md',
         }}
       >
-        <Grid container spacing={3} alignItems="center">
-          <Grid xs={12} md={8}>
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Avatar sx={{ '--Avatar-size': '80px', border: '2px solid white', bgcolor: 'primary.500' }}>
-                {selectedTeam.team_name.charAt(0)}
-              </Avatar>
-              <Box>
-                <Typography level="h2" sx={{ color: 'white' }}>{selectedTeam.team_name}</Typography>
-                <Typography level="body-md" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                  Owner: {selectedTeam.user_id ? 'awcarv@gmail.com' : 'TBD'}
-                </Typography>
-                <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-                  <Chip size="sm" variant="soft" color="neutral" sx={{ '--Chip-color': 'white', '--Chip-background': 'rgba(255,255,255,0.2)' }}>
-                    Gold 745
-                  </Chip>
-                  <Chip size="sm" variant="soft" color="neutral" sx={{ '--Chip-color': 'white', '--Chip-background': 'rgba(255,255,255,0.2)' }}>
-                    {selectedTeam.wins}-{selectedTeam.losses}-{selectedTeam.ties || 0}
-                  </Chip>
-                  <Chip size="sm" variant="soft" color="neutral" sx={{ '--Chip-color': 'white', '--Chip-background': 'rgba(255,255,255,0.2)' }}>
-                    2nd Place
-                  </Chip>
+        <Box
+          sx={{
+            p: 3,
+            background: 'linear-gradient(135deg, var(--joy-palette-primary-600) 0%, var(--joy-palette-primary-700) 100%)',
+          }}
+        >
+          <Grid container spacing={3} alignItems="center">
+            <Grid xs={12} md={6}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Avatar 
+                  sx={{ 
+                    '--Avatar-size': '64px', 
+                    border: '3px solid rgba(255,255,255,0.3)',
+                    bgcolor: 'primary.800',
+                    fontSize: '1.5rem',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  {selectedTeam.team_name.charAt(0).toUpperCase()}
+                </Avatar>
+                <Box>
+                  <Typography level="h3" sx={{ color: 'white', fontWeight: 'bold' }}>
+                    {selectedTeam.team_name}
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                    {selectedTeam.is_commissioner && (
+                      <Chip 
+                        size="sm" 
+                        variant="soft" 
+                        sx={{ 
+                          bgcolor: 'rgba(255,255,255,0.15)',
+                          color: 'white',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        👑 Commissioner
+                      </Chip>
+                    )}
+                    <Chip 
+                      size="sm" 
+                      variant="soft" 
+                      sx={{ 
+                        bgcolor: 'rgba(255,255,255,0.15)',
+                        color: 'white',
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {selectedTeam.wins}W - {selectedTeam.losses}L
+                    </Chip>
+                  </Stack>
+                </Box>
+              </Stack>
+            </Grid>
+            <Grid xs={12} md={6}>
+              <Stack spacing={2}>
+                {/* Salary Cap Info */}
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" alignItems="baseline">
+                    <Typography level="body-sm" sx={{ color: 'rgba(255,255,255,0.7)', fontWeight: 'bold' }}>
+                      Salary Cap Usage
+                    </Typography>
+                    <Typography level="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
+                      {formatSalary(actualSalary || 0)} / {formatSalary(league?.salary_cap_amount || 100000000)}
+                    </Typography>
+                  </Stack>
+                  <LinearProgress 
+                    determinate 
+                    value={Math.min(((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) * 100, 100)}
+                    color={
+                      ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.9 ? 'danger' : 
+                      ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.75 ? 'warning' : 
+                      'success'
+                    }
+                    sx={{ 
+                      height: 8, 
+                      mt: 1,
+                      bgcolor: 'rgba(255,255,255,0.2)',
+                      '& .MuiLinearProgress-indicator': {
+                        bgcolor: ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.9 ? '#ff4444' : 
+                                 ((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) > 0.75 ? '#ffaa00' : 
+                                 'rgba(255,255,255,0.9)'
+                      }
+                    }}
+                  />
+                  <Stack direction="row" justifyContent="space-between" sx={{ mt: 0.5 }}>
+                    <Typography level="body-xs" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                      {(((actualSalary || 0) / (league?.salary_cap_amount || 100000000)) * 100).toFixed(1)}% used
+                    </Typography>
+                    <Typography level="body-xs" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                      {formatSalary((league?.salary_cap_amount || 100000000) - (actualSalary || 0))} remaining
+                    </Typography>
+                  </Stack>
+                </Box>
+                
+                {/* Quick Stats */}
+                <Stack direction="row" spacing={2} justifyContent="flex-end">
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
+                      {sortedRoster?.filter(spot => spot.player).length || 0}/{sortedRoster?.length || 0}
+                    </Typography>
+                    <Typography level="body-xs" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                      Roster
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
+                      {selectedTeam.points_for.toFixed(1)}
+                    </Typography>
+                    <Typography level="body-xs" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                      Points For
+                    </Typography>
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography level="h4" sx={{ color: 'white', fontWeight: 'bold' }}>
+                      #{selectedTeam.current_standing || '--'}
+                    </Typography>
+                    <Typography level="body-xs" sx={{ color: 'rgba(255,255,255,0.6)' }}>
+                      Rank
+                    </Typography>
+                  </Box>
                 </Stack>
-              </Box>
-            </Stack>
+              </Stack>
+            </Grid>
           </Grid>
-          <Grid xs={12} md={4} sx={{ textAlign: { xs: 'left', md: 'right' } }}>
-            <Typography level="h3" sx={{ color: 'white', mb: 1 }}>{selectedTeam.points_for || 650.5} Total Pts</Typography>
-            <Typography level="body-md" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-              Streak: W2
-            </Typography>
-          </Grid>
-        </Grid>
+        </Box>
       </Card>
 
       {/* Roster Table */}
@@ -682,12 +768,16 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       <Grid container spacing={3} sx={{ mt: 3 }}>
         {/* Recent Transactions */}
         <Grid xs={12} md={6}>
-          <RecentTransactions teamId={selectedTeam.id} />
+          <RecentTransactions teamId={selectedTeam.id} leagueId={leagueId} />
         </Grid>
 
         {/* Trading Block */}
         <Grid xs={12} md={6}>
-          <TradingBlock teamId={selectedTeam.id} />
+          <TradingBlock 
+            teamId={selectedTeam.id} 
+            leagueId={leagueId}
+            onInitiateTrade={handleInitiateTrade}
+          />
         </Grid>
 
         {/* Future Picks */}

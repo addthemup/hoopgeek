@@ -63,9 +63,15 @@ interface TradeItem {
 
 interface TradesProps {
   leagueId: string;
+  tradeContext?: {
+    player: any;
+    teamId: string;
+    teamName: string;
+  } | null;
+  onBack?: () => void;
 }
 
-export default function Trades({ leagueId }: TradesProps) {
+export default function Trades({ leagueId, tradeContext, onBack }: TradesProps) {
   const { user } = useAuth();
   const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading } = useTeams(leagueId);
@@ -99,7 +105,9 @@ export default function Trades({ leagueId }: TradesProps) {
       pos: player.position,
       salary: 0, // TODO: Get real salary data
       contractYears: 1, // TODO: Get real contract data
-      avatar: `https://cdn.nba.com/headshots/nba/latest/260x190/${player.id}.png`,
+      avatar: player.nba_player_id 
+        ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`
+        : '',
       stats: { 
         ppg: 0, // TODO: Get real stats
         rpg: 0, 
@@ -219,6 +227,26 @@ export default function Trades({ leagueId }: TradesProps) {
     validateTrade();
   }, [myTradeItems, theirTradeItems, selectedTeam]);
 
+  // Pre-populate with trade context if provided
+  useEffect(() => {
+    if (tradeContext) {
+      setSelectedTeam(tradeContext.teamId);
+      
+      // Add the player to their trade items
+      const player: Player = {
+        id: tradeContext.player.player_id,
+        name: tradeContext.player.player_name,
+        team: tradeContext.player.player_team,
+        pos: tradeContext.player.player_position,
+        salary: 0, // TODO: Get real salary
+        contractYears: 1,
+        avatar: tradeContext.player.player_avatar,
+        stats: { ppg: 0, rpg: 0, apg: 0, fgPct: 0 }
+      };
+      setTheirTradeItems([{ type: 'player', item: player }]);
+    }
+  }, [tradeContext]);
+
   if (isLoading || teamsLoading || rosterLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
@@ -265,13 +293,39 @@ export default function Trades({ leagueId }: TradesProps) {
     <Box sx={{ p: 3 }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
-        <Typography level="h3" sx={{ mb: 1, fontWeight: 'bold' }}>
-          Trade Machine
-        </Typography>
-        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-          Build and validate trades with other teams in your league
-        </Typography>
+        <Stack direction="row" spacing={2} alignItems="center">
+          {onBack && (
+            <Button
+              variant="outlined"
+              color="neutral"
+              onClick={onBack}
+              size="sm"
+            >
+              ← Back
+            </Button>
+          )}
+          <Box>
+            <Typography level="h3" sx={{ mb: 1, fontWeight: 'bold' }}>
+              Trade Machine
+            </Typography>
+            <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+              Build and validate trades with other teams in your league
+            </Typography>
+          </Box>
+        </Stack>
       </Box>
+
+      {/* Trade Context Alert */}
+      {tradeContext && (
+        <Alert color="primary" sx={{ mb: 3 }}>
+          <Typography level="title-sm" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+            Initiating Trade with {tradeContext.teamName}
+          </Typography>
+          <Typography level="body-sm">
+            Trading for <strong>{tradeContext.player.player_name}</strong> ({tradeContext.player.player_position})
+          </Typography>
+        </Alert>
+      )}
 
       {/* Team Selection */}
       <Card variant="outlined" sx={{ mb: 3 }}>

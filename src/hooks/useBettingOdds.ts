@@ -43,18 +43,20 @@ export function useBettingOdds() {
     queryKey: ['betting-odds'],
     queryFn: async (): Promise<BettingOddsData> => {
       try {
-        console.log('🎲 Fetching betting odds from NBA.com...')
+        console.log('🎲 Fetching betting odds via Edge Function...')
         
-        const response = await fetch(
-          'https://cdn.nba.com/static/json/liveData/odds/odds_todaysGames.json',
-          {
-            method: 'GET',
-            headers: {
-              'Accept': 'application/json',
-            },
-            mode: 'cors',
-          }
-        )
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+        
+        const url = `${supabaseUrl}/functions/v1/betting-odds`;
+        
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${supabaseAnonKey}`,
+            'Content-Type': 'application/json',
+          },
+        })
 
         console.log('🎲 Response status:', response.status)
         console.log('🎲 Response ok:', response.ok)

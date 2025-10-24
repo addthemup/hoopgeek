@@ -43,28 +43,40 @@ import {
   Save,
   Cancel,
   SportsBasketball,
-  Group
+  Group,
+  Article,
+  MonetizationOn
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
+import { useIsAdmin } from '../hooks/useIsAdmin';
 import {
   useUserProfile,
   useUpdateUserProfile,
-  useFavoritePlayers,
   useFavoriteTeams,
   useNotificationPreferences,
   useUpdateNotificationPreferences,
   useFeedPreferences,
   useUpdateFeedPreferences,
-  useToggleFavoritePlayer,
   useToggleFavoriteTeam
 } from '../hooks/useUserSettings';
+import { usePlayerFavorites, useRemoveFromFavorites } from '../hooks/usePlayerFavorites';
 import { useNavigate } from 'react-router-dom';
+import BlogManager from '../components/Admin/BlogManager';
+import DFSPoolManager from '../components/Admin/DFSPoolManager';
 
 export default function UserSettings() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
   const [activeTab, setActiveTab] = useState(0);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  // Debug logging
+  console.log('🎨 UserSettings render:', {
+    userId: user?.id,
+    isAdmin,
+    adminLoading,
+  });
 
   // Profile state
   const { data: userProfile, isLoading: profileLoading } = useUserProfile(user?.id);
@@ -76,9 +88,9 @@ export default function UserSettings() {
   });
 
   // Favorites
-  const { data: favoritePlayers, isLoading: playersLoading } = useFavoritePlayers(user?.id);
+  const { data: favoritePlayers, isLoading: playersLoading } = usePlayerFavorites();
   const { data: favoriteTeams, isLoading: teamsLoading } = useFavoriteTeams(user?.id);
-  const togglePlayer = useToggleFavoritePlayer();
+  const removeFromFavorites = useRemoveFromFavorites();
   const toggleTeam = useToggleFavoriteTeam();
 
   // Notifications
@@ -116,9 +128,9 @@ export default function UserSettings() {
     }
   };
 
-  const handleRemoveFavoritePlayer = async (playerId: number) => {
+  const handleRemoveFavoritePlayer = async (playerId: string) => {
     if (!user?.id) return;
-    await togglePlayer.mutateAsync({ userId: user.id, playerId });
+    await removeFromFavorites.mutateAsync({ playerId });
   };
 
   const handleRemoveFavoriteTeam = async (teamId: number) => {
@@ -163,9 +175,16 @@ export default function UserSettings() {
           {userProfile?.display_name?.charAt(0) || user.email?.charAt(0)}
         </Avatar>
         <Box sx={{ flex: 1 }}>
-          <Typography level="h2">
-            {userProfile?.display_name || user.email}
-          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography level="h2">
+              {userProfile?.display_name || user.email}
+            </Typography>
+            {isAdmin && (
+              <Chip size="sm" color="warning" variant="soft">
+                🛡️ Admin
+              </Chip>
+            )}
+          </Stack>
           <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
             Manage your account settings and preferences
           </Typography>
@@ -179,6 +198,20 @@ export default function UserSettings() {
           <Tab><Star sx={{ mr: 1 }} /> Favorites</Tab>
           <Tab><Notifications sx={{ mr: 1 }} /> Notifications</Tab>
           <Tab><Tune sx={{ mr: 1 }} /> Feed</Tab>
+          {isAdmin && (
+            <Tab sx={{ bgcolor: 'warning.50' }}>
+              <Article sx={{ mr: 1 }} /> 
+              Blog
+              <Chip size="sm" color="warning" variant="soft" sx={{ ml: 1 }}>Admin</Chip>
+            </Tab>
+          )}
+          {isAdmin && (
+            <Tab sx={{ bgcolor: 'warning.50' }}>
+              <MonetizationOn sx={{ mr: 1 }} /> 
+              DFS Pools
+              <Chip size="sm" color="warning" variant="soft" sx={{ ml: 1 }}>Admin</Chip>
+            </Tab>
+          )}
         </TabList>
 
         {/* Profile Tab */}
@@ -297,22 +330,27 @@ export default function UserSettings() {
                     </Box>
                   ) : favoritePlayers && favoritePlayers.length > 0 ? (
                     <List>
-                      {favoritePlayers.map((player) => (
-                        <ListItem key={player.id}>
-                          <ListItemButton onClick={() => navigate(`/players/${player.player_id}`)}>
+                      {favoritePlayers.map((favorite) => (
+                        <ListItem key={favorite.id}>
+                          <ListItemButton onClick={() => navigate(`/player/${favorite.player_id}`)}>
                             <ListItemDecorator>
                               <Avatar
-                                src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                src={`https://cdn.nba.com/headshots/nba/latest/260x190/${favorite.nba_players.nba_player_id}.png`}
                                 size="sm"
                               >
-                                {player.player_name.charAt(0)}
+                                {favorite.nba_players.name.charAt(0)}
                               </Avatar>
                             </ListItemDecorator>
                             <ListItemContent>
-                              <Typography level="title-sm">{player.player_name}</Typography>
+                              <Typography level="title-sm">{favorite.nba_players.name}</Typography>
                               <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                                {player.player_position} • {player.player_team}
+                                {favorite.nba_players.position || 'N/A'} • {favorite.nba_players.team_name || 'Free Agent'}
                               </Typography>
+                              {favorite.notes && (
+                                <Typography level="body-xs" sx={{ color: 'text.tertiary', fontStyle: 'italic', mt: 0.5 }}>
+                                  "{favorite.notes}"
+                                </Typography>
+                              )}
                             </ListItemContent>
                             <IconButton
                               color="danger"
@@ -320,7 +358,7 @@ export default function UserSettings() {
                               size="sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleRemoveFavoritePlayer(player.player_id);
+                                handleRemoveFavoritePlayer(favorite.player_id);
                               }}
                             >
                               <Delete />
@@ -720,6 +758,21 @@ export default function UserSettings() {
             )}
           </Stack>
         </TabPanel>
+
+        {/* Admin Tabs */}
+        {isAdmin && (
+          <>
+            {/* Blog Management Tab */}
+            <TabPanel value={4}>
+              <BlogManager />
+            </TabPanel>
+
+            {/* DFS Pool Management Tab */}
+            <TabPanel value={5}>
+              <DFSPoolManager />
+            </TabPanel>
+          </>
+        )}
       </Tabs>
     </Box>
   );

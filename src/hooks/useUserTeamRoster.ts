@@ -3,13 +3,13 @@ import { supabase } from '../utils/supabase';
 import { useAuth } from './useAuth';
 
 export interface RosterPlayer {
-  id: string; // This is now fantasy_roster_spots.id (UUID)
+  id: string; // This is nba_players.id (UUID) - matches fantasy_lineups.player_id
   name: string;
   position: string;
   team_abbreviation: string;
   jersey_number?: number;
   nba_player_id?: number;
-  roster_spot_id: string;
+  roster_spot_id: string; // This is fantasy_roster_spots.id (UUID)
   fantasy_team_id: string;
 }
 
@@ -62,7 +62,7 @@ export function useUserTeamRoster(leagueId: string) {
       }
 
       const rosterPlayers = data.map(item => ({
-        id: item.id, // This is now fantasy_roster_spots.id (UUID)
+        id: item.player.id, // This is the nba_players.id (UUID) - matches fantasy_lineups.player_id
         name: item.player.name,
         position: item.player.position,
         team_abbreviation: item.player.team_abbreviation,

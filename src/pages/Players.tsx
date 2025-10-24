@@ -29,7 +29,7 @@ import {
   ModalDialog,
   ModalClose,
 } from '@mui/joy';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../hooks/useAuth';
 import { useLeague } from '../hooks/useLeagues';
 import { usePlayersPaginated } from '../hooks/useNBAData';
@@ -38,10 +38,12 @@ import { useAddPlayerToRoster } from '../hooks/useRosterManagement';
 import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
 import { usePlayerUpcomingGames } from '../hooks/usePlayerUpcomingGames';
 import { usePlayerRosterStatus } from '../hooks/usePlayerRosterStatus';
+import { useDropPlayer } from '../hooks/useDropPlayer';
+import { usePlayerWaiverStatus } from '../hooks/usePlayersOnWaivers';
 import { Player as DatabasePlayer } from '../types';
 import { supabase } from '../utils/supabase';
 import PlayerActionButtons from '../components/PlayerActionButtons';
-import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday, PersonRemove, SwapHoriz } from '@mui/icons-material';
+import { Add, Flag, Search, FilterList, NavigateBefore, NavigateNext, Clear, ArrowBack, CalendarToday, PersonRemove, SwapHoriz, Warning } from '@mui/icons-material';
 
 interface Player {
   id: string;
@@ -77,7 +79,9 @@ const PlayerActionButton = ({
   playerName, 
   leagueId, 
   userTeamId, 
+  seasonId,
   onAddToRoster, 
+  onDropPlayer,
   addPlayerMutation,
   hasAvailableRosterSpot
 }: {
@@ -85,18 +89,23 @@ const PlayerActionButton = ({
   playerName: string;
   leagueId: string;
   userTeamId?: string;
+  seasonId?: string;
   onAddToRoster: (playerId: string, playerName: string) => void;
+  onDropPlayer: (playerId: string, playerName: string) => void;
   addPlayerMutation: any;
   hasAvailableRosterSpot: boolean;
 }) => {
   const { data: rosterStatus, isLoading } = usePlayerRosterStatus(playerId, leagueId, userTeamId);
+  const { data: waiverStatus } = usePlayerWaiverStatus(playerId, leagueId, seasonId || '');
 
   // Debug logging
   console.log('🔍 PlayerActionButton for', playerName, ':', {
     playerId,
     leagueId,
     userTeamId,
+    seasonId,
     rosterStatus,
+    waiverStatus,
     hasAvailableRosterSpot
   });
 
@@ -105,6 +114,25 @@ const PlayerActionButton = ({
       <Button size="sm" variant="outlined" disabled>
         Loading...
       </Button>
+    );
+  }
+
+  // Show waiver status if player is on waivers
+  if (waiverStatus) {
+    const isFreeAgent = waiverStatus.waiver_status === 'free_agent' || 
+                       new Date(waiverStatus.becomes_free_agent_at) <= new Date();
+    
+    return (
+      <Stack direction="row" spacing={1} alignItems="center">
+        <Chip
+          size="sm"
+          variant="soft"
+          color={isFreeAgent ? 'success' : 'warning'}
+          startDecorator={<Warning />}
+        >
+          {isFreeAgent ? 'Free Agent' : 'On Waivers'}
+        </Chip>
+      </Stack>
     );
   }
 
@@ -147,11 +175,10 @@ const PlayerActionButton = ({
         startDecorator={<PersonRemove />}
         onClick={(e) => {
           e.stopPropagation();
-          // TODO: Implement cut player functionality
-          console.log('Cut player:', playerId);
+          onDropPlayer(playerId, playerName);
         }}
       >
-        Cut
+        Drop
       </Button>
     );
   }
@@ -181,9 +208,11 @@ const PlayersTable = memo(({
   playersError, 
   onPlayerClick, 
   onAddToRoster,
+  onDropPlayer,
   paginatedData,
   addPlayerMutation,
   leagueId,
+  seasonId,
   userTeamId,
   calculateProjectedFantasyPoints,
   hasAvailableRosterSpot
@@ -193,9 +222,11 @@ const PlayersTable = memo(({
   playersError: Error | null;
   onPlayerClick: (player: Player) => void;
   onAddToRoster: (playerId: string, playerName: string) => void;
+  onDropPlayer: (playerId: string, playerName: string) => void;
   paginatedData: any;
   addPlayerMutation: any;
   leagueId: string;
+  seasonId?: string;
   userTeamId?: string;
   calculateProjectedFantasyPoints: (player: any) => number;
   hasAvailableRosterSpot: boolean;
@@ -240,6 +271,7 @@ const PlayersTable = memo(({
                 <th>Current REB</th>
                 <th>Current AST</th>
                 <th>Salary</th>
+                <th>Waiver Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -327,13 +359,37 @@ const PlayersTable = memo(({
                       }
                     </Typography>
                   </td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const waiverInfo = (paginatedData as any)?.waiverData?.find((w: any) => w.player_id.toString() === player.id);
+                      if (waiverInfo) {
+                        const becomesFA = new Date(waiverInfo.becomes_free_agent_at);
+                        const now = new Date();
+                        const isFreeAgent = becomesFA <= now;
+                        const hoursRemaining = Math.max(0, Math.ceil((becomesFA.getTime() - now.getTime()) / (1000 * 60 * 60)));
+                        
+                        return (
+                          <Chip
+                            size="sm"
+                            variant="soft"
+                            color={isFreeAgent ? 'success' : 'warning'}
+                          >
+                            {isFreeAgent ? 'Free Agent' : `${hoursRemaining}h`}
+                          </Chip>
+                        );
+                      }
+                      return <Typography level="body-xs" color="neutral">—</Typography>;
+                    })()}
+                  </td>
                   <td>
                     <PlayerActionButton
                       playerId={player.id}
                       playerName={player.name}
                       leagueId={leagueId}
+                      seasonId={seasonId}
                       userTeamId={userTeamId}
                       onAddToRoster={onAddToRoster}
+                      onDropPlayer={onDropPlayer}
                       addPlayerMutation={addPlayerMutation}
                       hasAvailableRosterSpot={hasAvailableRosterSpot}
                     />
@@ -351,12 +407,75 @@ const PlayersTable = memo(({
 
 export default function Players({ leagueId }: PlayersProps) {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: league, isLoading: leagueLoading, error: leagueError } = useLeague(leagueId);
   const { data: teams } = useTeams(leagueId || '');
   const addPlayerMutation = useAddPlayerToRoster();
+  const dropPlayerMutation = useDropPlayer();
   
   // Find the user's team in this league
   const userTeam = teams?.find(team => team.user_id === user?.id);
+  
+  // Get the current season ID from the league
+  const seasonId = (league as any)?.current_season_id || (league as any)?.season_id;
+
+  // Set up Realtime subscription to listen for draft picks and roster changes
+  useEffect(() => {
+    if (!leagueId) return;
+
+    console.log('🔔 Setting up Realtime subscription for draft picks in league:', leagueId);
+
+    // Subscribe to fantasy_draft_picks to detect when players are drafted
+    const draftPicksChannel = supabase
+      .channel(`draft-picks-${leagueId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'fantasy_draft_picks',
+          filter: `league_id=eq.${leagueId}`
+        },
+        (payload) => {
+          console.log('🎯 Draft pick detected:', payload);
+          // Wait 1 second before invalidating to ensure database consistency
+          setTimeout(() => {
+            console.log('♻️ Invalidating free-agent-players query');
+            queryClient.invalidateQueries({ queryKey: ['free-agent-players', leagueId] });
+          }, 1000);
+        }
+      )
+      .subscribe();
+
+    // Subscribe to fantasy_roster_spots to detect when players are added/dropped
+    const rosterSpotsChannel = supabase
+      .channel(`roster-spots-${leagueId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*', // Listen to INSERT, UPDATE, DELETE
+          schema: 'public',
+          table: 'fantasy_roster_spots'
+        },
+        (payload) => {
+          console.log('👥 Roster change detected:', payload);
+          // Wait 1 second before invalidating to ensure database consistency
+          setTimeout(() => {
+            console.log('♻️ Invalidating free-agent-players query');
+            queryClient.invalidateQueries({ queryKey: ['free-agent-players', leagueId] });
+            queryClient.invalidateQueries({ queryKey: ['available-roster-spots', userTeam?.id] });
+          }, 1000);
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscriptions on unmount
+    return () => {
+      console.log('🔕 Cleaning up Realtime subscriptions');
+      supabase.removeChannel(draftPicksChannel);
+      supabase.removeChannel(rosterSpotsChannel);
+    };
+  }, [leagueId, queryClient, userTeam?.id]);
 
   // Check if user has available roster spots
   const { data: availableRosterSpots } = useQuery({
@@ -390,6 +509,7 @@ export default function Players({ leagueId }: PlayersProps) {
   const [positionFilter, setPositionFilter] = useState('');
   const [teamFilter, setTeamFilter] = useState('');
   const [showInactive, setShowInactive] = useState(false);
+  const [playerTypeFilter, setPlayerTypeFilter] = useState<'free_agents' | 'waivers' | 'all'>('free_agents');
   const [currentPage, setCurrentPage] = useState(1);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
@@ -398,6 +518,8 @@ export default function Players({ leagueId }: PlayersProps) {
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
   const [playerToAdd, setPlayerToAdd] = useState<{ id: string; name: string } | null>(null);
+  const [dropModalOpen, setDropModalOpen] = useState(false);
+  const [playerToDrop, setPlayerToDrop] = useState<{ id: string; name: string } | null>(null);
 
   // Debounce search term to prevent excessive API calls
   useEffect(() => {
@@ -412,18 +534,154 @@ export default function Players({ leagueId }: PlayersProps) {
     return () => clearTimeout(timer);
   }, [searchTerm, debouncedSearchTerm]);
 
-  // Fetch ALL players with projections and salaries for proper sorting (same logic as DraftPlayers)
+  // Fetch players on waivers
+  const { 
+    data: waiverPlayersData, 
+    isLoading: waiversLoading, 
+    error: waiversError 
+  } = useQuery({
+    queryKey: ['waiver-players', leagueId, seasonId],
+    queryFn: async () => {
+      console.log('🕐 Fetching waiver players for league:', leagueId);
+      
+      if (!seasonId) {
+        console.warn('⚠️ No seasonId available for waiver query');
+        return { players: [], waiverData: [] };
+      }
+      
+      // Get players on waivers with their waiver data
+      const { data: waiverData, error: waiverError } = await supabase
+        .from('fantasy_players_on_waivers')
+        .select(`
+          *,
+          nba_players (
+            *,
+            nba_espn_projections (
+              proj_2026_gp,
+              proj_2026_pts,
+              proj_2026_reb,
+              proj_2026_ast,
+              proj_2026_stl,
+              proj_2026_blk,
+              proj_2026_to,
+              proj_2026_3pm
+            ),
+            nba_hoopshype_salaries (
+              salary_2025_26,
+              contract_years_remaining
+            )
+          )
+        `)
+        .eq('league_id', leagueId)
+        .eq('season_id', seasonId)
+        .order('becomes_free_agent_at', { ascending: true });
+      
+      if (waiverError) throw waiverError;
+      
+      console.log('✅ Waiver players fetched:', waiverData?.length);
+      
+      return { 
+        players: waiverData?.map(w => w.nba_players).filter(Boolean) || [], 
+        waiverData: waiverData || [] 
+      };
+    },
+    enabled: !!leagueId && !!seasonId && playerTypeFilter === 'waivers',
+    staleTime: 1000 * 10, // 10 seconds
+  });
+
+  // Fetch only FREE AGENTS (players not on any roster in this league) with projections and salaries
   const { 
     data: allPlayersData, 
     isLoading: playersLoading, 
     error: playersError 
-  } = usePlayersPaginated(1, 1000, {
-    search: debouncedSearchTerm,
-    position: positionFilter,
-    team: teamFilter,
-    showInactive: showInactive,
-    leagueId
-  } as any);
+  } = useQuery({
+    queryKey: ['free-agent-players', leagueId, debouncedSearchTerm, positionFilter, teamFilter, showInactive],
+    queryFn: async () => {
+      console.log('🔍 Fetching free agents for league:', leagueId);
+      
+      // Get all teams in this league
+      const { data: leagueTeams, error: teamsError } = await supabase
+        .from('fantasy_teams')
+        .select('id')
+        .eq('league_id', leagueId);
+      
+      if (teamsError) throw teamsError;
+      
+      const teamIds = leagueTeams?.map(t => t.id) || [];
+      console.log('📋 League team IDs:', teamIds);
+      
+      // Get all player IDs that are rostered by any team in this league
+      const { data: rosteredPlayerIds, error: rosteredError } = await supabase
+        .from('fantasy_roster_spots')
+        .select('player_id')
+        .in('fantasy_team_id', teamIds)
+        .not('player_id', 'is', null);
+      
+      if (rosteredError) throw rosteredError;
+      
+      const rosteredIds = rosteredPlayerIds?.map(r => r.player_id) || [];
+      console.log('🔒 Rostered player IDs count:', rosteredIds.length);
+      
+      // Build query for free agents (players NOT in rostered list)
+      let query = supabase
+        .from('nba_players')
+        .select(`
+          *,
+          nba_espn_projections (
+            proj_2026_gp,
+            proj_2026_pts,
+            proj_2026_reb,
+            proj_2026_ast,
+            proj_2026_stl,
+            proj_2026_blk,
+            proj_2026_to,
+            proj_2026_3pm
+          ),
+          nba_hoopshype_salaries (
+            salary_2025_26,
+            contract_years_remaining
+          )
+        `)
+        .order('name', { ascending: true });
+      
+      // Exclude rostered players
+      if (rosteredIds.length > 0) {
+        query = query.not('id', 'in', `(${rosteredIds.join(',')})`);
+      }
+      
+      // Apply filters
+      if (debouncedSearchTerm) {
+        query = query.ilike('name', `%${debouncedSearchTerm}%`);
+      }
+      
+      if (positionFilter) {
+        query = query.ilike('position', `%${positionFilter}%`);
+      }
+      
+      if (teamFilter) {
+        query = query.eq('team_abbreviation', teamFilter);
+      }
+      
+      if (!showInactive) {
+        query = query.eq('is_active', true);
+      }
+      
+      const { data: players, error: playersError } = await query.limit(1000);
+      
+      if (playersError) throw playersError;
+      
+      console.log('✅ Free agents fetched:', players?.length);
+      
+      return { players: players || [] };
+    },
+    enabled: !!leagueId && playerTypeFilter !== 'waivers',
+    staleTime: 1000 * 10, // 10 seconds - refresh more frequently to catch roster changes
+  });
+
+  // Determine which data source to use based on filter
+  const activePlayersData = playerTypeFilter === 'waivers' ? waiverPlayersData : allPlayersData;
+  const activeLoading = playerTypeFilter === 'waivers' ? waiversLoading : playersLoading;
+  const activeError = playerTypeFilter === 'waivers' ? waiversError : playersError;
 
   // Calculate projected fantasy points for a player (same logic as DraftPlayers)
   const calculateProjectedFantasyPoints = (player: any) => {
@@ -474,7 +732,7 @@ export default function Players({ leagueId }: PlayersProps) {
   };
 
   // Sort ALL players by projected fantasy points in descending order (same logic as DraftPlayers)
-  const allSortedPlayers = allPlayersData?.players ? [...allPlayersData.players].sort((a, b) => {
+  const allSortedPlayers = activePlayersData?.players ? [...activePlayersData.players].sort((a, b) => {
     const aFantasy = calculateProjectedFantasyPoints(a);
     const bFantasy = calculateProjectedFantasyPoints(b);
     return bFantasy - aFantasy; // Descending order
@@ -561,6 +819,10 @@ export default function Players({ leagueId }: PlayersProps) {
         playerId: playerToAdd.id,
         fantasyTeamId: userTeam.id,
       });
+      
+      // Invalidate free agents query to update the list immediately
+      await queryClient.invalidateQueries({ queryKey: ['free-agent-players', leagueId] });
+      
       setSnackbarMessage(`Added ${playerToAdd.name} to your roster!`);
       setSnackbarColor('success');
       setSnackbarOpen(true);
@@ -580,6 +842,69 @@ export default function Players({ leagueId }: PlayersProps) {
     setPlayerToAdd(null);
   };
 
+  const handleDropPlayer = (playerId: string, playerName: string) => {
+    console.log('🔍 handleDropPlayer called with:', { playerId, playerName, userTeam: userTeam?.id });
+    
+    if (!user) {
+      setSnackbarMessage('Please sign in to drop players');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    if (!userTeam) {
+      setSnackbarMessage('You need to join a team in this league first');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    if (!seasonId) {
+      setSnackbarMessage('Unable to determine current season');
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+      return;
+    }
+
+    // Show drop confirmation modal
+    setPlayerToDrop({ id: playerId, name: playerName });
+    setDropModalOpen(true);
+  };
+
+  const handleConfirmDropPlayer = async () => {
+    if (!playerToDrop || !userTeam || !seasonId) return;
+
+    try {
+      await dropPlayerMutation.mutateAsync({
+        leagueId,
+        seasonId,
+        fantasyTeamId: userTeam.id,
+        playerId: playerToDrop.id,
+        notes: `Dropped by user via Players page`
+      });
+      
+      // Invalidate free agents query to update the list immediately (player now available)
+      await queryClient.invalidateQueries({ queryKey: ['free-agent-players', leagueId] });
+      
+      setSnackbarMessage(`${playerToDrop.name} has been dropped from your roster!`);
+      setSnackbarColor('success');
+      setSnackbarOpen(true);
+    } catch (error) {
+      console.error('Error dropping player:', error);
+      setSnackbarMessage(`Failed to drop ${playerToDrop.name}. Please try again.`);
+      setSnackbarColor('danger');
+      setSnackbarOpen(true);
+    } finally {
+      setDropModalOpen(false);
+      setPlayerToDrop(null);
+    }
+  };
+
+  const handleCancelDropPlayer = () => {
+    setDropModalOpen(false);
+    setPlayerToDrop(null);
+  };
+
   const handlePageChange = (newPage: number) => {
     setCurrentPage(newPage);
   };
@@ -590,6 +915,7 @@ export default function Players({ leagueId }: PlayersProps) {
     setPositionFilter('');
     setTeamFilter('');
     setShowInactive(false);
+    setPlayerTypeFilter('free_agents');
     setCurrentPage(1);
   };
 
@@ -656,6 +982,21 @@ export default function Players({ leagueId }: PlayersProps) {
 
         {/* All Players Tab */}
         <TabPanel value={0}>
+          {/* Waiver Info Banner */}
+          {playerTypeFilter === 'waivers' && (
+            <Alert color="primary" variant="soft" sx={{ mb: 3 }}>
+              <Stack spacing={1}>
+                <Typography level="title-sm">
+                  🕐 Waiver Period: {(league as any)?.waiver_period_hours || 24} hours
+                </Typography>
+                <Typography level="body-sm">
+                  Players below are on waivers and will become free agents after the waiver period expires.
+                  {(league as any)?.waiver_type === 'faab' && ` Your league uses FAAB with a ${(league as any)?.waiver_budget_amount || 100} budget.`}
+                </Typography>
+              </Stack>
+            </Alert>
+          )}
+
           {/* Search and Quick Filters */}
           <Card variant="outlined" sx={{ mb: 3 }}>
             <CardContent>
@@ -745,6 +1086,22 @@ export default function Players({ leagueId }: PlayersProps) {
                 </Grid>
                 <Grid xs={12} md={2}>
                   <FormControl>
+                    <FormLabel>Player Type</FormLabel>
+                    <Select
+                      value={playerTypeFilter}
+                      onChange={(_, value) => {
+                        setPlayerTypeFilter(value as 'free_agents' | 'waivers' | 'all');
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <Option value="free_agents">Free Agents</Option>
+                      <Option value="waivers">On Waivers</Option>
+                      <Option value="all">All Available</Option>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid xs={12} md={2}>
+                  <FormControl>
                     <FormLabel>Status</FormLabel>
                     <FormControl orientation="horizontal" sx={{ gap: 1 }}>
                       <Switch
@@ -772,13 +1129,15 @@ export default function Players({ leagueId }: PlayersProps) {
           {/* Players Table */}
           <PlayersTable
             players={players}
-            playersLoading={playersLoading}
-            playersError={playersError}
+            playersLoading={activeLoading}
+            playersError={activeError}
             onPlayerClick={handlePlayerClick}
             onAddToRoster={handleAddPlayer}
-            paginatedData={allPlayersData}
+            onDropPlayer={handleDropPlayer}
+            paginatedData={activePlayersData}
             addPlayerMutation={addPlayerMutation}
             leagueId={leagueId}
+            seasonId={seasonId}
             userTeamId={userTeam?.id}
             calculateProjectedFantasyPoints={calculateProjectedFantasyPoints}
             hasAvailableRosterSpot={availableRosterSpots || false}
@@ -917,7 +1276,7 @@ export default function Players({ leagueId }: PlayersProps) {
         {snackbarMessage}
       </Snackbar>
 
-      {/* Confirmation Modal */}
+      {/* Add Player Confirmation Modal */}
       <Modal open={confirmModalOpen} onClose={handleCancelAddPlayer}>
         <ModalDialog variant="outlined" role="alertdialog">
           <Typography level="h4" component="h2">
@@ -938,6 +1297,41 @@ export default function Players({ leagueId }: PlayersProps) {
               loading={addPlayerMutation.isPending}
             >
               Add Player
+            </Button>
+          </Box>
+        </ModalDialog>
+      </Modal>
+
+      {/* Drop Player Confirmation Modal */}
+      <Modal open={dropModalOpen} onClose={handleCancelDropPlayer}>
+        <ModalDialog variant="outlined" role="alertdialog">
+          <Typography level="h4" component="h2" sx={{ color: 'danger.500' }}>
+            ⚠️ Drop Player?
+          </Typography>
+          <Divider />
+          <Stack spacing={2}>
+            <Typography level="body-md">
+              Are you sure you want to drop <strong>{playerToDrop?.name}</strong> from your roster?
+            </Typography>
+            <Alert color="warning" variant="soft">
+              <Typography level="body-sm">
+                This player will be placed on waivers according to your league settings. 
+                Other teams may be able to claim them.
+              </Typography>
+            </Alert>
+          </Stack>
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', pt: 2 }}>
+            <Button variant="plain" color="neutral" onClick={handleCancelDropPlayer}>
+              Cancel
+            </Button>
+            <Button 
+              variant="solid" 
+              color="danger" 
+              onClick={handleConfirmDropPlayer}
+              loading={dropPlayerMutation.isPending}
+              startDecorator={<PersonRemove />}
+            >
+              Drop Player
             </Button>
           </Box>
         </ModalDialog>
@@ -1699,15 +2093,6 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
     });
   };
 
-  const formatGameTime = (timeString?: string) => {
-    if (!timeString) return 'TBD';
-    const time = new Date(`2000-01-01T${timeString}`);
-    return time.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
 
   return (
     <Card variant="outlined">
@@ -1722,11 +2107,9 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
         <Table hoverRow>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Matchup</th>
-              <th>Location</th>
-              <th>Fantasy Week</th>
+              <th style={{ width: '250px' }}>Date</th>
+              <th style={{ width: '200px' }}>Matchup</th>
+              <th style={{ width: '150px' }}>Fantasy Week</th>
             </tr>
           </thead>
           <tbody>
@@ -1734,29 +2117,12 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
               <tr
                 key={game.id}
                 style={{
-                  borderLeft: game.is_week_start ? '4px solid #000' : 'none',
-                  borderRight: game.is_week_end ? '4px solid #000' : 'none',
-                  backgroundColor: game.is_week_start || game.is_week_end ? '#f5f5f5' : 'transparent'
+                  backgroundColor: game.week_number && game.week_number % 2 === 0 ? '#f5f5f5' : 'transparent'
                 }}
               >
                 <td>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                     {formatGameDate(game.game_date)}
-                  </Typography>
-                  {(game.is_week_start || game.is_week_end) && (
-                    <Chip
-                      size="sm"
-                      color="primary"
-                      variant="solid"
-                      sx={{ mt: 0.5, fontSize: '0.7rem' }}
-                    >
-                      {game.is_week_start ? 'Week Start' : 'Week End'}
-                    </Chip>
-                  )}
-                </td>
-                <td>
-                  <Typography level="body-sm">
-                    {formatGameTime(game.game_time_est)}
                   </Typography>
                 </td>
                 <td>
@@ -1773,17 +2139,13 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
                   </Box>
                 </td>
                 <td>
-                  <Typography level="body-sm">
-                    {game.arena_name && game.arena_city 
-                      ? `${game.arena_city}` 
-                      : 'TBD'
-                    }
-                  </Typography>
-                </td>
-                <td>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {game.fantasy_week_name || 'TBD'}
-                  </Typography>
+                  <Chip
+                    size="sm"
+                    color="primary"
+                    variant="soft"
+                  >
+                    {game.fantasy_week_name || `Week ${game.week_number}`}
+                  </Chip>
                 </td>
               </tr>
             ))}
@@ -1792,8 +2154,7 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
 
         <Alert color="neutral" sx={{ mt: 2 }}>
           <Typography level="body-sm">
-            <strong>Note:</strong> Games with bold black borders mark the start and end of fantasy weeks. 
-            This helps you plan your lineup changes for optimal scoring periods.
+            <strong>Note:</strong> Games are color-coded by fantasy week (alternating gray/white) for easy planning.
           </Typography>
         </Alert>
       </CardContent>

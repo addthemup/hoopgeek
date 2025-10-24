@@ -35,6 +35,7 @@ export interface League {
   salary_cap_amount?: number
   trades_enabled?: boolean
   public_league?: boolean
+  commissioner_notes?: string
   invite_code?: string
   // Additional fields for display
   team_name?: string
@@ -210,6 +211,7 @@ export interface FantasyTeam {
   user_id?: string
   team_name: string
   draft_position?: number
+  division_id?: string
   is_commissioner: boolean
   is_active: boolean
   // Season-specific stats

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
   Typography,
@@ -17,12 +17,16 @@ import { useAuth } from '../hooks/useAuth';
 import { useCurrentFantasyWeek, getWeekDisplayText, getSeasonPhaseColor } from '../hooks/useCurrentFantasyWeek';
 import { useUserTeamRoster } from '../hooks/useUserTeamRoster';
 import { useTeams } from '../hooks/useTeams';
-import { useMatchups } from '../hooks/useMatchups';
-import { useWeekSchedule, getGameTime } from '../hooks/useNBASchedule';
+import { useMatchups, Matchup } from '../hooks/useMatchups';
+import { useWeekDates } from '../hooks/usePlayerWeekGames';
 import { usePlayerGameLogs } from '../hooks/usePlayerGameLogs';
 import { useLineupSettings } from '../hooks/useLineupSettings';
+import { useAutoLineup } from '../hooks/useAutoLineup';
+import { useLineupSalary, formatSalary } from '../hooks/useLineupSalaryCap';
 import BasketballCourt from '../components/BasketballCourt';
 import { getScoringFormat, calculateFantasyPoints } from '../utils/fantasyScoring';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../utils/supabase';
 
 interface Player {
   id: string;
@@ -48,45 +52,152 @@ export default function Lineups({ leagueId }: LineupsProps) {
   const { data: userTeamRoster, isLoading: rosterLoading } = useUserTeamRoster(leagueId);
   const { data: teams } = useTeams(leagueId);
   const { data: lineupSettings } = useLineupSettings(leagueId);
+  const queryClient = useQueryClient();
   
   // State
   const [currentWeek, setCurrentWeek] = useState(1);
+
+  // Get user's team data early for salary calculations
+  const userTeam = teams?.find(team => team.user_id === user?.id);
+  
+  // Find current week matchup (need this early for week number)
+  const { data: currentWeekMatchups } = useMatchups(leagueId, currentWeek);
+  const currentMatchup = currentWeekMatchups?.find(matchup => 
+    matchup.fantasy_team1_id === userTeam?.id || matchup.fantasy_team2_id === userTeam?.id
+  );
+  
+  // Always use currentWeek for salary calculations (works for preseason and regular season)
+  const actualWeekNumber = currentWeek;
+  
+  console.log('💰 Lineups: Week number for salary calc:', {
+    currentWeek,
+    matchupWeek: currentMatchup?.week_number,
+    actualWeekNumber
+  });
+  
+  // Get lineup salary data - use actualWeekNumber to ensure consistency
+  const { data: lineupSalaryData, isLoading: salaryLoading } = useLineupSalary(
+    leagueId,
+    userTeam?.id || '',
+    actualWeekNumber,
+    2025
+  );
 
   const totalWeeks = 26;
 
   // Get the league's scoring format
   const leagueScoringFormat = lineupSettings?.fantasy_scoring_format || 'FanDuel';
   const selectedScoringFormat = getScoringFormat(leagueScoringFormat);
-
-  // Get matchup data
-  const { data: currentWeekMatchups } = useMatchups(leagueId, currentWeek);
   
-  // Get NBA schedule for the current week
-  const { data: weekSchedule, isLoading: scheduleLoading } = useWeekSchedule(currentWeek);
-
+  // Get week dates for the schedule header
+  const { data: weekDates, isLoading: datesLoading } = useWeekDates(currentWeek);
 
   // Update current week when fantasy week loads
   useEffect(() => {
     if (fantasyWeek) {
         setCurrentWeek(fantasyWeek.week_number);
     } else {
-      // Default to preseason (week 0) if no current week is determined
-      setCurrentWeek(0);
+      // Default to week 1 instead of 0 to match typical matchup structure
+      setCurrentWeek(1);
     }
   }, [fantasyWeek]);
-
-  // Get user's team data
-  const userTeam = teams?.find(team => team.user_id === user?.id);
-  
-  // Find current week matchup
-  const currentMatchup = currentWeekMatchups?.find(matchup => 
-    matchup.fantasy_team1_id === userTeam?.id || matchup.fantasy_team2_id === userTeam?.id
-  );
   
   // Get opponent team
   const opponentTeam = currentMatchup ? (
     currentMatchup.fantasy_team1_id === userTeam?.id ? currentMatchup.team2 : currentMatchup.team1
   ) : null;
+
+  // Auto-lineup mutation
+  const autoLineupMutation = useAutoLineup();
+
+  // Clear lineup mutation
+  const clearLineupMutation = useMutation({
+    mutationFn: async () => {
+      const weekNumber = actualWeekNumber;
+      const seasonYearValue = 2025;
+      
+      console.log('🧹 Clearing all lineup positions for week:', weekNumber, 'season:', seasonYearValue);
+      
+      const { error } = await supabase
+        .from('fantasy_lineups')
+        .delete()
+        .eq('league_id', leagueId)
+        .eq('fantasy_team_id', userTeam?.id || '')
+        .eq('week_number', weekNumber)
+        .eq('season_year', seasonYearValue);
+
+      if (error) {
+        console.error('❌ Error clearing lineup positions:', error);
+        throw error;
+      }
+      
+      console.log('✅ Successfully cleared all lineup positions');
+    },
+    onSuccess: () => {
+      // Invalidate and refetch lineup positions
+      queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, userTeam?.id] });
+      // Also invalidate salary query
+      queryClient.invalidateQueries({ 
+        queryKey: ['lineup-salary'],
+        predicate: (query) => {
+          const [key, lid, tid] = query.queryKey as [string, string, string];
+          return key === 'lineup-salary' && lid === leagueId && tid === userTeam?.id;
+        }
+      });
+    },
+    onError: (error) => {
+      console.error('❌ Clear lineup failed:', error);
+    }
+  });
+
+  // Handle auto-lineup
+  const handleAutoLineup = async () => {
+    if (!currentMatchup || !lineupSettings || !userTeam) {
+      console.error('❌ Missing required data for auto-lineup');
+      return;
+    }
+
+    const weekNumber = actualWeekNumber;
+    const seasonYearValue = 2025;
+    const seasonId = currentMatchup.season_id;
+    const matchupId = currentMatchup.id;
+
+    try {
+      await autoLineupMutation.mutateAsync({
+        leagueId,
+        teamId: userTeam.id,
+        weekNumber,
+        seasonYear: seasonYearValue,
+        seasonId,
+        matchupId
+      });
+      
+      // Invalidate salary query after auto-lineup
+      queryClient.invalidateQueries({ 
+        queryKey: ['lineup-salary'],
+        predicate: (query) => {
+          const [key, lid, tid] = query.queryKey as [string, string, string];
+          return key === 'lineup-salary' && lid === leagueId && tid === userTeam.id;
+        }
+      });
+    } catch (error) {
+      console.error('❌ Auto-lineup failed:', error);
+    }
+  };
+
+  // Handle clear lineup
+  const handleClearLineup = async () => {
+    if (!currentMatchup || !userTeam) {
+      console.error('❌ Missing required data for clear lineup');
+      return;
+    }
+
+    try {
+      await clearLineupMutation.mutateAsync();
+    } catch (error) {
+      console.error('❌ Clear lineup failed:', error);
+    }
+  };
   
   // Helper function to map full position names to simplified positions
   const mapPositionToSimplified = (position: string): string => {
@@ -139,103 +250,16 @@ export default function Lineups({ leagueId }: LineupsProps) {
 
 
 
-  // Helper function to get games for a specific player's team
-  const getPlayerGames = (playerTeam: string) => {
-    if (!weekSchedule?.games) {
-      console.log('🔍 No week schedule games available');
-      return [];
-    }
-    
-    console.log(`🔍 Looking for games for team: ${playerTeam}`);
-    console.log(`🔍 Available games:`, weekSchedule.games.map(g => `${g.away_team_tricode} @ ${g.home_team_tricode}`));
-    
-    const teamGames = weekSchedule.games
-      .filter(game => 
-        game.home_team_tricode === playerTeam || game.away_team_tricode === playerTeam
-      )
-      .sort((a, b) => new Date(a.game_date).getTime() - new Date(b.game_date).getTime())
-      .map(game => ({
-        gameId: game.game_id,
-        opponent: game.home_team_tricode === playerTeam ? game.away_team_tricode : game.home_team_tricode,
-        isHome: game.home_team_tricode === playerTeam,
-        gameDate: game.game_date,
-        gameTime: getGameTime(game),
-        status: game.game_status_text
-      }));
-    
-    // For preseason, limit to exactly 7 games
-    const limitedGames = currentWeek === 0 ? teamGames.slice(0, 7) : teamGames;
-    
-    console.log(`🔍 Found ${limitedGames.length} games for ${playerTeam}:`, limitedGames);
-    return limitedGames;
-  };
-
-  // Helper function to get games for a specific day of the week
-  const getPlayerGamesForDay = (playerTeam: string, dayIndex: number) => {
-    if (!weekSchedule?.startDate) {
-      return null;
-    }
-    
-    // Calculate the date for this day of the week
-    const startDate = new Date(weekSchedule.startDate);
-    const dayDate = new Date(startDate);
-    dayDate.setDate(startDate.getDate() + dayIndex);
-    const dayDateStr = dayDate.toISOString().split('T')[0];
-    
-    // Find games for this player's team on this specific date
-    const dayGames = weekSchedule.games.filter(game => 
-      game.game_date === dayDateStr && 
-      (game.home_team_tricode === playerTeam || game.away_team_tricode === playerTeam)
-    );
-    
-    if (dayGames.length === 0) {
-      return null;
-    }
-    
-    // Return the first game (teams typically play once per day)
-    const game = dayGames[0];
-    const isHome = game.home_team_tricode === playerTeam;
-    const opponent = isHome ? game.away_team_tricode : game.home_team_tricode;
-    
-    return {
-      gameId: game.game_id,
-      opponent,
-      isHome,
-      gameTime: getGameTime(game),
-      status: game.game_status_text,
-      gameDate: game.game_date
-    };
-  };
-
-  // Get all unique game IDs for all players
-  const allGameIds = availablePlayers?.flatMap(player => {
-    const playerGames = getPlayerGames(player.team);
-    return playerGames.map(game => game.gameId);
-  }) || [];
-
-  // Get all unique player IDs
-  const allPlayerIds = availablePlayers?.map(player => player.nbaPlayerId || 0).filter(id => id > 0) || [];
-
-  // Fetch all player stats for all games at the top level
-  const { data: allPlayerStats } = usePlayerGameLogs({
-    playerIds: allPlayerIds,
-    gameIds: allGameIds,
-    seasonYear: '2025-26'
-  });
-
   // Debug logging
   console.log('🔍 Lineups Debug Info:');
   console.log('  Current week:', currentWeek);
-  console.log('  Week schedule:', weekSchedule);
+  console.log('  Week dates:', weekDates);
   console.log('  Available players:', availablePlayers.map(p => `${p.name} (${p.team}) - NBA ID: ${p.nbaPlayerId}`));
   console.log('  Week loading:', weekLoading);
-  console.log('  Schedule loading:', scheduleLoading);
-  console.log('  All player stats:', allPlayerStats?.length || 0, 'total stats');
-  console.log('  Sample player stats:', allPlayerStats?.slice(0, 3));
-  console.log('  Unique NBA player IDs in stats:', [...new Set(allPlayerStats?.map(s => s.nba_player_id) || [])]);
+  console.log('  Dates loading:', datesLoading);
 
   // Loading states
-  if (isLoading || weekLoading || rosterLoading || scheduleLoading) {
+  if (isLoading || weekLoading || rosterLoading || datesLoading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
         <LinearProgress />
@@ -334,10 +358,57 @@ export default function Lineups({ leagueId }: LineupsProps) {
           </Box>
         )}
 
-        {/* Right: Scoring Format */}
-        <Chip variant="soft" color="primary" size="sm" sx={{ fontSize: '0.7rem' }}>
-          {selectedScoringFormat.name}
-        </Chip>
+        {/* Right: Salary Cap & Scoring Format */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Salary Cap Display */}
+          {lineupSalaryData && (
+            <Chip 
+              variant="soft" 
+              color={lineupSalaryData.isOverCap ? 'danger' : lineupSalaryData.percentUsed > 90 ? 'warning' : 'success'} 
+              size="sm" 
+              sx={{ fontSize: '0.7rem', fontWeight: 'bold' }}
+            >
+              💰 {formatSalary(lineupSalaryData.totalSalary)} / {formatSalary(lineupSalaryData.salaryCap)}
+            </Chip>
+          )}
+          
+          {/* Scoring Format */}
+          <Chip variant="soft" color="primary" size="sm" sx={{ fontSize: '0.7rem' }}>
+            {selectedScoringFormat.name}
+          </Chip>
+        </Box>
+      </Box>
+
+      {/* Lineup Action Buttons */}
+      <Box sx={{ 
+        display: 'flex', 
+        gap: 1, 
+        mb: 2,
+        justifyContent: 'flex-start',
+        flexWrap: 'wrap'
+      }}>
+        <Button
+          variant="solid"
+          color="primary"
+          size="sm"
+          startDecorator="🤖"
+          onClick={handleAutoLineup}
+          loading={autoLineupMutation.isPending}
+          disabled={!currentMatchup || !lineupSettings || !userTeam}
+        >
+          Auto Fill Lineup
+        </Button>
+        <Button
+          variant="outlined"
+          color="danger"
+          size="sm"
+          startDecorator="🗑️"
+          onClick={handleClearLineup}
+          loading={clearLineupMutation.isPending}
+          disabled={!currentMatchup || !userTeam}
+        >
+          Clear Lineup
+        </Button>
       </Box>
 
       {/* Basketball Court Component */}
@@ -348,333 +419,10 @@ export default function Lineups({ leagueId }: LineupsProps) {
         currentWeek={currentWeek}
         currentMatchup={currentMatchup}
         seasonYear={2025}
+        weekDates={weekDates}
+        selectedScoringFormat={selectedScoringFormat}
+        lineupSalaryData={lineupSalaryData}
       />
-
-      {/* Weekly Schedule Table */}
-      <Card variant="outlined" sx={{ mt: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography level="title-lg" sx={{ fontWeight: 'bold' }}>
-              {currentWeek === 0 ? 'Preseason' : `Week ${currentWeek}`} Schedule
-            </Typography>
-            <Chip variant="soft" color="primary" size="sm">
-              {selectedScoringFormat.name} Scoring
-            </Chip>
-          </Box>
-
-          <Sheet
-            variant="outlined"
-            sx={{
-              overflow: 'auto',
-              borderRadius: 'sm',
-            }}
-          >
-            <Table
-              stickyHeader
-              hoverRow
-              sx={{
-                '& thead th': {
-                  bgcolor: 'background.surface',
-                  fontWeight: 'bold',
-                  fontSize: '0.875rem',
-                  minHeight: currentWeek === 0 ? '60px' : 'auto',
-                },
-                '& td': {
-                  fontSize: '0.8rem',
-                  p: 1.5,
-                  verticalAlign: 'top',
-                  minHeight: currentWeek === 0 ? '120px' : 'auto',
-                },
-                '& tbody tr': {
-                  minHeight: currentWeek === 0 ? '120px' : 'auto',
-                }
-              }}
-            >
-              <thead>
-                <tr>
-                  <th style={{ width: 280, position: 'sticky', left: 0, zIndex: 100, backgroundColor: 'var(--joy-palette-background-surface)' }}>
-                    Player Info
-                  </th>
-                  {weekSchedule?.games && weekSchedule.games.length > 0 ? (
-                    currentWeek === 0 ? (
-                      // Preseason: Show Game 1, Game 2, etc. (exactly 7 games per team)
-                      Array.from({ 
-                        length: 7 
-                      }, (_, index) => (
-                        <th key={index} style={{ minWidth: 220 }}>
-                          Game {index + 1}
-                        </th>
-                      ))
-                    ) : (
-                      // Regular season: Show days of the week with dates from fantasy_season_weeks
-                      (() => {
-                        const startDate = new Date(weekSchedule.startDate);
-                        const endDate = new Date(weekSchedule.endDate);
-                        const daysInWeek = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                        const actualDays = Math.min(daysInWeek, 7); // Cap at 7 days
-                        
-                        return Array.from({ length: actualDays }, (_, index) => {
-                          const dayDate = new Date(startDate);
-                          dayDate.setDate(startDate.getDate() + index);
-                          
-                          const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-                          const dayName = dayNames[index];
-                          const dateStr = dayDate.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-                          
-                          return (
-                            <th key={index} style={{ minWidth: 220 }}>
-                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                                <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
-                                  {dayName}
-                                </Typography>
-                                <Typography level="body-xs" color="neutral">
-                                  {dateStr}
-                                </Typography>
-                              </Box>
-                            </th>
-                          );
-                        });
-                      })()
-                    )
-                  ) : (
-                    // Fallback to 7 game columns if no schedule data
-                    Array.from({ length: 7 }, (_, index) => (
-                      <th key={index} style={{ minWidth: 220 }}>
-                        Game {index + 1}
-                      </th>
-                    ))
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {availablePlayers.map((player) => {
-                  // Get real game data for this player's team
-                  const playerGames = getPlayerGames(player.team);
-                  
-                  // Get player stats for this player from the fetched data
-                  const playerStats = allPlayerStats?.filter(stat => stat.nba_player_id === player.nbaPlayerId) || [];
-                  
-                  // Debug logging for this specific player
-                  console.log(`🔍 Player ${player.name} (NBA ID: ${player.nbaPlayerId}):`, {
-                    totalStats: allPlayerStats?.length || 0,
-                    filteredStats: playerStats.length,
-                    stats: playerStats
-                  });
-                  
-                  // Create a map of game_id to player stats for easy lookup
-                  const playerStatsByGame = playerStats.reduce((acc, stat) => {
-                    acc[stat.game_id] = stat;
-                    return acc;
-                  }, {} as Record<string, any>);
-                  
-                  // Determine how many game columns to show
-                  // For preseason (week 0), show exactly 7 games. For regular season, show actual days in week
-                  const maxGames = weekSchedule?.games 
-                    ? (currentWeek === 0 
-                        ? 7 // Preseason always shows 7 games
-                        : (() => {
-                            const startDate = new Date(weekSchedule.startDate);
-                            const endDate = new Date(weekSchedule.endDate);
-                            const daysInWeek = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-                            return Math.min(daysInWeek, 7); // Cap at 7 days
-                          })()
-                      )
-                    : 7;
-                  
-                  // Calculate weekly average for this player
-                  const weeklyFantasyPoints = playerStats.map(stat => calculateFantasyPoints(stat, selectedScoringFormat));
-                  const weeklyAverage = weeklyFantasyPoints.length > 0 
-                    ? Math.round((weeklyFantasyPoints.reduce((sum, points) => sum + points, 0) / weeklyFantasyPoints.length) * 100) / 100
-                    : 0;
-
-                  return (
-                    <tr key={player.id}>
-                      <td style={{ position: 'sticky', left: 0, zIndex: 99, backgroundColor: 'var(--joy-palette-background-surface)' }}>
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, p: 1 }}>
-                          {/* Player Info */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar
-                              src={player.avatar}
-                              size="sm"
-                              sx={{ width: 32, height: 32 }}
-                            >
-                              {player.name.charAt(0)}
-                            </Avatar>
-                            <Box sx={{ flex: 1 }}>
-                              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                {player.name}
-                              </Typography>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-                                <Chip size="sm" variant="soft" sx={{ fontSize: '0.7rem', height: 20 }}>
-                                  {player.team}
-                                </Chip>
-                                <Typography level="body-xs" color="neutral">
-                                  {player.position}
-                                </Typography>
-                              </Box>
-                            </Box>
-                          </Box>
-                          
-                          {/* Weekly Average */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1 }}>
-                            <Typography level="body-xs" color="neutral">
-                              Avg:
-                            </Typography>
-                            <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'primary.600' }}>
-                              {weeklyAverage} FP
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </td>
-                      {Array.from({ length: maxGames }, (_, idx) => {
-                        // For preseason, use sequential games. For regular season, use day-specific games
-                        const game = currentWeek === 0 
-                          ? playerGames[idx] 
-                          : getPlayerGamesForDay(player.team, idx);
-                        const playerGameStats = game ? playerStatsByGame[game.gameId] : null;
-                        
-                        // Debug logging for player stats
-                        if (game && player.nbaPlayerId) {
-                          console.log(`🔍 Player ${player.name} (${player.nbaPlayerId}) - Game ${game.gameId}:`, {
-                            hasStats: !!playerGameStats,
-                            points: playerGameStats?.pts,
-                            gameStatus: game.status
-                          });
-                        }
-                        
-                        return (
-                        <td key={idx}>
-                          {game ? (
-                            <Box
-                              sx={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 1,
-                                p: 1.5,
-                                minHeight: currentWeek === 0 ? '140px' : '120px',
-                                bgcolor: game.isHome ? 'primary.50' : 'neutral.50',
-                                borderRadius: 'md',
-                                border: '2px solid',
-                                borderColor: game.isHome ? 'primary.300' : 'neutral.300',
-                                overflow: 'hidden',
-                                wordWrap: 'break-word',
-                                boxShadow: 'sm',
-                                transition: 'all 0.2s ease',
-                                '&:hover': {
-                                  boxShadow: 'md',
-                                  transform: 'translateY(-1px)',
-                                }
-                              }}
-                            >
-                                <Typography 
-                                  level="body-xs" 
-                                  sx={{ 
-                                    fontWeight: 'bold',
-                                    lineHeight: 1.2,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                {game.isHome ? 'vs' : '@'} {game.opponent}
-                              </Typography>
-                                <Typography 
-                                  level="body-xs" 
-                                  color="neutral"
-                                  sx={{ 
-                                    lineHeight: 1.2,
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  {game.gameTime || 'TBD'}
-                                </Typography>
-                                
-                                {/* Show player fantasy points if stats are available (regardless of game status) */}
-                                {playerGameStats && (
-                                  <Box
-                                    sx={{
-                                      display: 'flex',
-                                      flexDirection: 'column',
-                                      alignItems: 'center',
-                                      justifyContent: 'center',
-                                      p: 1,
-                                      bgcolor: 'success.50',
-                                      borderRadius: 'sm',
-                                      border: '1px solid',
-                                      borderColor: 'success.200',
-                                      mt: 'auto'
-                                    }}
-                                  >
-                                    <Typography
-                                      level="body-xs"
-                                      sx={{
-                                        fontWeight: 'bold',
-                                        color: 'success.700',
-                                        fontSize: '0.7rem',
-                                        lineHeight: 1.2,
-                                        textAlign: 'center',
-                                        mb: 0.5
-                                      }}
-                                    >
-                                      FANTASY POINTS
-                                    </Typography>
-                                    <Typography
-                                      level="title-sm"
-                                      sx={{
-                                        fontWeight: 'bold',
-                                        color: 'success.800',
-                                        fontSize: '1.1rem',
-                                        lineHeight: 1,
-                                        textAlign: 'center'
-                                      }}
-                                    >
-                                      {calculateFantasyPoints(playerGameStats, selectedScoringFormat)}
-                                    </Typography>
-                                  </Box>
-                                )}
-                                
-                                {game.status && (
-                                  <Chip 
-                                    size="sm" 
-                                    variant="solid" 
-                                    color={game.status === 'Final' ? 'success' : game.status === 'In Progress' ? 'warning' : 'neutral'}
-                                    sx={{ 
-                                      fontSize: '0.7rem', 
-                                      height: 20,
-                                      fontWeight: 'bold',
-                                      alignSelf: 'flex-start',
-                                      mt: playerGameStats ? 0.5 : 'auto'
-                                    }}
-                                  >
-                                    {game.status}
-                                  </Chip>
-                                )}
-                            </Box>
-                          ) : (
-                              <Box sx={{ 
-                                textAlign: 'center', 
-                                color: 'neutral.400',
-                                minHeight: currentWeek === 0 ? '120px' : 'auto',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center'
-                              }}>
-                              <Typography level="body-xs">—</Typography>
-                            </Box>
-                          )}
-                        </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </Table>
-          </Sheet>
-        </CardContent>
-      </Card>
     </Box>
   );
 }

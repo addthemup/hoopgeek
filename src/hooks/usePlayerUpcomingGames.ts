@@ -59,13 +59,18 @@ export function usePlayerUpcomingGames(playerId: string) {
       console.log(`📅 Found ${fantasyWeeks?.length || 0} fantasy weeks`)
 
       // Get upcoming games for the player's team in 2025-26 season
+      // Use a simple date string to avoid timezone issues
+      const now = new Date();
+      const todayDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      
+      console.log(`📅 Fetching games from ${todayDateStr} onwards...`)
+      
       const { data: games, error: gamesError } = await supabase
         .from('nba_games')
         .select(`
           id,
           game_id,
           game_date,
-          game_time_est,
           game_status_text,
           home_team_name,
           home_team_tricode,
@@ -78,8 +83,9 @@ export function usePlayerUpcomingGames(playerId: string) {
         `)
         .eq('season_year', 2026)
         .or(`home_team_tricode.eq.${playerData.team_abbreviation},away_team_tricode.eq.${playerData.team_abbreviation}`)
-        .gte('game_date', new Date().toISOString().split('T')[0]) // Only future games
-        .order('game_date')
+        .gte('game_date', todayDateStr) // Only future games (from start of today)
+        .order('game_date', { ascending: true })
+        .limit(82) // Show entire season (each team plays ~82 games)
 
       if (gamesError) {
         console.error('❌ Error fetching upcoming games:', gamesError)

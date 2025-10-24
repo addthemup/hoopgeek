@@ -65,11 +65,25 @@ export function useMakeDraftPick() {
       return data;
     },
     onSuccess: (data, variables) => {
+      console.log('✅ Draft pick successful, invalidating queries...');
+      
       // Invalidate and refetch relevant queries
       queryClient.invalidateQueries({ queryKey: ['draft-order', variables.leagueId] });
       queryClient.invalidateQueries({ queryKey: ['draft-state', variables.leagueId] });
       queryClient.invalidateQueries({ queryKey: ['next-pick', variables.leagueId] });
       queryClient.invalidateQueries({ queryKey: ['teams', variables.leagueId] });
+      queryClient.invalidateQueries({ queryKey: ['roster', variables.leagueId] });
+      
+      // Invalidate available players queries (used in DraftPicks modal)
+      queryClient.invalidateQueries({ queryKey: ['available-players', variables.leagueId] });
+      
+      // Invalidate paginated players queries (used in DraftBestAvailable)
+      queryClient.invalidateQueries({ queryKey: ['players-paginated'] });
+      
+      // Invalidate accepted trades
+      queryClient.invalidateQueries({ queryKey: ['accepted-trades', variables.leagueId] });
+      
+      console.log('🔄 All queries invalidated, UI should refresh');
     },
   });
 }

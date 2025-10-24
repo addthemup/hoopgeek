@@ -1,592 +1,558 @@
-import { Box, Typography, Stack, Card, Chip, IconButton, AspectRatio, Grid, Link as JoyLink, CircularProgress, CardContent, CardOverflow, Divider, CardCover } from '@mui/joy'
-import { useNavigate } from 'react-router-dom'
-import { useAuth } from '../hooks/useAuth'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import Favorite from '@mui/icons-material/Favorite'
-import Visibility from '@mui/icons-material/Visibility'
-import PlayCircleOutline from '@mui/icons-material/PlayCircleOutline'
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
-import { getAllGames, GameData } from '../utils/gameLoader'
-
-// Detect if mobile device
-const isMobile = () => {
-  return window.innerWidth < 900 // MUI's md breakpoint
-}
-
-// GameData interface is now imported from gameLoader
-
-// Mock data removed - now using real data from JSON files
-
-// Algorithm to calculate feed priority
-const calculateFeedScore = (game: GameData): number => {
-  const now = Date.now()
-  const gameDate = new Date(game.date).getTime()
-  const daysAgo = (now - gameDate) / (1000 * 60 * 60 * 24)
-  
-  // Adjust fun score (divide by 10) so 100 becomes 10
-  const adjustedFunScore = game.fun_score / 10
-  
-  // Fun score is the primary factor (weight: 70%)
-  const funScoreWeight = 0.7
-  const normalizedFunScore = (adjustedFunScore / 10) * funScoreWeight
-  
-  // Recency score with exponential decay (weight: 30%)
-  const recencyWeight = 0.3
-  const decayRate = 0.05 // Slower decay as requested
-  const recencyScore = Math.exp(-decayRate * daysAgo) * recencyWeight
-  
-  // Add random factor for games older than 30 days (can bubble up)
-  const randomBoost = daysAgo > 30 ? Math.random() * 0.15 : 0
-  
-  return normalizedFunScore + recencyScore + randomBoost
-}
-
-interface GameCardProps {
-  game: GameData
-  onClick: () => void
-}
-
-function GameCard({ game, onClick }: GameCardProps) {
-  const { story, fun_score, lead_changes, dunk_stats, deep_shots } = game
-  
-  // Adjust fun score (divide by 10)
-  const adjustedFunScore = fun_score / 10
-  
-  // Determine card color based on adjusted fun score
-  const getFunScoreColor = (score: number): 'danger' | 'warning' | 'success' | 'primary' => {
-    if (score >= 9.5) return 'danger'
-    if (score >= 8.5) return 'warning'
-    if (score >= 7.5) return 'success'
-    return 'primary'
-  }
-  
-  // Calculate days ago
-  const daysAgo = Math.floor((Date.now() - new Date(game.date).getTime()) / (1000 * 60 * 60 * 24))
-  const dateLabel = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`
-  
-  // Format views
-  const formatViews = (views: number) => {
-    if (views >= 1000) return `${(views / 1000).toFixed(1)}k`
-    return views.toString()
-  }
-  
-  // Team logo URL - using ESPN's CDN
-  const getTeamLogoUrl = (tricode: string) => {
-    return `https://a.espncdn.com/combiner/i?img=/i/teamlogos/nba/500/${tricode}.png&h=100&w=100`
-  }
-  
-  // Get video URL - use LAST play for finished games (with winner), first play otherwise
-  const getVideoUrl = () => {
-    // If game has a winner (finished game), get the LAST video from play-by-play
-    if (game.script?.video_script && Array.isArray(game.script.video_script)) {
-      const videos = game.script.video_script.filter((play: any) => play.mp4)
-      
-      if (videos.length > 0) {
-        // For finished games with a winner, show the last play
-        // This is typically the game-winning play or final buzzer
-        return videos[videos.length - 1].mp4
-      }
-    }
-    
-    // Fallback to pre-set video_url if available
-    if (game.video_url) return game.video_url
-    
-    return null
-  }
-  
-  const videoUrl = getVideoUrl()
-  
-  return (
-    <Card variant="outlined" sx={{ width: '100%', cursor: 'pointer', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
-      <CardOverflow>
-        {/* Video/Image Background */}
-        <Box sx={{ position: 'relative', minHeight: 200 }}>
-          <CardCover>
-            {videoUrl ? (
-              <video
-                autoPlay
-                loop
-                muted
-                playsInline
-                poster={game.thumbnail_url || 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=800'}
-                style={{ objectFit: 'cover' }}
-              >
-                <source src={videoUrl} type="video/mp4" />
-              </video>
-            ) : (
-              <img
-                src={game.thumbnail_url || 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=800'}
-                srcSet={`${game.thumbnail_url || 'https://images.unsplash.com/photo-1546519638-68e109498ffc?auto=format&fit=crop&w=800&dpr=2'} 2x`}
-                loading="lazy"
-                alt={story.matchup}
-                style={{ objectFit: 'cover' }}
-              />
-            )}
-          </CardCover>
-          
-          {/* Dark overlay for better text contrast */}
-          <CardCover
-            sx={{
-              background: `linear-gradient(180deg, 
-                rgba(0,0,0,0.3) 0%, 
-                rgba(0,0,0,0.5) 50%, 
-                rgba(0,0,0,0.7) 100%)`
-            }}
-          />
-          
-          {/* Content overlay */}
-          <Box
-            sx={{
-              position: 'relative',
-              zIndex: 2,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              py: 4,
-              minHeight: 200
-            }}
-            onClick={onClick}
-          >
-          {/* Team Logos */}
-          <Stack direction="row" alignItems="center" spacing={3} sx={{ width: '100%', justifyContent: 'space-around', px: 2 }}>
-            {/* Winner Logo */}
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Box
-                component="img"
-                src={getTeamLogoUrl(story.teams.winner.tricode)}
-                alt={story.teams.winner.tricode}
-                sx={{
-                  width: 60,
-                  height: 60,
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))',
-                }}
-              />
-              <Typography level="h4" sx={{ color: 'white', mt: 1, fontWeight: 'bold', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                {story.teams.winner.points}
-              </Typography>
-              <Typography level="body-xs" sx={{ color: 'white', opacity: 0.9, textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
-                {story.teams.winner.tricode}
-              </Typography>
-            </Box>
-            
-            {/* Fun Score - FOCAL POINT */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', px: 2 }}>
-              <Typography 
-                level="h1" 
-                sx={{ 
-                  color: 'white', 
-                  fontSize: '3.5rem',
-                  fontWeight: 'bold',
-                  lineHeight: 1,
-                  textShadow: '0 4px 12px rgba(0,0,0,0.4)',
-                  letterSpacing: '-0.02em'
-                }}
-              >
-                {adjustedFunScore.toFixed(1)}
-              </Typography>
-              <Typography level="body-xs" sx={{ color: 'white', opacity: 0.95, mt: 0.5, textShadow: '0 1px 2px rgba(0,0,0,0.3)', fontWeight: 'md' }}>
-                🔥 FUN SCORE
-              </Typography>
-            </Box>
-            
-            {/* Loser Logo */}
-            <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-              <Box
-                component="img"
-                src={getTeamLogoUrl(story.teams.loser.tricode)}
-                alt={story.teams.loser.tricode}
-                sx={{
-                  width: 60,
-                  height: 60,
-                  objectFit: 'contain',
-                  filter: 'drop-shadow(0 2px 8px rgba(0,0,0,0.3))',
-                  opacity: 0.8,
-                }}
-              />
-              <Typography level="h4" sx={{ color: 'white', mt: 1, fontWeight: 'bold', opacity: 0.9, textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
-                {story.teams.loser.points}
-              </Typography>
-              <Typography level="body-xs" sx={{ color: 'white', opacity: 0.8, textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
-                {story.teams.loser.tricode}
-              </Typography>
-            </Box>
-          </Stack>
-          </Box>
-        </Box>
-        
-        {/* Like Button - Bottom Right with overlay */}
-        <IconButton
-          aria-label={`Like ${story.matchup}`}
-          size="md"
-          variant="solid"
-          color="danger"
-          sx={{
-            position: 'absolute',
-            zIndex: 2,
-            borderRadius: '50%',
-            right: '1rem',
-            bottom: 0,
-            transform: 'translateY(50%)',
-          }}
-        >
-          <Favorite />
-        </IconButton>
-      </CardOverflow>
-      
-      <CardContent onClick={onClick}>
-        <Typography level="title-md">
-          <JoyLink overlay underline="none">
-            {story.teams.winner.city} defeats {story.teams.loser.city}
-          </JoyLink>
-        </Typography>
-        
-        {/* Highlight chips */}
-        {(lead_changes.buzzer_beater > 0 || lead_changes.total >= 10 || dunk_stats['Total Dunks'] >= 15 || deep_shots.four_pointers > 0) && (
-          <Stack direction="row" spacing={0.5} sx={{ mt: 1.5, flexWrap: 'wrap', gap: 0.5 }}>
-            {lead_changes.buzzer_beater > 0 && (
-              <Chip size="sm" variant="soft" color="danger">
-                🎯 Buzzer Beater
-              </Chip>
-            )}
-            {lead_changes.total >= 10 && (
-              <Chip size="sm" variant="soft" color="warning">
-                ↔️ {lead_changes.total} Changes
-              </Chip>
-            )}
-            {dunk_stats['Total Dunks'] >= 15 && (
-              <Chip size="sm" variant="soft" color="success">
-                💪 {dunk_stats['Total Dunks']} Dunks
-              </Chip>
-            )}
-            {deep_shots.four_pointers > 0 && (
-              <Chip size="sm" variant="soft" color="primary">
-                🎯 4-Pointer
-              </Chip>
-            )}
-          </Stack>
-        )}
-      </CardContent>
-      
-      <CardOverflow variant="soft">
-        <Divider inset="context" />
-        <CardContent orientation="horizontal">
-          <Typography level="body-xs" startDecorator={<Visibility />}>
-            {formatViews(game.views || 0)} views
-          </Typography>
-          <Divider orientation="vertical" />
-          <Typography level="body-xs">{dateLabel}</Typography>
-          <Divider orientation="vertical" />
-          <Typography level="body-xs">{game.likes || 0} likes</Typography>
-        </CardContent>
-      </CardOverflow>
-    </Card>
-  )
-}
-
-// Batch sizes based on viewport
-const MOBILE_BATCH_SIZE = 3  // Load 3 at a time on mobile (smoother than 1)
-const DESKTOP_BATCH_SIZE = 12 // Load 12 at a time on desktop (4 rows of 3)
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  Grid,
+  Stack,
+  Chip,
+  Divider,
+  Sheet,
+} from '@mui/joy';
+import {
+  TrendingUp,
+  TrendingDown,
+  Remove,
+  SportsBasketball,
+} from '@mui/icons-material';
+import { useNBAScoreboard } from '../hooks/useNBAScoreboard';
+import { useBettingOdds, formatOdds } from '../hooks/useBettingOdds';
+import { NBA_TEAM_COLORS } from '../utils/nbaTeamColors';
+import PlayersOfTheNight from '../components/PlayersOfTheNight';
 
 export default function Home() {
-  const navigate = useNavigate()
-  const { user } = useAuth()
-  const [allGames, setAllGames] = useState<GameData[]>([])
-  const [displayedGames, setDisplayedGames] = useState<GameData[]>([])
-  const [page, setPage] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [showScrollTop, setShowScrollTop] = useState(false)
-  const observerTarget = useRef<HTMLDivElement>(null)
+  const { data: nbaScoreboard, isLoading: scoreboardLoading } = useNBAScoreboard();
+  const { data: bettingOdds, isLoading: oddsLoading } = useBettingOdds();
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-  // Sort games using the feed algorithm
-  const sortedGames = useMemo(() => {
-    return [...allGames].sort((a, b) => calculateFeedScore(b) - calculateFeedScore(a))
-  }, [allGames])
-
-  // Load initial games
-  useEffect(() => {
-    const loadGames = async () => {
-      try {
-        setLoading(true)
-        const games = await getAllGames()
-        setAllGames(games)
-        
-        // Load first batch
-        const batchSize = isMobile() ? MOBILE_BATCH_SIZE : DESKTOP_BATCH_SIZE
-        const sortedData = [...games].sort((a, b) => calculateFeedScore(b) - calculateFeedScore(a))
-        setDisplayedGames(sortedData.slice(0, batchSize))
-        setPage(1)
-        setHasMore(sortedData.length > batchSize)
-      } catch (error) {
-        console.error('Error loading games:', error)
-        setAllGames([])
-      } finally {
-        setLoading(false)
-      }
+  const getTrendIcon = (trend: string) => {
+    switch (trend) {
+      case 'up':
+        return <TrendingUp sx={{ fontSize: '1rem', color: '#16A34A' }} />;
+      case 'down':
+        return <TrendingDown sx={{ fontSize: '1rem', color: '#DC2626' }} />;
+      default:
+        return <Remove sx={{ fontSize: '1rem', color: '#666' }} />;
     }
-    loadGames()
-  }, [])
+  };
 
-  // Load more games when scrolling
-  const loadMoreGames = useCallback(() => {
-    if (loading || !hasMore) return
-
-    const batchSize = isMobile() ? MOBILE_BATCH_SIZE : DESKTOP_BATCH_SIZE
-    const startIndex = page * batchSize
-    const endIndex = startIndex + batchSize
-    const nextBatch = sortedGames.slice(startIndex, endIndex)
-
-    if (nextBatch.length > 0) {
-      setDisplayedGames(prev => [...prev, ...nextBatch])
-      setPage(prev => prev + 1)
-      setHasMore(endIndex < sortedGames.length)
-    } else {
-      setHasMore(false)
-    }
-  }, [page, sortedGames, loading, hasMore])
-
-  // Intersection Observer for infinite scroll
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loading) {
-          loadMoreGames()
-        }
-      },
-      { threshold: 0.1, rootMargin: '100px' } // Start loading a bit before reaching the bottom
-    )
-
-    const currentTarget = observerTarget.current
-    if (currentTarget) {
-      observer.observe(currentTarget)
-    }
-
-    return () => {
-      if (currentTarget) {
-        observer.unobserve(currentTarget)
-      }
-    }
-  }, [loadMoreGames, hasMore, loading])
-
-  // Show/hide scroll to top button
-  useEffect(() => {
-    const handleScroll = () => {
-      setShowScrollTop(window.scrollY > 500)
-    }
-    
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  const handleGameClick = (gameId: string) => {
-    navigate(`/game/${gameId}`)
-  }
-
-  const scrollToTop = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+  const getTeamColor = (tricode: string) => {
+    const colors = NBA_TEAM_COLORS[tricode];
+    return colors?.primary || '#000';
+  };
 
   return (
     <Box sx={{ 
-      maxWidth: 1400, 
-      mx: 'auto', 
-      pt: { xs: 1, md: 2 }, 
-      pb: 2, 
-      px: { xs: 1, md: 2 } 
+      bgcolor: '#F5F1E8',
+      minHeight: '100vh',
+      py: 4
     }}>
-      {/* Floating Filter Bar (Instagram-style) */}
       <Box sx={{ 
-        position: 'sticky', 
-        top: { xs: 56, md: 64 }, // Account for nav height
-        zIndex: 10,
-        mb: 2,
-        backdropFilter: 'blur(10px)',
-        bgcolor: 'background.body',
-        mx: -2,
-        px: 2,
-        py: 1,
-        borderBottom: '1px solid',
-        borderColor: 'divider'
+        maxWidth: '1400px', 
+        mx: 'auto',
+        px: 3
       }}>
-        <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', '&::-webkit-scrollbar': { display: 'none' } }}>
-          <Chip 
-            size="sm" 
-            variant="solid" 
-            color="primary"
-            sx={{ flexShrink: 0 }}
-          >
-            🔥 All Games
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="danger"
-            sx={{ flexShrink: 0 }}
-          >
-            🎯 Buzzer Beaters
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="warning"
-            sx={{ flexShrink: 0 }}
-          >
-            ⚡ Close Games
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="success"
-            sx={{ flexShrink: 0 }}
-          >
-            💪 High Scoring
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="neutral"
-            sx={{ flexShrink: 0 }}
-          >
-            📅 Recent
-          </Chip>
-        </Stack>
-      </Box>
-
-      {/* Initial Loading State */}
-      {loading && displayedGames.length === 0 && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-          <Stack spacing={2} alignItems="center">
-            <CircularProgress size="lg" />
-            <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-              Loading epic games...
+        {/* Simple Header */}
+        <Sheet sx={{ 
+          bgcolor: 'transparent',
+          borderBottom: '6px double #000',
+          pb: 2,
+          mb: 4
+        }}>
+          <Stack spacing={1} alignItems="center">
+            <Typography 
+              sx={{ 
+                fontSize: { xs: '2rem', sm: '3rem', md: '4rem' },
+                fontFamily: 'serif',
+                fontWeight: 900,
+                letterSpacing: '-0.01em',
+                color: '#000',
+                lineHeight: 1
+              }}
+            >
+              🏀 HOOPGEEK
+            </Typography>
+            <Typography sx={{ 
+              fontFamily: 'serif',
+              fontSize: '0.9rem',
+              fontWeight: 600,
+              color: '#666',
+              textTransform: 'uppercase',
+              letterSpacing: '0.15em'
+            }}>
+              {today}
             </Typography>
           </Stack>
-        </Box>
-      )}
+        </Sheet>
 
-      {/* Games Feed - Pinterest/Instagram Style */}
-      {displayedGames.length > 0 && (
-        <>
-          <Grid
-            container
-            spacing={{ xs: 1.5, sm: 2, md: 3 }}
-            sx={{
-              '--Grid-borderWidth': '0px',
-            }}
-          >
-            {displayedGames.map((game, index) => (
-              <Grid
-                key={game.gameId}
-                xs={12}
-                sm={6}
-                md={4}
-                sx={{
-                  // Staggered fade-in animation
-                  animation: 'fadeInUp 0.5s ease-out',
-                  animationDelay: `${(index % 12) * 0.05}s`,
-                  animationFillMode: 'both',
-                  '@keyframes fadeInUp': {
-                    from: {
-                      opacity: 0,
-                      transform: 'translateY(20px)'
-                    },
-                    to: {
-                      opacity: 1,
-                      transform: 'translateY(0)'
-                    }
-                  }
-                }}
-              >
-                <GameCard game={game} onClick={() => handleGameClick(game.gameId)} />
-              </Grid>
-            ))}
-          </Grid>
-
-          {/* Infinite Scroll Trigger & Loading Indicator */}
-          <Box 
-            ref={observerTarget}
-            sx={{ 
-              display: 'flex', 
-              justifyContent: 'center', 
-              alignItems: 'center',
-              py: 4,
-              minHeight: '100px'
-            }}
-          >
-            {hasMore ? (
-              <Stack spacing={1} alignItems="center">
-                <CircularProgress size="md" />
-                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                  Loading more games...
-                </Typography>
+        {/* Main Content Grid */}
+        <Grid container spacing={3}>
+          {/* Today's Games with Scores */}
+          <Grid xs={12} md={8}>
+            <Typography sx={{ 
+              fontFamily: 'serif',
+              fontSize: '2rem',
+              fontWeight: 900,
+              mb: 3,
+              pb: 1,
+              borderBottom: '4px double #000',
+              textTransform: 'uppercase'
+            }}>
+              Today's Games
+            </Typography>
+            
+            {scoreboardLoading ? (
+              <Typography sx={{ fontFamily: 'serif', color: '#666', textAlign: 'center', py: 4 }}>
+                Loading games...
+              </Typography>
+            ) : nbaScoreboard && nbaScoreboard.games.length > 0 ? (
+              <Stack spacing={2}>
+                {nbaScoreboard.games.map((game: any) => (
+                  <Card 
+                    key={game.gameId}
+                    variant="outlined"
+                    sx={{ 
+                      bgcolor: '#fff',
+                      border: '3px solid #000',
+                      borderRadius: 0,
+                      boxShadow: '3px 3px 0px #000'
+                    }}
+                  >
+                    <CardContent>
+                      <Grid container spacing={2}>
+                        <Grid xs={12} sm={6}>
+                          <Stack spacing={2}>
+                            <Box>
+                              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                <Stack direction="row" spacing={1.5} alignItems="center">
+                                  <Typography sx={{ 
+                                    fontFamily: 'serif',
+                                    fontWeight: 900,
+                                    fontSize: '1.5rem',
+                                    color: getTeamColor(game.awayTeam.abbreviation || game.awayTeam.teamTricode)
+                                  }}>
+                                    {game.awayTeam.abbreviation || game.awayTeam.teamTricode}
+                                  </Typography>
+                                  <Typography sx={{ 
+                                    fontFamily: 'serif',
+                                    fontSize: '0.85rem',
+                                    color: '#666',
+                                    fontWeight: 600
+                                  }}>
+                                    ({game.awayTeam.wins || 0}-{game.awayTeam.losses || 0})
+                                  </Typography>
+                                </Stack>
+                                <Typography sx={{ 
+                                  fontFamily: 'serif',
+                                  fontWeight: 900,
+                                  fontSize: '2rem'
+                                }}>
+                                  {game.awayTeam.points || game.awayTeam.score || '-'}
+                                </Typography>
+                              </Stack>
+                              <Typography sx={{ 
+                                fontFamily: 'serif',
+                                fontSize: '0.85rem',
+                                color: '#666',
+                                mt: 0.5
+                              }}>
+                                {game.awayTeam.city} {game.awayTeam.name}
+                              </Typography>
+                            </Box>
+                            
+                            <Divider sx={{ borderColor: '#000' }} />
+                            
+                            <Box>
+                              <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                <Stack direction="row" spacing={1.5} alignItems="center">
+                                  <Typography sx={{ 
+                                    fontFamily: 'serif',
+                                    fontWeight: 900,
+                                    fontSize: '1.5rem',
+                                    color: getTeamColor(game.homeTeam.abbreviation || game.homeTeam.teamTricode)
+                                  }}>
+                                    {game.homeTeam.abbreviation || game.homeTeam.teamTricode}
+                                  </Typography>
+                                  <Typography sx={{ 
+                                    fontFamily: 'serif',
+                                    fontSize: '0.85rem',
+                                    color: '#666',
+                                    fontWeight: 600
+                                  }}>
+                                    ({game.homeTeam.wins || 0}-{game.homeTeam.losses || 0})
+                                  </Typography>
+                                </Stack>
+                                <Typography sx={{ 
+                                  fontFamily: 'serif',
+                                  fontWeight: 900,
+                                  fontSize: '2rem'
+                                }}>
+                                  {game.homeTeam.points || game.homeTeam.score || '-'}
+                                </Typography>
+                              </Stack>
+                              <Typography sx={{ 
+                                fontFamily: 'serif',
+                                fontSize: '0.85rem',
+                                color: '#666',
+                                mt: 0.5
+                              }}>
+                                {game.homeTeam.city} {game.homeTeam.name}
+                              </Typography>
+                            </Box>
+                            
+                            <Chip 
+                              size="sm"
+                              sx={{ 
+                                bgcolor: '#000',
+                                color: '#fff',
+                                borderRadius: 0,
+                                fontFamily: 'serif',
+                                fontWeight: 700,
+                                fontSize: '0.7rem'
+                              }}
+                            >
+                              {game.gameStatusText}
+                            </Chip>
+                          </Stack>
+                        </Grid>
+                        
+                        {/* Betting Odds Section */}
+                        <Grid xs={12} sm={6}>
+                          {bettingOdds && !oddsLoading && (() => {
+                            const bettingGame = bettingOdds.games.find(
+                              (bg: any) => bg.gameId === game.gameId
+                            );
+                            
+                            if (!bettingGame) return (
+                              <Typography sx={{ 
+                                fontFamily: 'serif',
+                                fontSize: '0.8rem',
+                                color: '#999',
+                                fontStyle: 'italic'
+                              }}>
+                                No odds available
+                              </Typography>
+                            );
+                            
+                            const twoWayMarket = bettingGame.markets.find((m: any) => m.name === '2way');
+                            const spreadMarket = bettingGame.markets.find((m: any) => m.name === 'spread');
+                            
+                            return (
+                              <Stack spacing={2}>
+                                {/* Moneyline (2-way) Odds */}
+                                {twoWayMarket && twoWayMarket.books[0] && (
+                                  <Box>
+                                    <Typography sx={{ 
+                                      fontFamily: 'serif',
+                                      fontSize: '0.9rem',
+                                      fontWeight: 900,
+                                      textTransform: 'uppercase',
+                                      mb: 1,
+                                      borderBottom: '2px solid #000',
+                                      pb: 0.5
+                                    }}>
+                                      Moneyline
+                                    </Typography>
+                                    <Stack spacing={1}>
+                                      {twoWayMarket.books[0].outcomes.map((outcome: any) => {
+                                        const isHome = outcome.type === 'home';
+                                        const teamName = isHome 
+                                          ? (game.homeTeam.abbreviation || game.homeTeam.teamTricode) 
+                                          : (game.awayTeam.abbreviation || game.awayTeam.teamTricode);
+                                        return (
+                                          <Box key={outcome.type}>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                              <Typography sx={{ 
+                                                fontFamily: 'serif',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 700
+                                              }}>
+                                                {teamName}
+                                              </Typography>
+                                              <Stack direction="row" spacing={1} alignItems="center">
+                                                <Typography sx={{ 
+                                                  fontFamily: 'serif',
+                                                  fontSize: '1rem',
+                                                  fontWeight: 900
+                                                }}>
+                                                  {formatOdds(outcome.odds)}
+                                                </Typography>
+                                                {getTrendIcon(outcome.odds_trend)}
+                                              </Stack>
+                                            </Stack>
+                                            <Typography sx={{ 
+                                              fontFamily: 'serif',
+                                              fontSize: '0.7rem',
+                                              color: '#666'
+                                            }}>
+                                              Open: {formatOdds(outcome.opening_odds)}
+                                            </Typography>
+                                          </Box>
+                                        );
+                                      })}
+                                    </Stack>
+                                  </Box>
+                                )}
+                                
+                                {/* Spread Odds */}
+                                {spreadMarket && spreadMarket.books[0] && (
+                                  <Box>
+                                    <Typography sx={{ 
+                                      fontFamily: 'serif',
+                                      fontSize: '0.9rem',
+                                      fontWeight: 900,
+                                      textTransform: 'uppercase',
+                                      mb: 1,
+                                      borderBottom: '2px solid #000',
+                                      pb: 0.5
+                                    }}>
+                                      Spread
+                                    </Typography>
+                                    <Stack spacing={1}>
+                                      {spreadMarket.books[0].outcomes.map((outcome: any) => {
+                                        const isHome = outcome.type === 'home';
+                                        const teamName = isHome 
+                                          ? (game.homeTeam.abbreviation || game.homeTeam.teamTricode)
+                                          : (game.awayTeam.abbreviation || game.awayTeam.teamTricode);
+                                        return (
+                                          <Box key={outcome.type}>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                              <Typography sx={{ 
+                                                fontFamily: 'serif',
+                                                fontSize: '0.85rem',
+                                                fontWeight: 700
+                                              }}>
+                                                {teamName} {outcome.spread > 0 ? '+' : ''}{outcome.spread}
+                                              </Typography>
+                                              <Stack direction="row" spacing={1} alignItems="center">
+                                                <Typography sx={{ 
+                                                  fontFamily: 'serif',
+                                                  fontSize: '1rem',
+                                                  fontWeight: 900
+                                                }}>
+                                                  {formatOdds(outcome.odds)}
+                                                </Typography>
+                                                {getTrendIcon(outcome.odds_trend)}
+                                              </Stack>
+                                            </Stack>
+                                            <Typography sx={{ 
+                                              fontFamily: 'serif',
+                                              fontSize: '0.7rem',
+                                              color: '#666'
+                                            }}>
+                                              Open: {outcome.opening_spread > 0 ? '+' : ''}{outcome.opening_spread} ({formatOdds(outcome.opening_odds)})
+                                            </Typography>
+                                          </Box>
+                                        );
+                                      })}
+                                    </Stack>
+                                  </Box>
+                                )}
+                                
+                                {twoWayMarket && twoWayMarket.books[0] && (
+                                  <Typography sx={{ 
+                                    fontFamily: 'serif',
+                                    fontSize: '0.65rem',
+                                    color: '#999',
+                                    fontStyle: 'italic',
+                                    textAlign: 'right'
+                                  }}>
+                                    via {twoWayMarket.books[0].name}
+                                  </Typography>
+                                )}
+                              </Stack>
+                            );
+                          })()}
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                ))}
               </Stack>
             ) : (
-              <Stack spacing={2} alignItems="center" sx={{ py: 4 }}>
-                <Typography level="h4" sx={{ fontSize: '2rem' }}>
-                  🎉
-                </Typography>
-                <Typography level="title-lg" sx={{ textAlign: 'center' }}>
-                  You've watched all {allGames.length} games!
-                </Typography>
-                <Typography level="body-sm" sx={{ color: 'text.secondary', textAlign: 'center' }}>
-                  Check back later for more epic highlights
-                </Typography>
-                <Chip 
-                  variant="soft" 
-                  color="primary"
-                  onClick={scrollToTop}
-                  sx={{ cursor: 'pointer', mt: 2 }}
-                >
-                  ⬆️ Back to Top
-                </Chip>
-              </Stack>
+              <Card 
+                variant="outlined"
+                sx={{ 
+                  bgcolor: '#fff',
+                  border: '3px solid #000',
+                  borderRadius: 0
+                }}
+              >
+                <CardContent>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontSize: '1.2rem',
+                    color: '#666',
+                    textAlign: 'center',
+                    py: 6
+                  }}>
+                    No games scheduled today
+                  </Typography>
+                </CardContent>
+              </Card>
             )}
-          </Box>
-        </>
-      )}
+          </Grid>
 
-      {/* Floating Scroll to Top Button (Instagram-style) */}
-      {showScrollTop && (
-        <IconButton
-          variant="solid"
-          color="primary"
-          onClick={scrollToTop}
-          sx={{
-            position: 'fixed',
-            bottom: { xs: 16, md: 24 },
-            right: { xs: 16, md: 24 },
-            zIndex: 1000,
-            width: 56,
-            height: 56,
-            borderRadius: '50%',
-            boxShadow: 'lg',
-            animation: 'fadeIn 0.3s ease-out',
-            '@keyframes fadeIn': {
-              from: { opacity: 0, transform: 'scale(0.8)' },
-              to: { opacity: 1, transform: 'scale(1)' }
-            },
-            '&:hover': {
-              transform: 'scale(1.1)',
-              transition: 'transform 0.2s'
-            }
-          }}
-        >
-          <KeyboardArrowUpIcon />
-        </IconButton>
-      )}
+          {/* Sidebar */}
+          <Grid xs={12} md={4}>
+            {/* Quick Stats Box */}
+            <Card 
+              variant="outlined"
+              sx={{ 
+                mb: 3,
+                bgcolor: '#000',
+                color: '#fff',
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '3px 3px 0px #000'
+              }}
+            >
+              <CardContent>
+                <Stack spacing={2} alignItems="center">
+                  <SportsBasketball sx={{ fontSize: '3rem' }} />
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontSize: '1.3rem',
+                    fontWeight: 900,
+                    textTransform: 'uppercase',
+                    textAlign: 'center',
+                    letterSpacing: '0.1em'
+                  }}>
+                    Live NBA Data
+                  </Typography>
+                  <Divider sx={{ width: '100%', bgcolor: '#fff' }} />
+                  <Stack spacing={1} sx={{ width: '100%' }}>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography sx={{ fontFamily: 'serif', fontSize: '0.9rem' }}>
+                        Games Today
+                      </Typography>
+                      <Typography sx={{ fontFamily: 'serif', fontSize: '0.9rem', fontWeight: 900 }}>
+                        {nbaScoreboard?.games.length || 0}
+                      </Typography>
+                    </Stack>
+                    <Stack direction="row" justifyContent="space-between">
+                      <Typography sx={{ fontFamily: 'serif', fontSize: '0.9rem' }}>
+                        Odds Available
+                      </Typography>
+                      <Typography sx={{ fontFamily: 'serif', fontSize: '0.9rem', fontWeight: 900 }}>
+                        {bettingOdds?.games.length || 0}
+                      </Typography>
+                    </Stack>
+                  </Stack>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontSize: '0.7rem',
+                    color: '#FFD700',
+                    textAlign: 'center',
+                    fontStyle: 'italic'
+                  }}>
+                    Updated every 60 seconds
+                  </Typography>
+                </Stack>
+              </CardContent>
+            </Card>
 
-      {/* Empty State */}
-      {!loading && displayedGames.length === 0 && (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <Typography level="h3" sx={{ mb: 2 }}>
-            No games found
-          </Typography>
-          <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-            Run the index generator to load games
-          </Typography>
-        </Box>
-      )}
+            {/* Players of the Night */}
+            <Box sx={{ mb: 3 }}>
+              <PlayersOfTheNight />
+            </Box>
+
+            {/* Game Highlights Section */}
+            <Card 
+              variant="outlined"
+              sx={{ 
+                bgcolor: '#fff',
+                border: '3px solid #000',
+                borderRadius: 0
+              }}
+            >
+              <CardContent sx={{ p: 0 }}>
+                <Box sx={{ 
+                  bgcolor: '#000', 
+                  color: '#fff', 
+                  p: 2
+                }}>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontSize: '1.2rem',
+                    fontWeight: 900,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em'
+                  }}>
+                    Legend
+                  </Typography>
+                </Box>
+                <Box sx={{ p: 2 }}>
+                  <Stack spacing={2}>
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <TrendingUp sx={{ fontSize: '1rem', color: '#16A34A' }} />
+                        <Typography sx={{ 
+                          fontFamily: 'serif',
+                          fontSize: '0.85rem',
+                          fontWeight: 700
+                        }}>
+                          Odds Moving Up
+                        </Typography>
+                      </Stack>
+                      <Typography sx={{ 
+                        fontFamily: 'serif',
+                        fontSize: '0.75rem',
+                        color: '#666',
+                        pl: 3
+                      }}>
+                        Line is getting better for this team
+                      </Typography>
+                    </Box>
+                    
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <TrendingDown sx={{ fontSize: '1rem', color: '#DC2626' }} />
+                        <Typography sx={{ 
+                          fontFamily: 'serif',
+                          fontSize: '0.85rem',
+                          fontWeight: 700
+                        }}>
+                          Odds Moving Down
+                        </Typography>
+                      </Stack>
+                      <Typography sx={{ 
+                        fontFamily: 'serif',
+                        fontSize: '0.75rem',
+                        color: '#666',
+                        pl: 3
+                      }}>
+                        Line is getting worse for this team
+                      </Typography>
+                    </Box>
+                    
+                    <Box>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.5 }}>
+                        <Remove sx={{ fontSize: '1rem', color: '#666' }} />
+                        <Typography sx={{ 
+                          fontFamily: 'serif',
+                          fontSize: '0.85rem',
+                          fontWeight: 700
+                        }}>
+                          No Movement
+                        </Typography>
+                      </Stack>
+                      <Typography sx={{ 
+                        fontFamily: 'serif',
+                        fontSize: '0.75rem',
+                        color: '#666',
+                        pl: 3
+                      }}>
+                        Odds unchanged since opening
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Box>
     </Box>
-  )
+  );
 }

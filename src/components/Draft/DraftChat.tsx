@@ -17,6 +17,7 @@ import { useDraftLobbyParticipants, useUpdateLobbyStatus, useJoinDraftLobby } fr
 import { useAuth } from '../../hooks/useAuth';
 import { useTeams } from '../../hooks/useTeams';
 import { useLeagueMembers } from '../../hooks/useLeagueMembers';
+import { useLeague } from '../../hooks/useLeagues';
 import { markChatAsViewed } from '../../hooks/useChatMentions';
 import { DraftUserList } from './DraftUserList';
 
@@ -34,6 +35,7 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   const { data: participants } = useDraftLobbyParticipants(leagueId);
   const { data: teams } = useTeams(leagueId);
   const { data: leagueMembers } = useLeagueMembers(leagueId);
+  const { data: league } = useLeague(leagueId);
   const sendMessage = useSendDraftChatMessage();
   const updateLobbyStatus = useUpdateLobbyStatus();
   const joinLobby = useJoinDraftLobby();
@@ -41,15 +43,26 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   // Find user's team
   const userTeam = teams?.find(team => team.user_id === user?.id);
   const isUserInLobby = participants?.some(p => p.user_id === user?.id);
+  
+  // Get season ID - try multiple sources
+  const seasonId = (league as any)?.current_season_id || 
+                   (league as any)?.season_id || 
+                   (league as any)?.fantasy_league_seasons?.[0]?.id ||
+                   teams?.[0]?.season_id;
 
   // Debug logging
   console.log('🔍 DraftChat Debug:', {
     userId: user?.id,
     userTeam: userTeam?.id,
     userTeamName: userTeam?.team_name,
+    seasonId,
+    league,
+    teams,
     participants: participants?.map(p => ({ userId: p.user_id, teamName: p.fantasy_team?.team_name })),
     isUserInLobby,
-    leagueMembers: leagueMembers?.map(m => ({ userId: m.user_id, teamName: m.team_name, isOnline: m.is_online }))
+    leagueMembers: leagueMembers?.map(m => ({ userId: m.user_id, teamName: m.team_name, isOnline: m.is_online })),
+    chatEnabled: !!(userTeam && seasonId),
+    reason: !userTeam ? 'No user team' : !seasonId ? 'No season ID' : 'Chat should be enabled'
   });
 
   // Auto-join lobby when component mounts if user has a team but isn't in lobby
@@ -94,11 +107,12 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
   }, [userTeam, leagueId]);
 
   const handleSendMessage = async () => {
-    if (!message.trim() || !userTeam) return;
+    if (!message.trim() || !userTeam || !seasonId) return;
 
     try {
       await sendMessage.mutateAsync({
         leagueId,
+        seasonId,
         fantasyTeamId: userTeam.id,
         message: message.trim()
       });
@@ -162,6 +176,13 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
       </Alert>
     );
   }
+
+  // Show alert if chat is disabled
+  const chatDisabledReason = !userTeam 
+    ? 'You need to be on a team in this league to use chat.' 
+    : !seasonId 
+    ? 'Unable to determine league season. Please refresh the page.' 
+    : null;
 
   return (
     <Card 
@@ -297,19 +318,26 @@ export default function DraftChat({ leagueId }: DraftChatProps) {
               backgroundColor: 'background.surface'
             }}
           >
+            {chatDisabledReason && (
+              <Alert color="warning" variant="soft" sx={{ mb: 2 }}>
+                <Typography level="body-sm">
+                  {chatDisabledReason}
+                </Typography>
+              </Alert>
+            )}
             <Stack direction="row" spacing={1}>
               <Input
                 ref={inputRef}
-                placeholder={userTeam ? `Message as ${userTeam.team_name}...` : 'Join a team to chat'}
+                placeholder={userTeam && seasonId ? `Message as ${userTeam.team_name}...` : 'Loading...'}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                disabled={!userTeam || sendMessage.isPending}
+                disabled={!userTeam || !seasonId || sendMessage.isPending}
                 sx={{ flex: 1 }}
               />
               <Button
                 onClick={handleSendMessage}
-                disabled={!message.trim() || !userTeam || sendMessage.isPending}
+                disabled={!message.trim() || !userTeam || !seasonId || sendMessage.isPending}
                 startDecorator={<Send />}
                 loading={sendMessage.isPending}
               >

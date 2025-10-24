@@ -20,11 +20,14 @@ import {
   ListItemButton,
   ListItemContent,
   ListItemDecorator,
+  Table,
 } from '@mui/joy';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 import { useLineupSettings } from '../hooks/useLineupSettings';
-import { useAutoLineup } from '../hooks/useAutoLineup';
+import { calculateFantasyPoints } from '../utils/fantasyScoring';
+import { LineupSalaryData, formatSalary, wouldExceedCap } from '../hooks/useLineupSalaryCap';
+import LineupScheduleTable from './LineupScheduleTable';
 
 interface Player {
   id: string;
@@ -35,6 +38,7 @@ interface Player {
   jerseyNumber?: number | string;
   nbaPlayerId?: number;
   avatar: string;
+  salary?: number; // Player salary for cap calculations
 }
 
 interface LineupPosition {
@@ -53,6 +57,12 @@ interface LineupPosition {
   jersey_number: string;
 }
 
+interface WeekDates {
+  startDate: string;
+  endDate: string;
+  weekName: string;
+}
+
 interface BasketballCourtProps {
   leagueId: string;
   teamId: string;
@@ -60,11 +70,24 @@ interface BasketballCourtProps {
   currentWeek?: number;
   currentMatchup?: any;
   seasonYear?: number;
+  weekDates?: WeekDates;
+  selectedScoringFormat?: any;
+  lineupSalaryData?: LineupSalaryData;
 }
 
 type LineupType = 'starters' | 'rotation' | 'bench';
 
-export default function BasketballCourt({ leagueId, teamId, availablePlayers, currentWeek, currentMatchup, seasonYear }: BasketballCourtProps) {
+export default function BasketballCourt({ 
+  leagueId, 
+  teamId, 
+  availablePlayers, 
+  currentWeek = 1, 
+  currentMatchup, 
+  seasonYear,
+  weekDates,
+  selectedScoringFormat,
+  lineupSalaryData
+}: BasketballCourtProps) {
   const [activeTab, setActiveTab] = useState<LineupType>('starters');
   const [selectedPosition, setSelectedPosition] = useState<{ position: string; positionOrder: number } | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -77,81 +100,6 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
   console.log('🔍 BasketballCourt: Position unit assignments:', lineupSettings?.position_unit_assignments);
 
   const queryClient = useQueryClient();
-  
-  // Auto-lineup mutation
-  const autoLineupMutation = useAutoLineup();
-
-  // Clear lineup mutation
-  const clearLineupMutation = useMutation({
-    mutationFn: async () => {
-      const weekNumber = currentWeek || 1;
-      const seasonYearValue = seasonYear || 2025;
-      
-      console.log('🧹 Clearing all lineup positions for week:', weekNumber, 'season:', seasonYearValue);
-      
-      const { error } = await supabase
-        .from('fantasy_lineups')
-        .delete()
-        .eq('league_id', leagueId)
-        .eq('fantasy_team_id', teamId)
-        .eq('week_number', weekNumber)
-        .eq('season_year', seasonYearValue);
-
-      if (error) {
-        console.error('❌ Error clearing lineup positions:', error);
-        throw error;
-      }
-      
-      console.log('✅ Successfully cleared all lineup positions');
-    },
-    onSuccess: () => {
-      // Invalidate and refetch lineup positions
-      queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, teamId] });
-    },
-    onError: (error) => {
-      console.error('❌ Clear lineup failed:', error);
-    }
-  });
-
-  // Handle auto-lineup
-  const handleAutoLineup = async () => {
-    if (!currentMatchup || !lineupSettings) {
-      console.error('❌ Missing required data for auto-lineup');
-      return;
-    }
-
-    const weekNumber = currentWeek || 1;
-    const seasonYearValue = seasonYear || 2025;
-    const seasonId = currentMatchup.season_id;
-    const matchupId = currentMatchup.id;
-
-    try {
-      await autoLineupMutation.mutateAsync({
-        leagueId,
-        teamId,
-        weekNumber,
-        seasonYear: seasonYearValue,
-        seasonId,
-        matchupId
-      });
-    } catch (error) {
-      console.error('❌ Auto-lineup failed:', error);
-    }
-  };
-
-  // Handle clear lineup
-  const handleClearLineup = async () => {
-    if (!currentMatchup) {
-      console.error('❌ Missing required data for clear lineup');
-      return;
-    }
-
-    try {
-      await clearLineupMutation.mutateAsync();
-    } catch (error) {
-      console.error('❌ Clear lineup failed:', error);
-    }
-  };
   
   // Helper function to sort positions in desired order: G, F, C, UTIL
   const sortPositions = (positions: string[]): string[] => {
@@ -427,7 +375,53 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
       return;
     }
     
+    // SALARY CAP VALIDATION
+    if (lineupSalaryData && player.salary) {
+      const playerSalary = player.salary;
+      const currentTotalSalary = lineupSalaryData.totalSalary;
+      const salaryCap = lineupSalaryData.salaryCap;
+      
+      // Check if player is already in lineup (in which case we're moving them, not adding new salary)
+      const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
+      const existingPlayerSalary = existingAssignment ? (lineupSalaryData.playerSalaries[player.id] || 0) : 0;
+      
+      // Calculate what the new total would be
+      const newTotalSalary = currentTotalSalary - existingPlayerSalary + playerSalary;
+      
+      if (newTotalSalary > salaryCap) {
+        const overAmount = newTotalSalary - salaryCap;
+        alert(
+          `⚠️ SALARY CAP EXCEEDED\n\n` +
+          `Cannot add ${player.name} (${formatSalary(playerSalary)}).\n\n` +
+          `Current lineup: ${formatSalary(currentTotalSalary)}\n` +
+          `After adding: ${formatSalary(newTotalSalary)}\n` +
+          `Salary cap: ${formatSalary(salaryCap)}\n` +
+          `Over by: ${formatSalary(overAmount)}\n\n` +
+          `Please remove a player or choose someone with a lower salary.`
+        );
+        return;
+      }
+      
+      console.log('💰 Salary cap check passed:', {
+        player: player.name,
+        playerSalary: formatSalary(playerSalary),
+        currentTotal: formatSalary(currentTotalSalary),
+        newTotal: formatSalary(newTotalSalary),
+        cap: formatSalary(salaryCap),
+        remaining: formatSalary(salaryCap - newTotalSalary)
+      });
+    }
+    
+    console.log('🔍 handlePlayerSelect: Player ID:', player.id, 'Type:', typeof player.id);
+    console.log('🔍 handlePlayerSelect: All lineup positions:', allLineupPositions?.map(p => ({ 
+      player_id: p.player_id, 
+      player_name: p.player_name,
+      lineup_type: p.lineup_type,
+      position: p.position
+    })));
+    
     // DUPLICATE PREVENTION: Check if player is already assigned to ANY position in ANY lineup type
+    // Compare player.id (nba_players.id UUID) with pos.player_id (also nba_players.id UUID from fantasy_lineups)
     const existingAssignment = allLineupPositions?.find(
       pos => pos.player_id === player.id
     );
@@ -435,6 +429,8 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     if (existingAssignment) {
       console.log('⚠️ Player already assigned to another position:', {
         player: player.name,
+        playerId: player.id,
+        existingPlayerId: existingAssignment.player_id,
         currentLineupType: existingAssignment.lineup_type,
         currentPosition: existingAssignment.position,
         currentPositionOrder: existingAssignment.position_order,
@@ -443,16 +439,22 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
         newPositionOrder: selectedPosition.positionOrder
       });
       
-      // Remove player from their previous position first
-      console.log('🔄 Removing player from previous position before reassigning...');
-      await removeLineupPosition.mutateAsync(existingAssignment.player_id);
-      
-      // Explicitly invalidate and wait for the query to refetch
-      console.log('🔄 Invalidating query cache and waiting for refetch...');
-      await queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, teamId] });
-      
-      // Additional small delay to ensure DB and cache are in sync
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Remove player from their previous position(s) first
+      // The remove_lineup_position RPC removes the player from ALL lineup types
+      console.log('🔄 Removing player from ALL previous positions before reassigning...');
+      try {
+        await removeLineupPosition.mutateAsync(existingAssignment.player_id);
+        console.log('✅ Player removed successfully');
+        
+        // Wait for the query cache to be updated
+        await queryClient.invalidateQueries({ queryKey: ['lineup-positions', leagueId, teamId] });
+        
+        // Give a moment for the cache to settle
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        console.error('❌ Error removing player from previous position:', error);
+        // Continue anyway - the upsert might still work
+      }
     }
     
     // Set a default position on court based on position type
@@ -460,18 +462,35 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     const y = selectedPosition.position === 'G' ? 75 : selectedPosition.position === 'C' ? 25 : 50;
     
     console.log('✅ Adding player to new position:', {
+      playerId: player.id,
+      nbaPlayerId: nbaPlayerId,
       position: selectedPosition.position,
       positionOrder: selectedPosition.positionOrder,
-      playerId: nbaPlayerId
+      activeTab: activeTab
     });
     
-    await upsertLineupPosition.mutateAsync({
-      playerId: nbaPlayerId,
-      position: selectedPosition.position,
-      positionOrder: selectedPosition.positionOrder,
-      x,
-      y
-    });
+    try {
+      await upsertLineupPosition.mutateAsync({
+        playerId: nbaPlayerId,
+        position: selectedPosition.position,
+        positionOrder: selectedPosition.positionOrder,
+        x,
+        y
+      });
+      console.log('✅ Player added to new position successfully');
+      
+      // Invalidate salary query to refresh the header
+      // Use a broader invalidation to catch all week numbers
+      queryClient.invalidateQueries({ 
+        queryKey: ['lineup-salary'],
+        predicate: (query) => {
+          const [key, lid, tid] = query.queryKey as [string, string, string];
+          return key === 'lineup-salary' && lid === leagueId && tid === teamId;
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error adding player to new position:', error);
+    }
     
     setIsModalOpen(false);
     setSelectedPosition(null);
@@ -488,6 +507,14 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     
     if (assignedPlayer) {
       await removeLineupPosition.mutateAsync(assignedPlayer.player_id);
+      // Invalidate salary query to refresh the header
+      queryClient.invalidateQueries({ 
+        queryKey: ['lineup-salary'],
+        predicate: (query) => {
+          const [key, lid, tid] = query.queryKey as [string, string, string];
+          return key === 'lineup-salary' && lid === leagueId && tid === teamId;
+        }
+      });
     }
     
     setIsModalOpen(false);
@@ -496,7 +523,18 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
 
   // Handle removing a player from lineup
   const handleRemovePlayer = (playerId: string) => {
-    removeLineupPosition.mutate(playerId);
+    removeLineupPosition.mutate(playerId, {
+      onSuccess: () => {
+        // Invalidate salary query to refresh the header
+        queryClient.invalidateQueries({ 
+          queryKey: ['lineup-salary'],
+          predicate: (query) => {
+            const [key, lid, tid] = query.queryKey as [string, string, string];
+            return key === 'lineup-salary' && lid === leagueId && tid === teamId;
+          }
+        });
+      }
+    });
   };
 
   // Helper to get lineup type label with multiplier
@@ -551,13 +589,14 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
       })
       .map(player => {
         // Check if player is already assigned to ANY lineup type
+        // Both player.id and pos.player_id are nba_players.id (UUID strings)
         const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
         
         if (existingAssignment) {
           console.log(`📍 ${player.name} is assigned to ${existingAssignment.lineup_type} at ${existingAssignment.position}`);
           return {
             ...player,
-            assignmentInfo: `${getLineupTypeLabel(existingAssignment.lineup_type as LineupType)}`
+            assignmentInfo: `${getLineupTypeLabel(existingAssignment.lineup_type as LineupType)} - ${existingAssignment.position}${existingAssignment.position_order}`
           };
         }
         
@@ -574,9 +613,50 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
     }
   };
 
+  // Fetch salaries for all available players
+  const { data: playerSalaries } = useQuery<Record<string, number>>({
+    queryKey: ['player-salaries', availablePlayers.map(p => p.id)],
+    queryFn: async () => {
+      if (!availablePlayers || availablePlayers.length === 0) return {};
+      
+      const playerIds = availablePlayers.map(p => p.id);
+      const { data, error } = await supabase
+        .from('nba_players')
+        .select(`
+          id,
+          nba_hoopshype_salaries!player_id (
+            salary_2025_26
+          )
+        `)
+        .in('id', playerIds);
+      
+      if (error) {
+        console.error('❌ Error fetching player salaries:', error);
+        return {};
+      }
+      
+      console.log('💰 BasketballCourt: Fetched salary data:', data);
+      
+      const salaryMap: Record<string, number> = {};
+      data?.forEach((player: any) => {
+        const salary = player.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0;
+        console.log(`💰 BasketballCourt: Player ${player.id} salary:`, salary);
+        salaryMap[player.id] = salary;
+      });
+      
+      console.log('💰 Fetched salaries for', Object.keys(salaryMap).length, 'players');
+      return salaryMap;
+    },
+    enabled: !!availablePlayers && availablePlayers.length > 0,
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  });
+
   // Get available players filtered by selected position (for modal)
   const filteredPlayers = selectedPosition 
-    ? getAvailablePlayersForPosition(selectedPosition.position)
+    ? getAvailablePlayersForPosition(selectedPosition.position).map(player => ({
+        ...player,
+        salary: playerSalaries?.[player.id] || 0
+      }))
     : [];
 
   return (
@@ -593,15 +673,10 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
             >
               <TabList>
                 {(['starters', 'rotation', 'bench'] as LineupType[]).map((type) => {
-                  const multiplier = lineupSettings ? 
-                    (type === 'starters' ? lineupSettings.starters_multiplier :
-                     type === 'rotation' ? lineupSettings.rotation_multiplier :
-                     lineupSettings.bench_multiplier) : 1.0;
-                  
                   return (
                     <Tab key={type} value={type} sx={{ flex: 1 }}>
                       <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                        {getLineupTypeLabel(type)} {multiplier}x
+                        {getLineupTypeLabel(type)}
                       </Typography>
                     </Tab>
                   );
@@ -619,11 +694,11 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
             <Box sx={{ 
               display: 'grid',
               gridTemplateColumns: {
-                xs: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
+                xs: `repeat(${getPositionRequirements(activeTab).length}, minmax(0, 1fr))`,
                 sm: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
                 md: `repeat(${getPositionRequirements(activeTab).length}, 1fr)`,
               },
-              gap: { xs: 1, sm: 2 },
+              gap: { xs: 0.5, sm: 2 },
               width: '100%'
             }}>
               {getPositionRequirements(activeTab).map((position, index) => {
@@ -646,7 +721,7 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
                       gap: 0.5,
                       cursor: 'pointer',
                       transition: 'transform 0.2s',
-                      p: 1,
+                      p: { xs: 0.5, sm: 1 },
                       borderRadius: 'md',
                       '&:hover': {
                         transform: 'scale(1.05)',
@@ -662,10 +737,10 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
                         src={assignedPlayer?.player_avatar}
                         size="lg"
                         sx={{
-                          width: { xs: 56, sm: 64, md: 72 },
-                          height: { xs: 56, sm: 64, md: 72 },
+                          width: { xs: 48, sm: 64, md: 72 },
+                          height: { xs: 48, sm: 64, md: 72 },
                           bgcolor: assignedPlayer ? 'primary.500' : 'neutral.300',
-                          border: '3px solid',
+                          border: { xs: '2px solid', sm: '3px solid' },
                           borderColor: assignedPlayer ? 'primary.700' : 'neutral.400',
                           opacity: (upsertLineupPosition.isPending || removeLineupPosition.isPending) ? 0.5 : 1,
                         }}
@@ -713,23 +788,7 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
             </Box>
           </Box>
 
-          {/* Auto Lineup Button */}
-          <Box sx={{ p: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-            <Button
-              variant="solid"
-              color="primary"
-              startDecorator="🤖"
-              size="sm"
-              fullWidth
-              onClick={handleAutoLineup}
-              loading={autoLineupMutation.isPending}
-              disabled={!currentMatchup || !lineupSettings}
-            >
-              Auto Fill Lineup
-            </Button>
-          </Box>
-
-          {/* Lineup Summary / Stats Area */}
+          {/* Weekly Schedule Table for Current Unit */}
           <Box sx={{ 
             flex: 1,
             p: 2,
@@ -739,49 +798,25 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px' }}>
                 <CircularProgress />
               </Box>
+            ) : lineupPositions.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}>
+                <Typography level="body-sm" color="neutral">
+                  Tap a position above to add players and see their game schedule
+                </Typography>
+              </Box>
             ) : (
               <Box>
                 <Typography level="title-md" sx={{ mb: 2, fontWeight: 'bold' }}>
-                  Current Lineup
+                  {getLineupTypeLabel(activeTab)} Schedule
                 </Typography>
                 
-                {lineupPositions.length === 0 ? (
-                  <Typography level="body-sm" color="neutral">
-                    Tap a position above to add players to your lineup
-                  </Typography>
-                ) : (
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                    {lineupPositions.map((pos, index) => (
-                      <Card key={index} variant="outlined" size="sm">
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <Avatar
-                            src={pos.player_avatar}
-                            size="md"
-                            sx={{ width: 48, height: 48 }}
-                          >
-                            {pos.player_name.charAt(0)}
-                          </Avatar>
-                          <Box sx={{ flex: 1 }}>
-                            <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                              {pos.player_name}
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                              {pos.player_team} • {pos.player_position}
-                            </Typography>
-                          </Box>
-                          <Button
-                            variant="soft"
-                            color="danger"
-                            size="sm"
-                            onClick={() => handleRemovePlayer(pos.player_id)}
-                          >
-                            Remove
-                          </Button>
-                        </Box>
-                      </Card>
-                    ))}
-                  </Box>
-                )}
+                <LineupScheduleTable
+                  lineupPositions={lineupPositions}
+                  availablePlayers={availablePlayers}
+                  weekDates={weekDates}
+                  currentWeek={currentWeek}
+                  selectedScoringFormat={selectedScoringFormat}
+                />
               </Box>
             )}
           </Box>
@@ -814,6 +849,28 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
               💡 Players with a badge are already in a lineup. Selecting them will move them from their current position.
             </Typography>
           </Box>
+          
+          {/* Salary Cap Info */}
+          {lineupSalaryData && (
+            <Box sx={{ mb: 2, p: 1.5, bgcolor: 'success.50', borderRadius: 'sm', border: '1px solid', borderColor: 'success.200' }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+                  Current Lineup Salary:
+                </Typography>
+                <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+                  {formatSalary(lineupSalaryData.totalSalary)} / {formatSalary(lineupSalaryData.salaryCap)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography level="body-xs" color="success">
+                  Remaining Cap Space:
+                </Typography>
+                <Typography level="body-xs" color="success" sx={{ fontWeight: 'bold' }}>
+                  {formatSalary(lineupSalaryData.remainingCap)}
+                </Typography>
+              </Box>
+            </Box>
+          )}
           
           {/* Clear Position Option (if position is currently filled) */}
           {selectedPosition && lineupPositions[selectedPosition.positionOrder - 1] && (
@@ -848,18 +905,30 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
               <List>
                 {filteredPlayers.map((player) => {
                   const isAssigned = !!player.assignmentInfo;
+                  const playerSalary = player.salary || 0;
+                  
+                  // Check if this player would exceed cap
+                  const existingAssignment = allLineupPositions?.find(pos => pos.player_id === player.id);
+                  const existingPlayerSalary = existingAssignment && lineupSalaryData 
+                    ? (lineupSalaryData.playerSalaries[player.id] || 0) 
+                    : 0;
+                  const wouldExceed = lineupSalaryData 
+                    ? (lineupSalaryData.totalSalary - existingPlayerSalary + playerSalary) > lineupSalaryData.salaryCap
+                    : false;
+                  
                   return (
                   <ListItem key={player.id}>
                     <ListItemButton
                       onClick={() => handlePlayerSelect(player)}
-                      disabled={upsertLineupPosition.isPending}
+                      disabled={upsertLineupPosition.isPending || wouldExceed}
                       sx={{
                         borderRadius: 'sm',
-                        bgcolor: isAssigned ? 'warning.50' : 'transparent',
-                        border: isAssigned ? '1px solid' : 'none',
-                        borderColor: isAssigned ? 'warning.300' : 'transparent',
+                        bgcolor: wouldExceed ? 'danger.50' : (isAssigned ? 'warning.50' : 'transparent'),
+                        border: (wouldExceed || isAssigned) ? '1px solid' : 'none',
+                        borderColor: wouldExceed ? 'danger.300' : (isAssigned ? 'warning.300' : 'transparent'),
+                        opacity: wouldExceed ? 0.6 : 1,
                         '&:hover': {
-                          bgcolor: isAssigned ? 'warning.100' : 'primary.50',
+                          bgcolor: wouldExceed ? 'danger.50' : (isAssigned ? 'warning.100' : 'primary.50'),
                         },
                       }}
                     >
@@ -887,6 +956,16 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
                               {player.assignmentInfo}
                             </Chip>
                           )}
+                          {wouldExceed && (
+                            <Chip 
+                              size="sm" 
+                              variant="solid" 
+                              color="danger"
+                              sx={{ fontSize: '0.65rem' }}
+                            >
+                              Over Cap
+                            </Chip>
+                          )}
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
                           <Chip size="sm" variant="soft">
@@ -900,6 +979,15 @@ export default function BasketballCourt({ leagueId, teamId, availablePlayers, cu
                               #{player.jerseyNumber}
                             </Typography>
                           )}
+                          {/* Show player salary */}
+                          <Chip 
+                            size="sm" 
+                            variant="soft" 
+                            color={wouldExceed ? 'danger' : 'neutral'}
+                            sx={{ fontSize: '0.65rem', fontWeight: 'bold' }}
+                          >
+                            💰 {formatSalary(playerSalary)}
+                          </Chip>
                         </Box>
                       </ListItemContent>
                     </ListItemButton>

@@ -1,14 +1,25 @@
 /**
  * Game Loader Utilities
  * 
- * Handles loading game data from JSON files served as static assets
+ * Handles loading game data from Supabase database feed
  */
 
+// Supabase configuration
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qbznyaimnrpibmahisue.supabase.co'
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiem55YWltbnJwaWJtYWhpc3VlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTU0MjgsImV4cCI6MjA3NDk5MTQyOH0.bV4FULUCT0tJg6Scu2-B86Pui8nIeMsxDb-x5iVEHuU'
+
+// Create Supabase client
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
 export interface GameData {
-  gameId: string
-  date: string
-  fun_score: number
-  story: {
+  id: string
+  game_id: string
+  content_type: string
+  game_date: string
+  fun_score?: number
+  story_data?: {
     matchup: string
     final_score: string
     teams: {
@@ -37,33 +48,34 @@ export interface GameData {
       diff: number
     }>
   }
-  lead_changes: {
-    total: number
-    last_5_minutes: number
-    last_minute: number
-    buzzer_beater: number
+  fun_data?: {
+    lead_changes: {
+      total: number
+      last_5_minutes: number
+      last_minute: number
+      buzzer_beater: number
+    }
+    dunk_stats: {
+      'Total Dunks': number
+      'Alley Oop': number
+      'Putback': number
+      [key: string]: number
+    }
+    deep_shots: {
+      deep_threes: number
+      four_pointers: number
+    }
   }
-  dunk_stats: {
-    'Total Dunks': number
-    'Alley Oop': number
-    'Putback': number
-    [key: string]: number
-  }
-  deep_shots: {
-    deep_threes: number
-    four_pointers: number
-  }
-  video_url?: string
-  thumbnail_url?: string
-  views?: number
-  likes?: number
-  script?: {
-    video_script?: Array<{
-      mp4?: string
-      [key: string]: any
-    }>
+  video_script?: Array<{
+    mp4?: string
+    description?: string
     [key: string]: any
-  }
+  }>
+  total_plays?: number
+  likes_count?: number
+  comments_count?: number
+  shares_count?: number
+  created_at: string
 }
 
 export interface FullGameData extends GameData {
@@ -102,39 +114,46 @@ export interface FullGameData extends GameData {
 }
 
 /**
- * Get all games for the feed (from lightweight index)
- * This is fast because it only loads the index file, not all 500 game files
+ * Get all games for the feed from Supabase database
+ * Fetches content from feed_content table with proper ordering
  */
 export async function getAllGames(): Promise<GameData[]> {
   try {
-    // Fetch the games index from public folder
-    const response = await fetch('/games/games-index.json');
-    if (!response.ok) {
-      throw new Error(`Failed to load games index: ${response.statusText}`);
+    const { data, error } = await supabase
+      .from('feed_content')
+      .select('*')
+      .order('game_date', { ascending: false })
+      .order('fun_score', { ascending: false, nullsFirst: false })
+      .limit(100) // Limit to prevent overwhelming the UI
+
+    if (error) {
+      throw new Error(`Failed to load games: ${error.message}`);
     }
-    const gamesIndex = await response.json();
-    return gamesIndex as GameData[];
+
+    return data || [];
   } catch (error) {
-    console.error('Error loading games index:', error);
+    console.error('Error loading games from database:', error);
     return [];
   }
 }
 
 /**
- * Get a single game's full data by ID
- * This loads the complete JSON file for a specific game
+ * Get a single game's full data by ID from Supabase
+ * Fetches the complete game data from feed_content table
  */
 export async function getGameById(gameId: string): Promise<FullGameData | null> {
   try {
-    // Fetch the specific game file from public folder
-    const response = await fetch(`/games/${gameId}.json`);
-    if (!response.ok) {
-      throw new Error(`Failed to load game ${gameId}: ${response.statusText}`);
+    const { data, error } = await supabase
+      .from('feed_content')
+      .select('*')
+      .eq('game_id', gameId)
+      .single()
+
+    if (error) {
+      throw new Error(`Failed to load game ${gameId}: ${error.message}`);
     }
-    const gameData = await response.json();
-    
-    // Transform to match our interface if needed
-    return transformGameData(gameData);
+
+    return data as FullGameData;
   } catch (error) {
     console.error(`Error loading game ${gameId}:`, error);
     return null;
@@ -153,8 +172,8 @@ function transformGameData(raw: any): FullGameData {
   const metadata = raw.gameMetadata || {};
   
   return {
-    gameId: gameId,
-    date: metadata.date || raw.date,
+    game_id: gameId,
+    game_date: metadata.date || raw.date,
     fun_score: scoreData.fun_score || raw.fun_score || 0,
     
     story: {
@@ -226,31 +245,67 @@ export async function getGamesByDateRange(
   startDate: Date,
   endDate: Date
 ): Promise<GameData[]> {
-  const allGames = await getAllGames();
-  return allGames.filter(game => {
-    const gameDate = new Date(game.date);
-    return gameDate >= startDate && gameDate <= endDate;
-  });
+  try {
+    const { data, error } = await supabase
+      .from('feed_content')
+      .select('*')
+      .gte('game_date', startDate.toISOString())
+      .lte('game_date', endDate.toISOString())
+      .order('game_date', { ascending: false })
+
+    if (error) {
+      throw new Error(`Failed to load games by date range: ${error.message}`);
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error loading games by date range:', error);
+    return [];
+  }
 }
 
 /**
  * Get top games by fun score
  */
 export async function getTopGamesByFunScore(limit: number = 10): Promise<GameData[]> {
-  const allGames = await getAllGames();
-  return allGames
-    .sort((a, b) => b.fun_score - a.fun_score)
-    .slice(0, limit);
+  try {
+    const { data, error } = await supabase
+      .from('feed_content')
+      .select('*')
+      .not('fun_score', 'is', null)
+      .order('fun_score', { ascending: false })
+      .limit(limit)
+
+    if (error) {
+      throw new Error(`Failed to load top games: ${error.message}`);
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error loading top games:', error);
+    return [];
+  }
 }
 
 /**
  * Search games by team
  */
 export async function searchGamesByTeam(teamTricode: string): Promise<GameData[]> {
-  const allGames = await getAllGames();
-  return allGames.filter(game => 
-    game.story.teams.winner.tricode === teamTricode ||
-    game.story.teams.loser.tricode === teamTricode
-  );
+  try {
+    const { data, error } = await supabase
+      .from('feed_content')
+      .select('*')
+      .or(`home_team_tricode.eq.${teamTricode},away_team_tricode.eq.${teamTricode}`)
+      .order('game_date', { ascending: false })
+
+    if (error) {
+      throw new Error(`Failed to search games by team: ${error.message}`);
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error searching games by team:', error);
+    return [];
+  }
 }
 

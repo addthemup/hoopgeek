@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Typography,
@@ -15,21 +15,21 @@ import {
   Select,
   Option,
 } from '@mui/joy';
-import { useNavigate } from 'react-router-dom';
 import { useLeague } from '../hooks/useLeagues';
 import { useWeeklyMatchups, useCurrentWeek } from '../hooks/useWeeklyMatchups';
 import EmojiEventsIcon from '@mui/icons-material/EmojiEvents';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import MatchupDetails from './MatchupDetails';
 
 interface LeagueScoreboardProps {
   leagueId: string;
 }
 
 export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
-  const navigate = useNavigate();
   const { data: league, isLoading: leagueLoading, error: leagueError } = useLeague(leagueId);
   const { data: currentWeekNumber, isLoading: weekLoading } = useCurrentWeek(leagueId);
   const [selectedWeek, setSelectedWeek] = React.useState<number | undefined>(undefined);
+  const [selectedMatchupId, setSelectedMatchupId] = useState<string | null>(null);
   
   // Use selectedWeek if set, otherwise use currentWeekNumber
   const displayWeek = selectedWeek !== undefined ? selectedWeek : currentWeekNumber;
@@ -47,6 +47,17 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
   }, [currentWeekNumber, selectedWeek]);
 
   const isLoading = leagueLoading || weekLoading || matchupsLoading;
+
+  // If a matchup is selected, show the matchup details instead
+  if (selectedMatchupId) {
+    return (
+      <MatchupDetails
+        leagueId={leagueId}
+        matchupId={selectedMatchupId}
+        onClose={() => setSelectedMatchupId(null)}
+      />
+    );
+  }
 
   if (isLoading) {
     return (
@@ -84,7 +95,7 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
   }
 
   const handleViewMatchup = (matchupId: string) => {
-    navigate(`/league/${leagueId}/matchup/${matchupId}`);
+    setSelectedMatchupId(matchupId);
   };
 
   const getStatusColor = (status: string) => {
@@ -179,8 +190,8 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
       ) : (
         <Grid container spacing={3}>
           {matchups.map((matchup) => {
-            const team1Score = matchup.fantasy_team1_score || 0;
-            const team2Score = matchup.fantasy_team2_score || 0;
+            const team1Score = matchup.team1_score || 0;
+            const team2Score = matchup.team2_score || 0;
             const team1IsWinner = team1Score > team2Score;
             const team2IsWinner = team2Score > team1Score;
 
@@ -261,7 +272,7 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
                             VS
                           </Typography>
                           <Typography level="body-xs" color="neutral">
-                            {formatMatchupDate(matchup.matchup_date)}
+                            {formatMatchupDate(matchup.matchup_start_date)}
                           </Typography>
                         </Box>
                       </Grid>
@@ -327,10 +338,10 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
                       <Grid xs={12} md={4}>
                         <Box sx={{ textAlign: 'center' }}>
                           <Typography level="body-sm" color="neutral">
-                            Matchup Type
+                            Week {matchup.week_number}
                           </Typography>
                           <Chip size="sm" color="primary" variant="soft">
-                            {getMatchupTypeText(matchup.season_type)}
+                            Regular Season
                           </Chip>
                         </Box>
                       </Grid>
@@ -342,6 +353,7 @@ export default function LeagueScoreboard({ leagueId }: LeagueScoreboardProps) {
           })}
         </Grid>
       )}
+
     </Box>
   );
 }

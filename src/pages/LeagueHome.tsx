@@ -17,6 +17,19 @@ import {
   LinearProgress,
   Sheet,
   Table,
+  Textarea,
+  Modal,
+  ModalDialog,
+  DialogTitle,
+  DialogContent,
+  Divider,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
 } from '@mui/joy';
 import {
   SportsBasketball,
@@ -24,7 +37,10 @@ import {
   Notifications,
   Settings,
   EmojiEvents,
+  Edit,
+  ExpandMore,
 } from '@mui/icons-material';
+import { useState, useEffect } from 'react';
 import { useLeague } from '../hooks/useLeagues';
 import { useTeams } from '../hooks/useTeams';
 import { useCurrentWeekMatchups } from '../hooks/useMatchups';
@@ -33,8 +49,13 @@ import { useCurrentFantasyWeek, getWeekDisplayText, getSeasonPhaseColor } from '
 import { useDivisions } from '../hooks/useDivisions';
 import { FantasyTeam } from '../types';
 import { supabase } from '../utils/supabase';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
+import WaiverClaimModal from '../components/WaiverClaimModal';
+import { useLeagueWaiverOrder } from '../hooks/useWaiverOrder';
+import { usePendingWaiverClaims, useCancelWaiverClaim } from '../hooks/useWaiverClaims';
+import { formatDistanceToNow } from 'date-fns';
 
 // Mock data for demonstration (keeping for other sections)
 
@@ -57,32 +78,7 @@ const transformTeamToStanding = (dbTeam: FantasyTeam, rank: number) => {
   };
 };
 
-const mockNews = [
-  {
-    id: 1,
-    title: 'Fantasy Basketball Week 6 Waiver Wire Pickups',
-    summary: 'Top players to target on the waiver wire for Week 6 of the fantasy basketball season.',
-    source: 'HoopGeek',
-    time: '3 hours ago',
-    image: '🏀',
-  },
-  {
-    id: 2,
-    title: 'Injury Report: Key Players to Monitor',
-    summary: 'Latest injury updates affecting fantasy basketball lineups this week.',
-    source: 'HoopGeek',
-    time: '6 hours ago',
-    image: '🏥',
-  },
-  {
-    id: 3,
-    title: 'Trade Analysis: Breaking Down Recent Deals',
-    summary: 'Analyzing the impact of recent NBA trades on fantasy basketball values.',
-    source: 'HoopGeek',
-    time: '1 day ago',
-    image: '📊',
-  },
-];
+// Removed mockNews - replaced with real waiver data
 
 
 interface LeagueHomeProps {
@@ -93,12 +89,68 @@ interface LeagueHomeProps {
 
 export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransactions }: LeagueHomeProps) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams, isLoading: teamsLoading, error: teamsError } = useTeams(leagueId);
   const { data: matchups, isLoading: matchupsLoading, error: matchupsError } = useCurrentWeekMatchups(leagueId);
   const { data: nbaScoreboard, isLoading: scoreboardLoading, error: scoreboardError } = useNBAScoreboard();
   const { currentWeek, seasonPhase, isLoading: weekLoading } = useCurrentFantasyWeek();
   const { data: divisions = [], isLoading: divisionsLoading } = useDivisions(leagueId);
+  
+  // Find user's team
+  const userTeam = teams?.find(team => team.user_id === user?.id);
+  
+  // Commissioner notes state
+  const [editingNotes, setEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
+  
+  // Mobile collapsible state
+  const [standingsExpanded, setStandingsExpanded] = useState(true);
+  const [salaryCapExpanded, setSalaryCapExpanded] = useState(false);
+  
+  // Waiver claim modal state
+  const [waiverModalOpen, setWaiverModalOpen] = useState(false);
+  const [selectedWaiverPlayer, setSelectedWaiverPlayer] = useState<any | null>(null);
+  
+  // Waiver tab state
+  const [waiverTab, setWaiverTab] = useState<number>(0);
+  
+  // Check if current user is commissioner
+  const isCommissioner = user && league && user.id === league.commissioner_id;
+  
+  // Load commissioner notes when league data is available
+  useEffect(() => {
+    if (league?.commissioner_notes) {
+      setNotesText(league.commissioner_notes);
+    }
+  }, [league?.commissioner_notes]);
+  
+  // Mutation to update commissioner notes
+  const updateNotesMutation = useMutation({
+    mutationFn: async (notes: string) => {
+      const { error } = await supabase
+        .from('fantasy_leagues')
+        .update({ commissioner_notes: notes })
+        .eq('id', leagueId);
+      
+      if (error) throw error;
+      return notes;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['league', leagueId] });
+      setEditingNotes(false);
+    },
+  });
+  
+  const handleSaveNotes = () => {
+    updateNotesMutation.mutate(notesText);
+  };
+  
+  const handleCancelEdit = () => {
+    setNotesText(league?.commissioner_notes || '');
+    setEditingNotes(false);
+  };
 
   // Fetch salary cap usage for all teams - moved to top to avoid hooks order issues
   const { data: teamSalaryData } = useQuery({
@@ -165,89 +217,135 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
     staleTime: 1000 * 60 * 2, // 2 minutes
   });
 
-  // Fetch recent accepted trades with player and pick details
-  const { data: recentTrades = [] } = useQuery({
-    queryKey: ['recent-trades', leagueId],
+  // Fetch recent transactions (adds and cuts)
+  const { data: recentTransactions = [] } = useQuery({
+    queryKey: ['recent-transactions', leagueId],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('draft_trade_offers')
+        .from('fantasy_transactions')
         .select(`
           id,
-          created_at,
-          responded_at,
-          offered_players,
-          offered_picks,
-          requested_players,
-          requested_picks,
-          from_team:fantasy_teams!from_team_id(team_name, user_id),
-          to_team:fantasy_teams!to_team_id(team_name, user_id)
+          transaction_type,
+          transaction_date,
+          status,
+          notes,
+          fantasy_team:fantasy_teams!fantasy_team_id(team_name, user_id),
+          player:nba_players!player_id(id, name, position, team_abbreviation, nba_player_id)
         `)
         .eq('league_id', leagueId)
-        .eq('status', 'accepted')
-        .order('responded_at', { ascending: false })
-        .limit(5);
+        .in('transaction_type', ['add', 'cut'])
+        .eq('status', 'completed')
+        .order('transaction_date', { ascending: false })
+        .limit(10);
 
       if (error) {
-        console.error('Error fetching recent trades:', error);
+        console.error('Error fetching recent transactions:', error);
         return [];
       }
 
-      // Fetch player details for all players involved in trades
-      const allPlayerIds = new Set<number>();
-      data?.forEach((trade: any) => {
-        trade.offered_players?.forEach((id: number) => allPlayerIds.add(id));
-        trade.requested_players?.forEach((id: number) => allPlayerIds.add(id));
-      });
-
-      let playersMap: Record<number, any> = {};
-      if (allPlayerIds.size > 0) {
-        const { data: playersData, error: playersError } = await supabase
-          .from('nba_players')
-          .select('id, name, position, team_abbreviation, nba_player_id, salary_2025_26')
-          .in('id', Array.from(allPlayerIds));
-
-        if (!playersError && playersData) {
-          playersData.forEach((player) => {
-            playersMap[player.id] = player;
-          });
-        }
-      }
-
-      // Fetch pick details for all picks involved in trades
-      const allPickNumbers = new Set<number>();
-      data?.forEach((trade: any) => {
-        trade.offered_picks?.forEach((num: number) => allPickNumbers.add(num));
-        trade.requested_picks?.forEach((num: number) => allPickNumbers.add(num));
-      });
-
-      let picksMap: Record<number, any> = {};
-      if (allPickNumbers.size > 0) {
-        const { data: picksData, error: picksError } = await supabase
-          .from('fantasy_draft_order')
-          .select('pick_number, round, team_position')
-          .eq('league_id', leagueId)
-          .in('pick_number', Array.from(allPickNumbers));
-
-        if (!picksError && picksData) {
-          picksData.forEach((pick) => {
-            picksMap[pick.pick_number] = pick;
-          });
-        }
-      }
-
-      // Attach player and pick data to trades
-      const tradesWithDetails = data?.map((trade: any) => ({
-        ...trade,
-        offered_players_data: trade.offered_players?.map((id: number) => playersMap[id]).filter(Boolean) || [],
-        requested_players_data: trade.requested_players?.map((id: number) => playersMap[id]).filter(Boolean) || [],
-        offered_picks_data: trade.offered_picks?.map((num: number) => picksMap[num]).filter(Boolean) || [],
-        requested_picks_data: trade.requested_picks?.map((num: number) => picksMap[num]).filter(Boolean) || [],
-      })) || [];
-
-      return tradesWithDetails;
+      return data || [];
     },
     enabled: !!leagueId,
     refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
+  // Get season ID for waiver queries
+  const leagueData = league as any;
+  const seasonId = leagueData?.season_id || 
+                   leagueData?.current_season_id || 
+                   leagueData?.season?.id ||
+                   teams?.[0]?.season_id;
+
+  // Fetch waiver order
+  const { data: waiverOrder = [], isLoading: waiverOrderLoading } = useLeagueWaiverOrder(
+    leagueId,
+    seasonId || ''
+  );
+
+  // Fetch pending waiver claims for user's team
+  const { data: pendingClaims = [], isLoading: claimsLoading } = usePendingWaiverClaims(
+    leagueId,
+    userTeam?.id || ''
+  );
+
+  // Cancel waiver claim mutation
+  const cancelClaimMutation = useCancelWaiverClaim();
+
+  // Fetch players currently on waivers
+  const { data: waiverPlayers = [], isLoading: waiversLoading } = useQuery({
+    queryKey: ['league-waivers', leagueId, league],
+    queryFn: async () => {
+      // Get the current season ID - try multiple possible locations
+      const leagueData = league as any;
+      const seasonId = leagueData?.season_id || 
+                       leagueData?.current_season_id || 
+                       leagueData?.season?.id ||
+                       teams?.[0]?.season_id;
+      
+      console.log('🕐 Fetching waivers:', { 
+        leagueId, 
+        seasonId, 
+        leagueSeasonId: leagueData?.season_id,
+        leagueCurrentSeasonId: leagueData?.current_season_id,
+        teamSeasonId: teams?.[0]?.season_id,
+        league 
+      });
+      
+      if (!seasonId) {
+        console.error('⚠️ No season ID available for waiver query. League data:', league);
+        console.error('⚠️ Teams data:', teams);
+        
+        // Try to fetch waivers without season_id filter (not recommended but will help debug)
+        const { data: debugData, error: debugError } = await supabase
+          .from('fantasy_players_on_waivers')
+          .select('*')
+          .eq('league_id', leagueId)
+          .eq('waiver_status', 'on_waivers')
+          .limit(10);
+          
+        console.log('🔍 Debug query (no season filter):', { data: debugData, error: debugError });
+        
+        return [];
+      }
+
+      const { data, error } = await supabase
+        .from('fantasy_players_on_waivers')
+        .select(`
+          id,
+          player_id,
+          waiver_status,
+          dropped_by_team_id,
+          dropped_at,
+          becomes_free_agent_at,
+          nba_players!player_id(
+            id,
+            name,
+            position,
+            team_abbreviation,
+            nba_player_id
+          ),
+          fantasy_teams!dropped_by_team_id(
+            team_name
+          )
+        `)
+        .eq('league_id', leagueId)
+        .eq('season_id', seasonId)
+        .eq('waiver_status', 'on_waivers')
+        .order('becomes_free_agent_at', { ascending: true })
+        .limit(10);
+
+      if (error) {
+        console.error('❌ Error fetching waiver players:', error);
+        return [];
+      }
+
+      console.log('✅ Waiver players fetched:', data?.length || 0, 'players');
+      console.log('📊 Waiver data:', data);
+
+      return data || [];
+    },
+    enabled: !!leagueId && !!league,
+    refetchInterval: 60000, // Refetch every minute
   });
 
   // Debug logging
@@ -353,95 +451,88 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
   const { divisionStandings, unassignedTeams } = generateDivisionStandings();
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', p: 2 }}>
-      {/* League Header */}
-      <Sheet 
-        variant="solid" 
-        color="primary" 
+    <Box sx={{ maxWidth: '100%', mx: 'auto', p: { xs: 1, md: 2 } }}>
+      {/* League Header - Compact Newspaper Nav */}
+      <Box 
         sx={{ 
-          p: 3, 
-          mb: 3, 
-          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
-          color: 'white',
-          '& .MuiChip-root': {
-            color: 'white',
-            borderColor: 'rgba(255,255,255,0.3)',
-          }
+          border: '2px solid var(--ink-black)',
+          mb: 2,
+          backgroundColor: '#fff',
+          px: { xs: 1.5, md: 2 },
+          py: { xs: 1, md: 1.5 },
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: { xs: 1, md: 2 },
+          flexWrap: 'wrap'
         }}
       >
-        <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-          <Avatar sx={{ width: 60, height: 60, bgcolor: 'rgba(255,255,255,0.2)' }}>
-            <SportsBasketball sx={{ fontSize: 30 }} />
-          </Avatar>
-          <Box sx={{ flex: 1 }}>
-            <Typography level="h2" sx={{ fontWeight: 'bold', mb: 1 }}>
-              {league.name || 'Unnamed League'}
-            </Typography>
-            <Typography level="body-md" sx={{ opacity: 0.9 }}>
-              {league.description || 'No description available'}
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1}>
-            <IconButton sx={{ color: 'white' }}>
-              <Notifications />
-            </IconButton>
-            <IconButton sx={{ color: 'white' }}>
-              <Settings />
-            </IconButton>
-          </Stack>
+        {/* League Name & Season */}
+        <Stack 
+          direction="row" 
+          spacing={1.5} 
+          alignItems="center" 
+          sx={{ flex: 1, minWidth: { xs: '100%', sm: 'auto' } }}
+        >
+          <Typography 
+            level="h4" 
+            sx={{ 
+              fontFamily: '"Libre Baskerville", Georgia, serif',
+              fontWeight: 700,
+              fontSize: { xs: '1.1rem', md: '1.3rem' },
+              textTransform: 'uppercase',
+              letterSpacing: '0.02em'
+            }}
+          >
+            {league.name || 'Unnamed League'}
+          </Typography>
+          <Chip 
+            size="sm"
+            color={getSeasonPhaseColor(seasonPhase) as any} 
+            variant="solid"
+            sx={{ 
+              fontWeight: 600,
+              fontSize: { xs: '0.7rem', md: '0.75rem' }
+            }}
+          >
+            {getWeekDisplayText(currentWeek, seasonPhase)}
+          </Chip>
         </Stack>
         
-        <Grid container spacing={2}>
-          <Grid xs={12} sm={6} md={2.4}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.max_teams}</Typography>
-              <Typography level="body-sm" sx={{ opacity: 0.8 }}>Teams</Typography>
-            </Box>
-          </Grid>
-          <Grid xs={12} sm={6} md={2.4}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.scoring_type || 'H2H Points'}</Typography>
-              <Typography level="body-sm" sx={{ opacity: 0.8 }}>Scoring</Typography>
-            </Box>
-          </Grid>
-          <Grid xs={12} sm={6} md={2.4}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold' }}>{league.lineup_frequency || 'Weekly'}</Typography>
-              <Typography level="body-sm" sx={{ opacity: 0.8 }}>Lineups</Typography>
-            </Box>
-          </Grid>
-          <Grid xs={12} sm={6} md={2.4}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography level="h4" sx={{ fontWeight: 'bold' }}>
-                {league.salary_cap_enabled 
-                  ? `$${(league.salary_cap_amount || 200000000) / 1000000}M`
-                  : 'Disabled'
-                }
+        {/* Quick Stats */}
+        <Stack 
+          direction="row" 
+          spacing={{ xs: 2, md: 3 }}
+          alignItems="center"
+          sx={{ 
+            fontSize: '0.85rem',
+            '& > div': {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5
+            }
+          }}
+        >
+          <Box>
+            <Typography level="body-xs" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+              Teams:
+            </Typography>
+            <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+              {league.max_teams}
+            </Typography>
+          </Box>
+          {league.salary_cap_enabled && (
+            <Box>
+              <Typography level="body-xs" sx={{ fontWeight: 700, textTransform: 'uppercase' }}>
+                Cap:
               </Typography>
-              <Typography level="body-sm" sx={{ opacity: 0.8 }}>Salary Cap</Typography>
-            </Box>
-          </Grid>
-          <Grid xs={12} sm={6} md={2.4}>
-            <Box sx={{ textAlign: 'center' }}>
-              <Chip 
-                color={getSeasonPhaseColor(seasonPhase) as any} 
-                variant="solid"
-                sx={{ 
-                  mb: 1,
-                  fontWeight: 'bold',
-                  fontSize: '0.9rem',
-                  minWidth: '80px'
-                }}
-              >
-                {getWeekDisplayText(currentWeek, seasonPhase)}
-              </Chip>
-              <Typography level="body-sm" sx={{ opacity: 0.8 }}>
-                {currentWeek ? `${currentWeek.start_date} - ${currentWeek.end_date}` : 'Season Phase'}
+              <Typography level="body-sm" sx={{ fontWeight: 600 }}>
+                ${(league.salary_cap_amount || 200000000) / 1000000}M
               </Typography>
             </Box>
-          </Grid>
-        </Grid>
-      </Sheet>
+          )}
+        </Stack>
+      </Box>
 
 
       <Grid container spacing={3}>
@@ -451,20 +542,84 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
             {/* Commissioner Notes */}
             <Card>
               <CardContent>
-                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
-                  Commish Notes
-                </Typography>
-                
-                <Alert color="primary" sx={{ mb: 2 }}>
-                  <Typography level="body-sm">
-                    Welcome to Week 6! Make sure to set your lineups before the games start. 
-                    Good luck to everyone!
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                  <Typography 
+                    level="h4" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontFamily: '"Libre Baskerville", Georgia, serif'
+                    }}
+                  >
+                    Commish Notes
                   </Typography>
-                </Alert>
+                  {isCommissioner && !editingNotes && (
+                    <IconButton
+                      size="sm"
+                      variant="plain"
+                      onClick={() => setEditingNotes(true)}
+                      title="Edit commissioner notes"
+                    >
+                      <Edit />
+                    </IconButton>
+                  )}
+                </Stack>
                 
-                <Button variant="outlined" size="sm" fullWidth>
-                  View All Announcements
-                </Button>
+                {editingNotes ? (
+                  <Stack spacing={2}>
+                    <Textarea
+                      value={notesText}
+                      onChange={(e) => setNotesText(e.target.value)}
+                      minRows={4}
+                      placeholder="Add a note for all league members..."
+                      sx={{
+                        fontFamily: '"Crimson Text", Georgia, serif',
+                        fontSize: '1rem'
+                      }}
+                    />
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button
+                        variant="outlined"
+                        size="sm"
+                        onClick={handleCancelEdit}
+                        disabled={updateNotesMutation.isPending}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        variant="solid"
+                        size="sm"
+                        onClick={handleSaveNotes}
+                        loading={updateNotesMutation.isPending}
+                      >
+                        Save
+                      </Button>
+                    </Stack>
+                  </Stack>
+                ) : (
+                  <>
+                    {notesText ? (
+                      <Alert color="primary">
+                        <Typography 
+                          level="body-sm"
+                          sx={{
+                            fontFamily: '"Crimson Text", Georgia, serif',
+                            whiteSpace: 'pre-wrap'
+                          }}
+                        >
+                          {notesText}
+                        </Typography>
+                      </Alert>
+                    ) : (
+                      <Alert color="neutral">
+                        <Typography level="body-sm" sx={{ fontStyle: 'italic' }}>
+                          {isCommissioner 
+                            ? 'Click the edit icon to add a note for all league members.'
+                            : 'No commissioner notes at this time.'}
+                        </Typography>
+                      </Alert>
+                    )}
+                  </>
+                )}
               </CardContent>
             </Card>
             {/* Matchups Section - Only show during regular season and playoffs */}
@@ -567,11 +722,38 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
             {/* Standings Section */}
             <Card>
               <CardContent>
-                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
-                  League Standings
-                </Typography>
+                <Stack 
+                  direction="row" 
+                  justifyContent="space-between" 
+                  alignItems="center" 
+                  sx={{ mb: 2, cursor: { xs: 'pointer', md: 'default' } }}
+                  onClick={() => window.innerWidth < 900 && setStandingsExpanded(!standingsExpanded)}
+                >
+                  <Typography 
+                    level="h4" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontFamily: '"Libre Baskerville", Georgia, serif'
+                    }}
+                  >
+                    League Standings
+                  </Typography>
+                  <IconButton
+                    size="sm"
+                    variant="plain"
+                    sx={{ display: { xs: 'flex', md: 'none' } }}
+                  >
+                    <ExpandMore 
+                      sx={{ 
+                        transform: standingsExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.3s'
+                      }}
+                    />
+                  </IconButton>
+                </Stack>
                 
-                <Stack spacing={3}>
+                <Box sx={{ display: { xs: standingsExpanded ? 'block' : 'none', md: 'block' } }}>
+                  <Stack spacing={3}>
                   {/* Division Standings */}
                   {divisionStandings.map(({ division, teams: divisionTeams }) => (
                     <Box key={division.id}>
@@ -709,7 +891,8 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                       </Typography>
                     </Box>
                   )}
-                </Stack>
+                  </Stack>
+                </Box>
               </CardContent>
             </Card>
 
@@ -725,170 +908,85 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                     variant="outlined"
                     onClick={onNavigateToTransactions}
                   >
-                    View All Transactions
+                    View All
                   </Button>
                 </Stack>
                 
-                {recentTrades.length > 0 ? (
+                {recentTransactions.length > 0 ? (
                   <List>
-                    {recentTrades.map((trade: any) => {
-                      const fromTeamName = trade.from_team?.team_name || 'Unknown Team';
-                      const toTeamName = trade.to_team?.team_name || 'Unknown Team';
-                      const tradeTime = trade.responded_at 
-                        ? new Date(trade.responded_at).toLocaleString('en-US', { 
+                    {recentTransactions.map((transaction: any) => {
+                      const teamName = transaction.fantasy_team?.team_name || 'Unknown Team';
+                      const playerData = transaction.player;
+                      const transactionTime = transaction.transaction_date 
+                        ? new Date(transaction.transaction_date).toLocaleString('en-US', { 
                             month: 'short', 
                             day: 'numeric',
                             hour: 'numeric',
                             minute: '2-digit'
                           })
                         : 'Recently';
+                      const isAdd = transaction.transaction_type === 'add';
                       
                       return (
-                        <ListItem key={trade.id} sx={{ alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider', pb: 2, mb: 2 }}>
+                        <ListItem key={transaction.id} sx={{ alignItems: 'flex-start', borderBottom: '1px solid', borderColor: 'divider', pb: 2, mb: 2 }}>
                           <ListItemDecorator sx={{ mt: 0.5 }}>
                             <Avatar sx={{ 
-                              bgcolor: 'primary.500',
+                              bgcolor: isAdd ? 'success.500' : 'danger.500',
                               width: 36,
                               height: 36
                             }}>
-                              <SwapHoriz />
+                              {isAdd ? '+' : '−'}
                             </Avatar>
                           </ListItemDecorator>
                           <ListItemContent>
-                            <Stack spacing={1.5}>
-                              {/* Trade Header */}
+                            <Stack spacing={1}>
+                              {/* Transaction Header */}
                               <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" flexWrap="wrap">
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                  {teamName} {isAdd ? 'added' : 'dropped'}
+                                </Typography>
                                 <Stack direction="row" spacing={1} alignItems="center">
-                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                    {fromTeamName}
-                                  </Typography>
-                                  <Typography level="body-xs" color="neutral">
-                                    ↔
-                                  </Typography>
-                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                    {toTeamName}
-                                  </Typography>
-                                </Stack>
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                  <Chip size="sm" color="success" variant="soft">
-                                    ✓ Accepted
+                                  <Chip size="sm" color={isAdd ? 'success' : 'danger'} variant="soft">
+                                    {isAdd ? '+ Added' : '− Dropped'}
                                   </Chip>
                                   <Typography level="body-xs" color="neutral">
-                                    {tradeTime}
+                                    {transactionTime}
                                   </Typography>
                                 </Stack>
                               </Stack>
                               
-                              {/* Trade Details */}
-                              <Grid container spacing={2}>
-                                {/* From Team Assets */}
-                                <Grid xs={12} md={6}>
-                                  <Box sx={{ bgcolor: 'background.level1', p: 1.5, borderRadius: 'sm' }}>
-                                    <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.600' }}>
-                                      {fromTeamName} Sends:
-                                    </Typography>
-                                    <Stack spacing={0.5}>
-                                      {trade.offered_players_data?.map((player: any) => (
-                                        <Box 
-                                          key={player.id}
-                                          onClick={() => navigate(`/players/${player.id}`)}
-                                          sx={{ 
-                                            cursor: 'pointer',
-                                            '&:hover': { bgcolor: 'primary.50' },
-                                            p: 0.5,
-                                            borderRadius: 'sm',
-                                            transition: 'background-color 0.2s'
-                                          }}
-                                        >
-                                          <Stack direction="row" spacing={1} alignItems="center">
-                                            <Avatar 
-                                              size="sm" 
-                                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                                              sx={{ width: 24, height: 24 }}
-                                            >
-                                              {player.name?.charAt(0)}
-                                            </Avatar>
-                                            <Box sx={{ flex: 1 }}>
-                                              <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
-                                                {player.name}
-                                              </Typography>
-                                              <Typography level="body-xs" color="neutral">
-                                                {player.position} • {player.team_abbreviation} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
-                                              </Typography>
-                                            </Box>
-                                          </Stack>
-                                        </Box>
-                                      ))}
-                                      {trade.offered_picks_data?.map((pick: any) => (
-                                        <Box key={pick.pick_number} sx={{ p: 0.5 }}>
-                                          <Stack direction="row" spacing={1} alignItems="center">
-                                            <Chip size="sm" variant="outlined" color="neutral">
-                                              Pick #{pick.pick_number}
-                                            </Chip>
-                                            <Typography level="body-xs" color="neutral">
-                                              Round {pick.round}
-                                            </Typography>
-                                          </Stack>
-                                        </Box>
-                                      ))}
-                                    </Stack>
-                                  </Box>
-                                </Grid>
-                                
-                                {/* To Team Assets */}
-                                <Grid xs={12} md={6}>
-                                  <Box sx={{ bgcolor: 'background.level1', p: 1.5, borderRadius: 'sm' }}>
-                                    <Typography level="body-xs" sx={{ fontWeight: 'bold', mb: 1, color: 'primary.600' }}>
-                                      {toTeamName} Sends:
-                                    </Typography>
-                                    <Stack spacing={0.5}>
-                                      {trade.requested_players_data?.map((player: any) => (
-                                        <Box 
-                                          key={player.id}
-                                          onClick={() => navigate(`/players/${player.id}`)}
-                                          sx={{ 
-                                            cursor: 'pointer',
-                                            '&:hover': { bgcolor: 'primary.50' },
-                                            p: 0.5,
-                                            borderRadius: 'sm',
-                                            transition: 'background-color 0.2s'
-                                          }}
-                                        >
-                                          <Stack direction="row" spacing={1} alignItems="center">
-                                            <Avatar 
-                                              size="sm" 
-                                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                                              sx={{ width: 24, height: 24 }}
-                                            >
-                                              {player.name?.charAt(0)}
-                                            </Avatar>
-                                            <Box sx={{ flex: 1 }}>
-                                              <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
-                                                {player.name}
-                                              </Typography>
-                                              <Typography level="body-xs" color="neutral">
-                                                {player.position} • {player.team_abbreviation} • ${(player.salary_2025_26 / 1000000).toFixed(1)}M
-                                              </Typography>
-                                            </Box>
-                                          </Stack>
-                                        </Box>
-                                      ))}
-                                      {trade.requested_picks_data?.map((pick: any) => (
-                                        <Box key={pick.pick_number} sx={{ p: 0.5 }}>
-                                          <Stack direction="row" spacing={1} alignItems="center">
-                                            <Chip size="sm" variant="outlined" color="neutral">
-                                              Pick #{pick.pick_number}
-                                            </Chip>
-                                            <Typography level="body-xs" color="neutral">
-                                              Round {pick.round}
-                                            </Typography>
-                                          </Stack>
-                                        </Box>
-                                      ))}
-                                    </Stack>
-                                  </Box>
-                                </Grid>
-                              </Grid>
+                              {/* Player Details */}
+                              {playerData && (
+                                <Box 
+                                  onClick={() => navigate(`/players/${playerData.id}`)}
+                                  sx={{ 
+                                    bgcolor: 'background.level1', 
+                                    p: 1.5, 
+                                    borderRadius: 'sm',
+                                    cursor: 'pointer',
+                                    '&:hover': { bgcolor: 'primary.50' },
+                                    transition: 'background-color 0.2s'
+                                  }}
+                                >
+                                  <Stack direction="row" spacing={1} alignItems="center">
+                                    <Avatar 
+                                      size="sm" 
+                                      src={`https://cdn.nba.com/headshots/nba/latest/260x190/${playerData.nba_player_id}.png`}
+                                      sx={{ width: 32, height: 32 }}
+                                    >
+                                      {playerData.name?.charAt(0)}
+                                    </Avatar>
+                                    <Box sx={{ flex: 1 }}>
+                                      <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                        {playerData.name}
+                                      </Typography>
+                                      <Typography level="body-xs" color="neutral">
+                                        {playerData.position} • {playerData.team_abbreviation}
+                                      </Typography>
+                                    </Box>
+                                  </Stack>
+                                </Box>
+                              )}
                             </Stack>
                           </ListItemContent>
                         </ListItem>
@@ -901,7 +999,7 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                       No transactions yet
                     </Typography>
                     <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
-                      Trades will appear here once they are accepted
+                      Player adds and drops will appear here
                     </Typography>
                   </Box>
                 )}
@@ -1004,22 +1102,49 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
             {league.salary_cap_enabled && (
               <Card>
                 <CardContent>
-                  <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
-                    League Salary Cap
-                  </Typography>
-                  
-                  <Box sx={{ mb: 2 }}>
-                    <Typography level="body-sm" color="neutral" sx={{ mb: 1 }}>
-                      League Cap: ${(league.salary_cap_amount || 200000000) / 1000000}M
+                  <Stack 
+                    direction="row" 
+                    justifyContent="space-between" 
+                    alignItems="center" 
+                    sx={{ mb: 2, cursor: { xs: 'pointer', md: 'default' } }}
+                    onClick={() => window.innerWidth < 900 && setSalaryCapExpanded(!salaryCapExpanded)}
+                  >
+                    <Typography 
+                      level="h4" 
+                      sx={{ 
+                        fontWeight: 'bold',
+                        fontFamily: '"Libre Baskerville", Georgia, serif'
+                      }}
+                    >
+                      League Salary Cap
                     </Typography>
-                    {teamSalaryData && Object.keys(teamSalaryData).length > 0 && (
-                      <Typography level="body-xs" color="neutral">
-                        {Object.keys(teamSalaryData).length} teams with salary data
-                      </Typography>
-                    )}
-                  </Box>
+                    <IconButton
+                      size="sm"
+                      variant="plain"
+                      sx={{ display: { xs: 'flex', md: 'none' } }}
+                    >
+                      <ExpandMore 
+                        sx={{ 
+                          transform: salaryCapExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.3s'
+                        }}
+                      />
+                    </IconButton>
+                  </Stack>
                   
-                  <Table size="sm" hoverRow>
+                  <Box sx={{ display: { xs: salaryCapExpanded ? 'block' : 'none', md: 'block' } }}>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography level="body-sm" color="neutral" sx={{ mb: 1 }}>
+                        League Cap: ${(league.salary_cap_amount || 200000000) / 1000000}M
+                      </Typography>
+                      {teamSalaryData && Object.keys(teamSalaryData).length > 0 && (
+                        <Typography level="body-xs" color="neutral">
+                          {Object.keys(teamSalaryData).length} teams with salary data
+                        </Typography>
+                      )}
+                    </Box>
+                    
+                    <Table size="sm" hoverRow>
                     <thead>
                       <tr>
                         <th>Team</th>
@@ -1097,56 +1222,360 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
                       )}
                     </tbody>
                   </Table>
+                  </Box>
                 </CardContent>
               </Card>
             )}
 
-            {/* Fantasy News */}
+            {/* Waivers */}
             <Card>
               <CardContent>
-                <Typography level="h4" sx={{ fontWeight: 'bold', mb: 2 }}>
-                  Fantasy News
-                </Typography>
-                
-                <Stack spacing={2}>
-                  {mockNews.map((article) => (
-                    <Sheet key={article.id} variant="outlined" sx={{ p: 2 }}>
-                      <Stack direction="row" spacing={2}>
-                        <Avatar sx={{ bgcolor: 'primary.main', width: 40, height: 40 }}>
-                          {article.image}
-                        </Avatar>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography level="body-sm" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                            {article.title}
-                          </Typography>
-                          <Typography level="body-xs" color="neutral" sx={{ mb: 1, display: 'block' }}>
-                            {article.summary}
-                          </Typography>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography level="body-xs" color="neutral">
-                              {article.source}
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                              •
-                            </Typography>
-                            <Typography level="body-xs" color="neutral">
-                              {article.time}
-                            </Typography>
-                          </Stack>
-                        </Box>
-                      </Stack>
-                    </Sheet>
-                  ))}
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                  <Typography 
+                    level="h4" 
+                    sx={{ 
+                      fontWeight: 'bold',
+                      fontFamily: '"Libre Baskerville", Georgia, serif'
+                    }}
+                  >
+                    🕐 Waivers
+                  </Typography>
+                  <Chip 
+                    size="sm" 
+                    variant="soft" 
+                    color="warning"
+                  >
+                    {waiverPlayers.length}
+                  </Chip>
                 </Stack>
                 
-                <Button variant="outlined" size="sm" fullWidth sx={{ mt: 2 }}>
-                  View All News
-                </Button>
+                <Tabs value={waiverTab} onChange={(e, newValue) => setWaiverTab(newValue as number)}>
+                  <TabList>
+                    <Tab>Players</Tab>
+                    <Tab>
+                      {leagueData?.waiver_type === 'faab' ? 'Budgets' : 'Order'}
+                    </Tab>
+                    {userTeam && <Tab>Claims ({pendingClaims.length})</Tab>}
+                  </TabList>
+                  
+                  {/* Tab 1: Players on Waivers */}
+                  <TabPanel value={0} sx={{ p: 0, pt: 2 }}>
+                    {waiversLoading ? (
+                      <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <LinearProgress />
+                        <Typography level="body-sm" sx={{ mt: 1 }}>
+                          Loading waivers...
+                        </Typography>
+                      </Box>
+                    ) : waiverPlayers.length > 0 ? (
+                      <Stack spacing={2}>
+                        {waiverPlayers.map((waiver: any) => {
+                          const player = waiver.nba_players;
+                          const droppedByTeam = waiver.fantasy_teams?.team_name || 'Unknown Team';
+                          const becomesFA = new Date(waiver.becomes_free_agent_at);
+                          const now = new Date();
+                          const hoursRemaining = Math.max(0, Math.ceil((becomesFA.getTime() - now.getTime()) / (1000 * 60 * 60)));
+                          const minutesRemaining = Math.max(0, Math.ceil((becomesFA.getTime() - now.getTime()) / (1000 * 60)));
+                          
+                          const timeDisplay = hoursRemaining > 0 
+                            ? `${hoursRemaining}h` 
+                            : minutesRemaining > 0 
+                            ? `${minutesRemaining}m` 
+                            : 'Clearing...';
+                          
+                          return (
+                            <Sheet 
+                              key={waiver.id} 
+                              variant="outlined" 
+                              sx={{ 
+                                p: 2,
+                                cursor: 'pointer',
+                                '&:hover': { bgcolor: 'background.level1' },
+                                transition: 'background-color 0.2s'
+                              }}
+                              onClick={() => {
+                                setSelectedWaiverPlayer({ ...player, waiver });
+                                setWaiverModalOpen(true);
+                              }}
+                            >
+                              <Stack direction="row" spacing={2} alignItems="center">
+                                <Avatar 
+                                  src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                  sx={{ width: 40, height: 40 }}
+                                >
+                                  {player.name?.charAt(0)}
+                                </Avatar>
+                                <Box sx={{ flex: 1 }}>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {player.name}
+                                  </Typography>
+                                  <Typography level="body-xs" color="neutral">
+                                    {player.position} • {player.team_abbreviation}
+                                  </Typography>
+                                  <Typography level="body-xs" color="neutral" sx={{ mt: 0.5 }}>
+                                    Dropped by {droppedByTeam}
+                                  </Typography>
+                                </Box>
+                                <Stack alignItems="flex-end" spacing={0.5}>
+                                  <Chip 
+                                    size="sm" 
+                                    color="warning"
+                                    variant="solid"
+                                  >
+                                    {timeDisplay}
+                                  </Chip>
+                                  <Typography level="body-xs" color="neutral">
+                                    remaining
+                                  </Typography>
+                                </Stack>
+                              </Stack>
+                            </Sheet>
+                          );
+                        })}
+                      </Stack>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography level="body-md" color="neutral">
+                          No players on waivers
+                        </Typography>
+                        <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
+                          Dropped players will appear here during their waiver period
+                        </Typography>
+                      </Box>
+                    )}
+                  </TabPanel>
+                  
+                  {/* Tab 2: Waiver Order or FAAB Budgets */}
+                  <TabPanel value={1} sx={{ p: 0, pt: 2 }}>
+                    {waiverOrderLoading ? (
+                      <Box sx={{ textAlign: 'center', py: 2 }}>
+                        <LinearProgress />
+                        <Typography level="body-sm" sx={{ mt: 1 }}>
+                          Loading waiver {leagueData?.waiver_type === 'faab' ? 'budgets' : 'order'}...
+                        </Typography>
+                      </Box>
+                    ) : waiverOrder.length > 0 ? (
+                      <Table size="sm" hoverRow>
+                        <thead>
+                          <tr>
+                            {leagueData?.waiver_type !== 'faab' && <th style={{ width: '60px' }}>Priority</th>}
+                            <th>Team</th>
+                            {leagueData?.waiver_type === 'faab' ? (
+                              <>
+                                <th style={{ textAlign: 'right' }}>Remaining</th>
+                                <th style={{ textAlign: 'right' }}>Spent</th>
+                              </>
+                            ) : null}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {waiverOrder.map((order: any) => {
+                            const team = order.fantasy_teams;
+                            const isFAAB = leagueData?.waiver_type === 'faab';
+                            
+                            return (
+                              <tr 
+                                key={order.id}
+                                onClick={() => team?.id && onTeamClick?.(team.id)}
+                                style={{ cursor: 'pointer' }}
+                              >
+                                {!isFAAB && (
+                                  <td>
+                                    <Chip 
+                                      size="sm" 
+                                      color="primary" 
+                                      variant="solid"
+                                    >
+                                      #{order.waiver_priority}
+                                    </Chip>
+                                  </td>
+                                )}
+                                <td>
+                                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                    {team?.team_name || 'Unknown Team'}
+                                  </Typography>
+                                </td>
+                                {isFAAB && (
+                                  <>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <Chip 
+                                        size="sm" 
+                                        color="success" 
+                                        variant="soft"
+                                      >
+                                        ${order.remaining_budget || 0}
+                                      </Chip>
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                      <Typography level="body-sm" color="neutral">
+                                        ${order.total_spent || 0}
+                                      </Typography>
+                                    </td>
+                                  </>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </Table>
+                    ) : (
+                      <Box sx={{ textAlign: 'center', py: 4 }}>
+                        <Typography level="body-md" color="neutral">
+                          No waiver {leagueData?.waiver_type === 'faab' ? 'budget' : 'order'} data
+                        </Typography>
+                        <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
+                          {isCommissioner 
+                            ? 'Run "Initialize Waiver Order" in Commissioner Tools to set up.'
+                            : 'The commissioner needs to initialize waiver settings.'}
+                        </Typography>
+                      </Box>
+                    )}
+                  </TabPanel>
+                  
+                  {/* Tab 3: My Claims */}
+                  {userTeam && (
+                    <TabPanel value={2} sx={{ p: 0, pt: 2 }}>
+                      {claimsLoading ? (
+                        <Box sx={{ textAlign: 'center', py: 2 }}>
+                          <LinearProgress />
+                          <Typography level="body-sm" sx={{ mt: 1 }}>
+                            Loading claims...
+                          </Typography>
+                        </Box>
+                      ) : pendingClaims.length > 0 ? (
+                        <Stack spacing={2}>
+                          {pendingClaims.map((claim: any) => {
+                            const player = claim.nba_players;
+                            const playerToDrop = claim.player_to_drop;
+                            const isFAAB = leagueData?.waiver_type === 'faab';
+                            
+                            return (
+                              <Sheet 
+                                key={claim.id} 
+                                variant="outlined" 
+                                sx={{ p: 2 }}
+                              >
+                                <Stack spacing={2}>
+                                  {/* Header */}
+                                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                                    <Stack direction="row" spacing={2} alignItems="center">
+                                      <Avatar 
+                                        src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                                        sx={{ width: 40, height: 40 }}
+                                      >
+                                        {player.name?.charAt(0)}
+                                      </Avatar>
+                                      <Box>
+                                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                          {player.name}
+                                        </Typography>
+                                        <Typography level="body-xs" color="neutral">
+                                          {player.position} • {player.team_abbreviation}
+                                        </Typography>
+                                      </Box>
+                                    </Stack>
+                                    
+                                    <Stack alignItems="flex-end" spacing={0.5}>
+                                      {isFAAB && (
+                                        <Chip size="sm" color="success" variant="solid">
+                                          ${claim.bid_amount}
+                                        </Chip>
+                                      )}
+                                      {!isFAAB && (
+                                        <Chip size="sm" color="primary" variant="solid">
+                                          Priority #{claim.priority}
+                                        </Chip>
+                                      )}
+                                      <Typography level="body-xs" color="neutral">
+                                        {formatDistanceToNow(new Date(claim.submitted_at), { addSuffix: true })}
+                                      </Typography>
+                                    </Stack>
+                                  </Stack>
+                                  
+                                  {/* Player to drop */}
+                                  {playerToDrop && (
+                                    <Box sx={{ bgcolor: 'background.level1', p: 1.5, borderRadius: 'sm' }}>
+                                      <Stack direction="row" spacing={1} alignItems="center">
+                                        <Typography level="body-xs" color="neutral">
+                                          Dropping:
+                                        </Typography>
+                                        <Avatar 
+                                          size="sm"
+                                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${playerToDrop.nba_player_id}.png`}
+                                          sx={{ width: 24, height: 24 }}
+                                        >
+                                          {playerToDrop.name?.charAt(0)}
+                                        </Avatar>
+                                        <Typography level="body-xs" sx={{ fontWeight: 'bold' }}>
+                                          {playerToDrop.name}
+                                        </Typography>
+                                        <Typography level="body-xs" color="neutral">
+                                          ({playerToDrop.position})
+                                        </Typography>
+                                      </Stack>
+                                    </Box>
+                                  )}
+                                  
+                                  {/* Cancel button */}
+                                  <Button
+                                    size="sm"
+                                    variant="outlined"
+                                    color="danger"
+                                    onClick={() => {
+                                      if (confirm(`Cancel claim for ${player.name}?`)) {
+                                        cancelClaimMutation.mutate({
+                                          claimId: claim.id,
+                                          leagueId,
+                                          fantasyTeamId: userTeam.id
+                                        });
+                                      }
+                                    }}
+                                    loading={cancelClaimMutation.isPending}
+                                  >
+                                    Cancel Claim
+                                  </Button>
+                                </Stack>
+                              </Sheet>
+                            );
+                          })}
+                        </Stack>
+                      ) : (
+                        <Box sx={{ textAlign: 'center', py: 4 }}>
+                          <Typography level="body-md" color="neutral">
+                            No pending claims
+                          </Typography>
+                          <Typography level="body-sm" color="neutral" sx={{ mt: 1 }}>
+                            Click on a player in the "Players" tab to submit a waiver claim
+                          </Typography>
+                        </Box>
+                      )}
+                    </TabPanel>
+                  )}
+                </Tabs>
               </CardContent>
             </Card>
           </Stack>
         </Grid>
       </Grid>
+
+      {/* Waiver Claim Modal */}
+      {selectedWaiverPlayer && userTeam && (
+        <WaiverClaimModal
+          open={waiverModalOpen}
+          onClose={() => {
+            setWaiverModalOpen(false);
+            setSelectedWaiverPlayer(null);
+          }}
+          player={selectedWaiverPlayer}
+          leagueId={leagueId}
+          seasonId={(league as any)?.season_id || (league as any)?.current_season_id || teams?.[0]?.season_id || ''}
+          fantasyTeamId={userTeam.id}
+          waiverType={(league as any)?.waiver_type || 'rolling'}
+          waiverBudgetAmount={(league as any)?.waiver_budget_amount || 100}
+          waiverMinBid={(league as any)?.waiver_min_bid || 0}
+          becomesFreAgent={selectedWaiverPlayer.waiver?.becomes_free_agent_at ? new Date(selectedWaiverPlayer.waiver.becomes_free_agent_at) : undefined}
+        />
+      )}
     </Box>
   );
 }

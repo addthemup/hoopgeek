@@ -8,7 +8,7 @@ export interface MatchupPlayer {
   team_abbreviation: string;
   jersey_number?: string;
   nba_player_id: number;
-  salary_2025_26: number;
+  salary: number;
   // Stats would be calculated based on games played during the week
   games_played?: number;
   total_points?: number;
@@ -64,16 +64,16 @@ export function useMatchupDetails(matchupId: string) {
         .from('fantasy_matchups')
         .select(`
           id,
-          fantasy_week,
-          matchup_date,
-          status,
-          season_type,
+          week_number,
           season_year,
+          matchup_start_date,
+          status,
           fantasy_team1_id,
           fantasy_team2_id,
-          fantasy_team1_score,
-          fantasy_team2_score,
+          team1_score,
+          team2_score,
           league_id,
+          season_id,
           team1:fantasy_teams!fantasy_team1_id(id, team_name, user_id, wins, losses),
           team2:fantasy_teams!fantasy_team2_id(id, team_name, user_id, wins, losses)
         `)
@@ -90,22 +90,22 @@ export function useMatchupDetails(matchupId: string) {
         .from('fantasy_season_weeks')
         .select('week_name, start_date, end_date')
         .eq('season_year', matchup.season_year)
-        .eq('fantasy_week', matchup.fantasy_week)
+        .eq('week_number', matchup.week_number)
         .single();
 
       // Fetch team1 roster
       const { data: team1Roster, error: team1Error } = await supabase
-        .from('fantasy_rosters')
+        .from('fantasy_roster_spots')
         .select(`
           player_id,
-          players:players(
+          nba_players:nba_players(
             id,
             name,
             position,
             team_abbreviation,
             jersey_number,
             nba_player_id,
-            salary_2025_26
+            salary
           )
         `)
         .eq('fantasy_team_id', matchup.fantasy_team1_id);
@@ -116,17 +116,17 @@ export function useMatchupDetails(matchupId: string) {
 
       // Fetch team2 roster
       const { data: team2Roster, error: team2Error } = await supabase
-        .from('fantasy_rosters')
+        .from('fantasy_roster_spots')
         .select(`
           player_id,
-          players:players(
+          nba_players:nba_players(
             id,
             name,
             position,
             team_abbreviation,
             jersey_number,
             nba_player_id,
-            salary_2025_26
+            salary
           )
         `)
         .eq('fantasy_team_id', matchup.fantasy_team2_id);
@@ -138,7 +138,7 @@ export function useMatchupDetails(matchupId: string) {
       // Transform roster data
       const team1Players: MatchupPlayer[] = (team1Roster || [])
         .map((item: any) => {
-          const player = Array.isArray(item.players) ? item.players[0] : item.players;
+          const player = Array.isArray(item.nba_players) ? item.nba_players[0] : item.nba_players;
           return player ? {
             id: player.id,
             name: player.name,
@@ -146,14 +146,14 @@ export function useMatchupDetails(matchupId: string) {
             team_abbreviation: player.team_abbreviation,
             jersey_number: player.jersey_number,
             nba_player_id: player.nba_player_id,
-            salary_2025_26: player.salary_2025_26,
+            salary: player.salary,
           } : null;
         })
         .filter(Boolean) as MatchupPlayer[];
 
       const team2Players: MatchupPlayer[] = (team2Roster || [])
         .map((item: any) => {
-          const player = Array.isArray(item.players) ? item.players[0] : item.players;
+          const player = Array.isArray(item.nba_players) ? item.nba_players[0] : item.nba_players;
           return player ? {
             id: player.id,
             name: player.name,
@@ -161,7 +161,7 @@ export function useMatchupDetails(matchupId: string) {
             team_abbreviation: player.team_abbreviation,
             jersey_number: player.jersey_number,
             nba_player_id: player.nba_player_id,
-            salary_2025_26: player.salary_2025_26,
+            salary: player.salary,
           } : null;
         })
         .filter(Boolean) as MatchupPlayer[];
@@ -172,13 +172,13 @@ export function useMatchupDetails(matchupId: string) {
       return {
         id: matchup.id,
         week_number: matchup.week_number,
-        matchup_date: matchup.matchup_date,
+        matchup_date: matchup.matchup_start_date,
         status: matchup.status,
-        season_type: matchup.season_type,
+        season_type: 'regular', // Default to regular season
         fantasy_team1_id: matchup.fantasy_team1_id,
         fantasy_team2_id: matchup.fantasy_team2_id,
-        fantasy_team1_score: matchup.fantasy_team1_score,
-        fantasy_team2_score: matchup.fantasy_team2_score,
+        fantasy_team1_score: matchup.team1_score,
+        fantasy_team2_score: matchup.team2_score,
         team1: {
           ...team1Info,
           roster: team1Players,
@@ -189,8 +189,8 @@ export function useMatchupDetails(matchupId: string) {
         },
         week_info: weekInfo || {
           week_name: `Week ${matchup.week_number}`,
-          start_date: matchup.matchup_date,
-          end_date: matchup.matchup_date,
+          start_date: matchup.matchup_start_date,
+          end_date: matchup.matchup_start_date,
         },
       };
     },

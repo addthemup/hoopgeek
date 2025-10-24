@@ -37,6 +37,8 @@ export function useCreateLeagueMinimal() {
         teamName: commissioner_team_name,
         rosterConfig: settings.roster_positions,
         draftDate: settings.draft_date,
+        draftType: settings.draft_type || 'snake',
+        draftRounds: settings.draft_rounds || 15,
         tradeDeadline: settings.trade_deadline,
         salaryCapAmount: settings.salary_cap_amount || 200000000,
         startersCount: settings.starters_count,
@@ -46,7 +48,10 @@ export function useCreateLeagueMinimal() {
         benchCount: settings.bench_count,
         benchMultiplier: settings.bench_multiplier,
         positionUnitAssignments: settings.position_unit_assignments,
-        fantasyScoringFormat: settings.fantasy_scoring_format
+        fantasyScoringFormat: settings.fantasy_scoring_format,
+        waiverType: settings.waiver_type || 'rolling',
+        waiverPeriodHours: settings.waiver_period_hours || 48,
+        faabBudget: settings.faab_budget || (settings.waiver_type === 'faab' ? 100 : null)
       };
       
       console.log('🔧 ===== EDGE FUNCTION BODY =====');

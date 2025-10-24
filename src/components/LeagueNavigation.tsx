@@ -16,19 +16,17 @@ import {
   Home,
   Group,
   SportsBasketball,
-  TrendingUp,
   Scoreboard,
   SwapHoriz,
   Message,
   Settings,
-  EmojiEvents,
-  Analytics,
   Assignment,
   People,
   Sports,
   Leaderboard,
   AdminPanelSettings
 } from '@mui/icons-material'
+import { useLeague } from '../hooks/useLeagues'
 
 interface LeagueNavigationProps {
   leagueId: string
@@ -41,13 +39,21 @@ interface LeagueNavigationProps {
 
 export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false, defaultTab = 0, onTabChange }: LeagueNavigationProps) {
   const [activeTab, setActiveTab] = useState(defaultTab)
+  const { data: league } = useLeague(leagueId)
+  
+  // Get draft status from league data
+  const leagueData = league?.league || league
+  const draftStatus = leagueData?.draft_status
+  const isDraftActive = draftStatus === 'in_progress' || draftStatus === 'active'
   
   // Debug logging for navigation props
   console.log('LeagueNavigation: Props debug:', {
     leagueId,
     isCommissioner,
     userHasTeam,
-    defaultTab
+    defaultTab,
+    draftStatus,
+    isDraftActive
   });
 
   const tabs = [
@@ -82,12 +88,6 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
       description: 'Player database and stats'
     },
     {
-      id: 'matchups',
-      label: 'Matchups',
-      icon: <TrendingUp />,
-      description: 'Weekly matchups and scores'
-    },
-    {
       id: 'scoreboard',
       label: 'Scoreboard',
       icon: <Scoreboard />,
@@ -104,12 +104,6 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
       label: 'Standings',
       icon: <Leaderboard />,
       description: 'League standings and rankings'
-    },
-    {
-      id: 'research',
-      label: 'Research',
-      icon: <Analytics />,
-      description: 'Advanced stats and analysis'
     },
     {
       id: 'transactions',
@@ -221,33 +215,55 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
               }
             }}
           >
-            {tabs.map((tab, index) => (
-              <Tab
-                key={tab.id}
-                value={index}
-                sx={{
-                  minWidth: 'auto',
-                  px: 2,
-                  py: 1,
-                  '&.Mui-selected': {
-                    bgcolor: 'primary.softBg',
-                    color: 'primary.softColor',
-                    borderBottom: '2px solid',
-                    borderColor: 'primary.500'
-                  },
-                  '&:hover': {
-                    bgcolor: 'primary.50'
-                  }
-                }}
-              >
-                <Stack direction="row" spacing={1} alignItems="center">
-                  {tab.icon}
-                  <Typography level="body-sm" fontWeight="md">
-                    {tab.label}
-                  </Typography>
-                </Stack>
-              </Tab>
-            ))}
+            {tabs.map((tab, index) => {
+              const isDraftTab = tab.id === 'draft'
+              const isActive = isDraftTab && isDraftActive
+              
+              return (
+                <Tab
+                  key={tab.id}
+                  value={index}
+                  sx={{
+                    minWidth: 'auto',
+                    px: 2,
+                    py: 1,
+                    // Draft active styling
+                    ...(isActive && {
+                      bgcolor: 'success.softBg',
+                      color: 'success.softColor',
+                      '&:hover': {
+                        bgcolor: 'success.100'
+                      }
+                    }),
+                    // Selected tab styling
+                    '&.Mui-selected': {
+                      bgcolor: isActive ? 'success.softBg' : 'primary.softBg',
+                      color: isActive ? 'success.softColor' : 'primary.softColor',
+                      borderBottom: '2px solid',
+                      borderColor: isActive ? 'success.500' : 'primary.500'
+                    },
+                    // Hover styling
+                    ...(!isActive && {
+                      '&:hover': {
+                        bgcolor: 'primary.50'
+                      }
+                    })
+                  }}
+                >
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    {tab.icon}
+                    <Typography level="body-sm" fontWeight="md">
+                      {tab.label}
+                    </Typography>
+                    {isActive && (
+                      <Chip size="sm" color="success" variant="solid">
+                        Live
+                      </Chip>
+                    )}
+                  </Stack>
+                </Tab>
+              )
+            })}
           </TabList>
 
           {/* Tab Content - TabPanels must be direct children of Tabs */}

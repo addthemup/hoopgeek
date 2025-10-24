@@ -6,6 +6,7 @@ import {
   Input,
   FormControl,
   FormLabel,
+  FormHelperText,
   Stack,
   Card,
   CardContent,
@@ -660,6 +661,183 @@ export default function LeagueSettingsManager({ league, isCommissioner, onUpdate
     </Card>
   )
 
+  const renderWaiverSettings = () => (
+    <Card variant="outlined" sx={{ mb: 3 }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography level="h4">⏰ Waiver Settings</Typography>
+          {isCommissioner && (
+            <Button
+              variant="soft"
+              size="sm"
+              startDecorator={<Edit />}
+              onClick={() => setEditingSection('waivers')}
+            >
+              Edit
+            </Button>
+          )}
+        </Box>
+
+        <Grid container spacing={2}>
+          <Grid xs={12} md={6}>
+            <FormControl>
+              <FormLabel>Waiver Type</FormLabel>
+              <Select
+                value={getCurrentValue('waiver_type')}
+                onChange={(_, value) => handleInputChange('waiver_type', value)}
+                disabled={editingSection !== 'waivers'}
+              >
+                <Option value="none">
+                  <Box>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>No Waivers (Free Agents)</Typography>
+                    <Typography level="body-xs" color="neutral">Dropped players immediately become free agents</Typography>
+                  </Box>
+                </Option>
+                <Option value="rolling">
+                  <Box>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>Rolling Waivers</Typography>
+                    <Typography level="body-xs" color="neutral">Priority based on inverse standings, resets after claim</Typography>
+                  </Box>
+                </Option>
+                <Option value="faab">
+                  <Box>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>FAAB (Blind Bidding)</Typography>
+                    <Typography level="body-xs" color="neutral">Teams bid with a budget to claim players</Typography>
+                  </Box>
+                </Option>
+                <Option value="continuous">
+                  <Box>
+                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>Continuous Waivers</Typography>
+                    <Typography level="body-xs" color="neutral">Fixed priority, never resets</Typography>
+                  </Box>
+                </Option>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid xs={12} md={6}>
+            <FormControl>
+              <FormLabel>Waiver Period (hours)</FormLabel>
+              <Input
+                type="number"
+                value={getCurrentValue('waiver_period_hours')}
+                onChange={(e) => handleInputChange('waiver_period_hours', parseInt(e.target.value))}
+                disabled={editingSection !== 'waivers'}
+                slotProps={{
+                  input: {
+                    min: 0,
+                    max: 168
+                  }
+                }}
+                endDecorator="hours"
+              />
+              <FormHelperText>
+                How long dropped players stay on waivers (0 = immediate free agent)
+              </FormHelperText>
+            </FormControl>
+          </Grid>
+          
+          {/* Show FAAB-specific settings if FAAB is selected */}
+          {getCurrentValue('waiver_type') === 'faab' && (
+            <>
+              <Grid xs={12} md={6}>
+                <FormControl>
+                  <FormLabel>FAAB Budget</FormLabel>
+                  <Input
+                    type="number"
+                    value={getCurrentValue('waiver_budget_amount')}
+                    onChange={(e) => handleInputChange('waiver_budget_amount', parseInt(e.target.value))}
+                    disabled={editingSection !== 'waivers'}
+                    startDecorator="$"
+                  />
+                  <FormHelperText>
+                    Total budget each team gets for the season
+                  </FormHelperText>
+                </FormControl>
+              </Grid>
+              <Grid xs={12} md={6}>
+                <FormControl>
+                  <FormLabel>Minimum Bid</FormLabel>
+                  <Input
+                    type="number"
+                    value={getCurrentValue('waiver_min_bid')}
+                    onChange={(e) => handleInputChange('waiver_min_bid', parseInt(e.target.value))}
+                    disabled={editingSection !== 'waivers'}
+                    startDecorator="$"
+                  />
+                  <FormHelperText>
+                    Minimum amount teams must bid
+                  </FormHelperText>
+                </FormControl>
+              </Grid>
+            </>
+          )}
+
+          {/* Show priority reset options for rolling waivers */}
+          {getCurrentValue('waiver_type') === 'rolling' && (
+            <Grid xs={12} md={6}>
+              <FormControl>
+                <FormLabel>Priority Reset</FormLabel>
+                <Select
+                  value={getCurrentValue('waiver_priority_reset')}
+                  onChange={(_, value) => handleInputChange('waiver_priority_reset', value)}
+                  disabled={editingSection !== 'waivers'}
+                >
+                  <Option value="never">Never Reset</Option>
+                  <Option value="weekly">Reset Weekly</Option>
+                  <Option value="after_claim">Reset After Each Claim</Option>
+                </Select>
+              </FormControl>
+            </Grid>
+          )}
+
+          <Grid xs={12} md={6}>
+            <FormControl>
+              <FormLabel>Waiver Process Time</FormLabel>
+              <Input
+                type="time"
+                value={getCurrentValue('waiver_process_time') || '03:00'}
+                onChange={(e) => handleInputChange('waiver_process_time', e.target.value)}
+                disabled={editingSection !== 'waivers'}
+              />
+              <FormHelperText>
+                Time of day when waivers process (in your league timezone)
+              </FormHelperText>
+            </FormControl>
+          </Grid>
+        </Grid>
+
+        <Alert color="primary" variant="soft" sx={{ mt: 3 }}>
+          <Typography level="body-sm">
+            <strong>💡 Tip:</strong> Waiver settings help maintain competitive balance. 
+            Rolling waivers and FAAB are most popular for competitive leagues, 
+            while free agency works well for casual leagues.
+          </Typography>
+        </Alert>
+
+        {editingSection === 'waivers' && (
+          <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+            <Button
+              variant="solid"
+              startDecorator={<Save />}
+              onClick={handleSave}
+              loading={isLoading}
+              disabled={!hasChanges}
+            >
+              Save Changes
+            </Button>
+            <Button
+              variant="outlined"
+              startDecorator={<Cancel />}
+              onClick={handleCancel}
+            >
+              Cancel
+            </Button>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  )
+
   return (
     <Box sx={{ maxWidth: 1200, mx: 'auto', py: 4 }}>
       <Typography level="h2" sx={{ mb: 4, textAlign: 'center' }}>
@@ -674,11 +852,11 @@ export default function LeagueSettingsManager({ league, isCommissioner, onUpdate
       )}
 
       {renderBasicSettings()}
-      {renderHoopGeekSettings()}
       {renderSalaryCapSettings()}
       {renderTradeSettings()}
       {renderRosterSettings()}
       {renderDraftSettings()}
+      {renderWaiverSettings()}
     </Box>
   )
 }

@@ -35,11 +35,13 @@ export function useSendDraftChatMessage() {
   return useMutation({
     mutationFn: async ({ 
       leagueId, 
+      seasonId,
       fantasyTeamId, 
       message, 
       messageType = 'chat' 
     }: { 
       leagueId: string
+      seasonId: string
       fantasyTeamId: string
       message: string
       messageType?: 'chat' | 'system' | 'pick_announcement' | 'trade_announcement'
@@ -51,6 +53,7 @@ export function useSendDraftChatMessage() {
         .from('fantasy_draft_chat_messages')
         .insert({
           league_id: leagueId,
+          season_id: seasonId,
           user_id: user.id,
           fantasy_team_id: fantasyTeamId,
           message,

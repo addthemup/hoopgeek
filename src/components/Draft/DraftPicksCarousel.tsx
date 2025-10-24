@@ -82,16 +82,18 @@ export default function DraftPicksCarousel({
   const scrollToPick = (pickIndex: number) => {
     if (!carouselRef.current) return;
     
-    // Position at the left edge
-    const gap = 16; // 2 * 8px gap between cards
-    const padding = 8; // px: 1 in sx = 8px
-    const newPosition = padding + (pickIndex * (cardWidth + gap));
+    // Get all cards in the carousel
+    const cards = carouselRef.current.querySelectorAll('& > div');
+    const targetCard = cards[pickIndex] as HTMLElement;
     
-    carouselRef.current.scrollTo({
-      left: newPosition,
-      behavior: 'smooth'
-    });
-    setScrollPosition(newPosition);
+    if (targetCard) {
+      // Use native scrollIntoView with center alignment
+      targetCard.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center'
+      });
+    }
   };
 
   const scrollLeft = () => {
@@ -430,8 +432,8 @@ export default function DraftPicksCarousel({
             </Typography>
             
             {/* Trade Indicators */}
-            {/* Pick Trade Indicator (before player is drafted) */}
-            {!pick.is_completed && pick.is_traded && pick.current_owner_name && (
+            {/* Pick Trade Indicator (shows for traded picks, even after completed) */}
+            {pick.is_traded && pick.current_owner_name && pick.original_team_name !== pick.current_owner_name && (
               <Chip
                 color="primary"
                 size="sm"
@@ -449,7 +451,7 @@ export default function DraftPicksCarousel({
               </Chip>
             )}
             
-            {/* Player Trade Indicator (after player is drafted) */}
+            {/* Player Trade Indicator (after player is drafted and then traded) */}
             {pick.is_completed && pick.player_was_traded && pick.player_traded_to_team && (
               <Chip
                 color="success"

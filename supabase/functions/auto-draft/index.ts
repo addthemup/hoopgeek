@@ -261,6 +261,79 @@ serve(async (req) => {
 
     console.log('✅ Player added to roster successfully');
 
+    // ⏰ TIMER FIX: Start timer for next pick
+    console.log('🔄 Finding next pick to start timer...');
+    const { data: nextPick, error: nextPickError } = await supabase
+      .from('fantasy_draft_order')
+      .select('id, pick_number, round, team_position')
+      .eq('league_id', leagueId)
+      .eq('is_completed', false)
+      .gt('pick_number', pickNumber)
+      .order('pick_number', { ascending: true })
+      .limit(1)
+      .single();
+
+    if (!nextPickError && nextPick) {
+      console.log('✅ Found next pick #', nextPick.pick_number);
+      
+      // Get all teams to find the team for this pick
+      const { data: allTeams } = await supabase
+        .from('fantasy_teams')
+        .select('id, autodraft_enabled')
+        .eq('league_id', leagueId)
+        .order('id');
+
+      const nextTeam = allTeams?.[nextPick.team_position - 1];
+
+      // Get league settings for timer duration
+      const { data: leagueSettings } = await supabase
+        .from('fantasy_leagues')
+        .select('draft_time_per_pick')
+        .eq('id', leagueId)
+        .single();
+
+      // Use 3-second timer if autodraft enabled, otherwise use full timer
+      const timePerPick = nextTeam?.autodraft_enabled ? 3 : (leagueSettings?.draft_time_per_pick || 60);
+      const expiresAt = new Date(Date.now() + timePerPick * 1000);
+
+      console.log(`⏱️ Setting ${timePerPick}s timer for next pick (autodraft: ${nextTeam?.autodraft_enabled})`);
+
+      // Update draft current state
+      const { error: stateUpdateError } = await supabase
+        .from('fantasy_draft_current_state')
+        .update({
+          current_pick_id: nextPick.id,
+          current_pick_number: nextPick.pick_number,
+          current_round: nextPick.round,
+          completed_picks: pickNumber,
+          last_activity_at: new Date().toISOString()
+        })
+        .eq('league_id', leagueId);
+
+      if (stateUpdateError) {
+        console.error('⚠️ Error updating draft state:', stateUpdateError);
+      } else {
+        console.log('✅ Draft state updated');
+      }
+
+      // Start timer for next pick
+      const { error: timerError } = await supabase
+        .from('fantasy_draft_order')
+        .update({
+          time_started: new Date().toISOString(),
+          time_expires: expiresAt.toISOString()
+        })
+        .eq('id', nextPick.id);
+
+      if (timerError) {
+        console.error('⚠️ Error setting timer for next pick:', timerError);
+      } else {
+        console.log('✅ Timer started for next pick');
+      }
+    } else {
+      console.log('🏁 No more picks - draft may be complete');
+    }
+
     console.log('✅ Auto-draft completed successfully')
 
     return new Response(

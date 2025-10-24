@@ -97,9 +97,20 @@ export default function JoinLeague() {
         teamName: teamName.trim() || undefined,
       });
 
+      console.log('✅ Successfully joined league:', result);
+      
+      // Wait longer for cache invalidation and refetch to complete
+      await new Promise(resolve => setTimeout(resolve, 1500));
+
+      console.log('🔄 Navigating to league page...');
+      
       // Navigate to the league page
-      navigate(`/league/${result.league_id}`);
+      navigate(`/league/${result.league_id}`, { replace: true });
+      
+      // Force a reload to ensure all caches are cleared
+      window.location.reload();
     } catch (err: any) {
+      console.error('❌ Failed to join league:', err);
       setError(err.message || 'Failed to join league');
     }
   };

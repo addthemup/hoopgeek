@@ -51,6 +51,8 @@ serve(async (req) => {
       teamName,
       rosterConfig,
       draftDate,
+      draftType,
+      draftRounds,
       tradeDeadline,
       salaryCapAmount,
       startersCount,
@@ -60,7 +62,10 @@ serve(async (req) => {
       benchCount,
       benchMultiplier,
       positionUnitAssignments,
-      fantasyScoringFormat
+      fantasyScoringFormat,
+      waiverType,
+      waiverPeriodHours,
+      faabBudget
     } = body
     
     console.log('🔧 Edge Function: positionUnitAssignments:', JSON.stringify(positionUnitAssignments, null, 2))
@@ -103,8 +108,8 @@ serve(async (req) => {
         },
         scoring_type: scoringType,
         fantasy_scoring_format: fantasyScoringFormat || 'FanDuel',
-        draft_type: 'snake', // Default to snake draft
-        draft_rounds: 15, // Default to 15 rounds
+        draft_type: draftType || 'snake',
+        draft_rounds: draftRounds || 15,
         salary_cap_enabled: true,
         trades_enabled: true
       })
@@ -147,7 +152,14 @@ serve(async (req) => {
         playoff_teams: Math.floor(maxTeams / 2),
         playoff_weeks: 3,
         draft_date: draftDate || null,
-        trade_deadline: tradeDeadline || null
+        trade_deadline: tradeDeadline || null,
+        waiver_type: waiverType || 'rolling',
+        waiver_period_hours: waiverPeriodHours || 48,
+        faab_budget: faabBudget || (waiverType === 'faab' ? 100 : null),
+        waiver_processing_day: 3,
+        waiver_processing_time: '03:00:00',
+        waiver_order_reset_type: 'weekly_inverse_standings',
+        waiver_order_tie_breaker: 'points_scored'
       })
       .select()
       .single()
@@ -309,7 +321,6 @@ serve(async (req) => {
       .from('fantasy_teams')
       .select('id, team_name, is_commissioner')
       .eq('league_id', league.id)
-      .order('is_commissioner', { ascending: false }) // Commissioner first, then placeholders
 
     if (teamsError) {
       console.error('❌ Error fetching teams for draft order:', teamsError)
@@ -317,13 +328,26 @@ serve(async (req) => {
     }
 
     if (allTeams && allTeams.length > 0) {
+      // 🎲 RANDOMIZE DRAFT ORDER - Shuffle teams array
+      // Using Fisher-Yates shuffle algorithm for fair randomization
+      const shuffledTeams = [...allTeams]
+      for (let i = shuffledTeams.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffledTeams[i], shuffledTeams[j]] = [shuffledTeams[j], shuffledTeams[i]]
+      }
+      
+      console.log('🎲 Draft order randomized:')
+      shuffledTeams.forEach((team, index) => {
+        console.log(`  Position ${index + 1}: ${team.team_name} ${team.is_commissioner ? '(Commissioner)' : ''}`)
+      })
+      
       // Create draft order
       const draftOrder = []
       
       // Determine draft type from league settings
       const isSnakeDraft = league.draft_type === 'snake'
       const totalRounds = league.draft_rounds || 15
-      const totalTeams = allTeams.length
+      const totalTeams = shuffledTeams.length
       
       console.log(`🎯 Creating ${isSnakeDraft ? 'snake' : 'linear'} draft with ${totalRounds} rounds for ${totalTeams} teams`)
       
@@ -345,9 +369,9 @@ serve(async (req) => {
             pickNumber = (round - 1) * totalTeams + teamPosition
           }
           
-          // Get the team for this pick
+          // Get the team for this pick from shuffled array
           const teamIndex = teamPosition - 1
-          const team = allTeams[teamIndex]
+          const team = shuffledTeams[teamIndex]
           
           draftOrder.push({
             league_id: league.id,
@@ -402,6 +426,34 @@ serve(async (req) => {
         } else {
           console.log('✅ Created draft current state')
         }
+      }
+    }
+
+    // Step 6.5: Initialize waiver order for all teams
+    console.log('📝 Initializing waiver order...')
+    if (allTeams && allTeams.length > 0) {
+      // Shuffle teams to randomize initial waiver order (using same shuffled order from draft)
+      const waiverShuffledTeams = [...allTeams].sort(() => Math.random() - 0.5)
+      
+      const waiverOrderRecords = waiverShuffledTeams.map((team, index) => ({
+        league_id: league.id,
+        season_id: season.id,
+        fantasy_team_id: team.id,
+        waiver_priority: index + 1, // 1-based priority
+        remaining_budget: season.waiver_budget_amount || 100,
+        total_spent: 0
+      }))
+
+      const { error: waiverOrderError } = await supabase
+        .from('fantasy_waiver_order')
+        .insert(waiverOrderRecords)
+
+      if (waiverOrderError) {
+        console.error('❌ Error creating waiver order:', waiverOrderError)
+        // Don't throw - this is non-critical for league creation
+        console.log('⚠️ Continuing without waiver order initialization')
+      } else {
+        console.log(`✅ Initialized random waiver order for ${waiverOrderRecords.length} teams`)
       }
     }
 

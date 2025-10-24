@@ -18,7 +18,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useTeams } from '../hooks/useTeams';
 import { useCurrentFantasyWeek } from '../hooks/useCurrentFantasyWeek';
 import { useMatchups } from '../hooks/useMatchups';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 import {
   People,
@@ -47,6 +47,7 @@ interface CommissionerToolsProps {
 
 export default function CommissionerTools({ leagueId }: CommissionerToolsProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: league, isLoading, error } = useLeague(leagueId);
   const { data: teams } = useTeams(leagueId);
   const { currentWeek: fantasyWeek, seasonPhase } = useCurrentFantasyWeek();
@@ -147,13 +148,19 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
   // Auto-lineup for all teams mutation
   const autoLineupAllTeamsMutation = useMutation({
     mutationFn: async () => {
-      if (!teams || !currentWeekMatchups || !fantasyWeek) {
+      if (!teams || !currentWeekMatchups || !fantasyWeek || !league) {
         throw new Error('Missing required data for auto-lineup');
       }
 
       const weekNumber = currentWeek;
       const seasonYear = fantasyWeek.season_year;
-      const seasonId = fantasyWeek.id; // Using fantasy week ID as season ID
+      
+      // Get the actual season_id from teams (they all share the same season_id)
+      const seasonId = teams[0]?.season_id;
+      
+      if (!seasonId) {
+        throw new Error('Could not determine season_id from teams');
+      }
 
       console.log('🤖 Starting auto-lineup for all teams:', {
         leagueId,
@@ -287,7 +294,70 @@ export default function CommissionerTools({ leagueId }: CommissionerToolsProps) 
     },
   ];
 
+  // Process waivers mutation
+  const processWaiversMutation = useMutation({
+    mutationFn: async () => {
+      if (!league) {
+        throw new Error('League data not loaded');
+      }
+
+      const leagueData = league?.league || league;
+      const seasonId = leagueData?.season_id || teams?.[0]?.season_id;
+
+      if (!seasonId) {
+        throw new Error('No season ID found');
+      }
+
+      console.log('⚙️ Processing waivers:', { leagueId, seasonId });
+
+      const { data, error } = await supabase.rpc('process_waiver_claims', {
+        p_league_id: leagueId,
+        p_season_id: seasonId,
+      });
+
+      if (error) {
+        console.error('❌ Error processing waivers:', error);
+        throw error;
+      }
+
+      console.log('✅ Waivers processed:', data);
+      return data;
+    },
+    onSuccess: (result) => {
+      console.log('✅ Waiver processing complete:', result);
+      
+      // Invalidate all waiver-related queries
+      queryClient.invalidateQueries({ queryKey: ['league-waivers'] });
+      queryClient.invalidateQueries({ queryKey: ['pending-waiver-claims'] });
+      queryClient.invalidateQueries({ queryKey: ['roster'] });
+      queryClient.invalidateQueries({ queryKey: ['user-team-roster'] });
+      queryClient.invalidateQueries({ queryKey: ['recent-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['league-transactions'] });
+      
+      alert(`Waivers processed successfully!\n\nAwarded: ${result.awarded_count || 0} claims\nFailed: ${result.failed_count || 0} claims`);
+    },
+    onError: (error) => {
+      console.error('❌ Waiver processing failed:', error);
+      alert(`Error processing waivers: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    },
+  });
+
+  const handleProcessWaivers = () => {
+    const confirmMessage = `This will process all pending waiver claims immediately. Are you sure?`;
+    if (confirm(confirmMessage)) {
+      processWaiversMutation.mutate();
+    }
+  };
+
   const miscellaneousTools = [
+    {
+      title: 'Process Waivers Now',
+      description: 'Manually process all pending waiver claims immediately.',
+      icon: <AutoAwesome />,
+      action: handleProcessWaivers,
+      color: 'warning' as const,
+      loading: processWaiversMutation.isPending,
+    },
     {
       title: 'Transaction Counter',
       description: 'Manage league transactions.',

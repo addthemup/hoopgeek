@@ -568,7 +568,7 @@ CREATE OR REPLACE FUNCTION reject_draft_trade_offer(
     p_trade_id UUID,
     p_rejecting_team_id UUID
 ) RETURNS BOOLEAN AS $$
-DECLARE
+DECLAREa
     trade_record RECORD;
     is_commissioner BOOLEAN := FALSE;
 BEGIN

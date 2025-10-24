@@ -916,16 +916,6 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
     });
   };
 
-  const formatGameTime = (timeString?: string) => {
-    if (!timeString) return 'TBD';
-    const time = new Date(`2000-01-01T${timeString}`);
-    return time.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    });
-  };
-
   return (
     <Card variant="outlined">
       <CardContent>
@@ -939,11 +929,9 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
         <Table hoverRow>
           <thead>
             <tr>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Matchup</th>
-              <th>Location</th>
-              <th>Fantasy Week</th>
+              <th style={{ width: '250px' }}>Date</th>
+              <th style={{ width: '200px' }}>Matchup</th>
+              <th style={{ width: '150px' }}>Fantasy Week</th>
             </tr>
           </thead>
           <tbody>
@@ -951,29 +939,12 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
               <tr
                 key={game.id}
                 style={{
-                  borderLeft: game.is_week_start ? '4px solid #000' : 'none',
-                  borderRight: game.is_week_end ? '4px solid #000' : 'none',
-                  backgroundColor: game.is_week_start || game.is_week_end ? '#f5f5f5' : 'transparent'
+                  backgroundColor: game.week_number && game.week_number % 2 === 0 ? '#f5f5f5' : 'transparent'
                 }}
               >
                 <td>
                   <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                     {formatGameDate(game.game_date)}
-                  </Typography>
-                  {(game.is_week_start || game.is_week_end) && (
-                    <Chip
-                      size="sm"
-                      color="primary"
-                      variant="solid"
-                      sx={{ mt: 0.5, fontSize: '0.7rem' }}
-                    >
-                      {game.is_week_start ? 'Week Start' : 'Week End'}
-                    </Chip>
-                  )}
-                </td>
-                <td>
-                  <Typography level="body-sm">
-                    {formatGameTime(game.game_time_est)}
                   </Typography>
                 </td>
                 <td>
@@ -990,17 +961,13 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
                   </Box>
                 </td>
                 <td>
-                  <Typography level="body-sm">
-                    {game.arena_name && game.arena_city 
-                      ? `${game.arena_city}` 
-                      : 'TBD'
-                    }
-                  </Typography>
-                </td>
-                <td>
-                  <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                    {game.fantasy_week_name || 'TBD'}
-                  </Typography>
+                  <Chip
+                    size="sm"
+                    color="primary"
+                    variant="soft"
+                  >
+                    {game.fantasy_week_name || `Week ${game.week_number}`}
+                  </Chip>
                 </td>
               </tr>
             ))}
@@ -1009,8 +976,7 @@ function UpcomingGamesTab({ playerId }: { playerId: string }) {
 
         <Alert color="neutral" sx={{ mt: 2 }}>
           <Typography level="body-sm">
-            <strong>Note:</strong> Games with bold black borders mark the start and end of fantasy weeks. 
-            This helps you plan your lineup changes for optimal scoring periods.
+            <strong>Note:</strong> Games are color-coded by fantasy week (alternating gray/white) for easy planning.
           </Typography>
         </Alert>
       </CardContent>

@@ -13,7 +13,13 @@ import {
   ListDivider,
   Chip,
   Input,
-  Badge
+  Badge,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemContent,
+  CircularProgress,
+  Avatar
 } from '@mui/joy'
 import {
   Home,
@@ -39,6 +45,7 @@ import {
   Group
 } from '@mui/icons-material'
 import { useAuth } from '../hooks/useAuth'
+import { usePlayerSearch, PlayerSearchResult } from '../hooks/usePlayerSearch'
 
 interface NavigationItem {
   id: string
@@ -57,6 +64,9 @@ export default function TopNavigation() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  
+  // Player search
+  const { data: searchResults, isLoading: searchLoading } = usePlayerSearch(searchQuery)
 
   const navigationItems: NavigationItem[] = [
     {
@@ -64,15 +74,21 @@ export default function TopNavigation() {
       label: 'Home',
       icon: <Home />,
       path: '/',
-      description: 'Latest highlights and news'
+      description: 'Latest NBA news and analysis'
+    },
+    {
+      id: 'dfs',
+      label: 'DFS',
+      icon: <MonetizationOn />,
+      path: '/dfs',
+      description: 'Daily Fantasy Sports'
     },
     {
       id: 'highlights',
       label: 'Highlights',
       icon: <VideoLibrary />,
       path: '/highlights',
-      description: 'Daily game highlights with advanced stats',
-      badge: 'New'
+      description: 'Daily game highlights with advanced stats'
     },
     {
       id: 'fantasy',
@@ -87,31 +103,11 @@ export default function TopNavigation() {
       ]
     },
     {
-      id: 'analysis',
-      label: 'Analysis',
-      icon: <Analytics />,
-      path: '/analysis',
-      description: 'Advanced basketball analytics',
-      children: [
-        { id: 'stats', label: 'Player Stats', icon: <Assessment />, path: '/analysis/stats' },
-        { id: 'trends', label: 'Trends', icon: <TrendingUp />, path: '/analysis/trends' },
-        { id: 'predictions', label: 'Predictions', icon: <Psychology />, path: '/analysis/predictions' }
-      ]
-    },
-    {
       id: 'betting',
       label: 'Betting',
-      icon: <MonetizationOn />,
+      icon: <TrendingUp />,
       path: '/betting',
-      description: 'Live betting odds and lines',
-      badge: 'Live'
-    },
-    {
-      id: 'community',
-      label: 'Community',
-      icon: <Forum />,
-      path: '/community',
-      description: 'Discussions and debates'
+      description: 'Live betting odds and lines'
     }
   ]
 
@@ -244,19 +240,6 @@ export default function TopNavigation() {
             <Search />
           </IconButton>
 
-          {/* Notifications */}
-          {user && (
-            <IconButton
-              variant="plain"
-              color="neutral"
-              sx={{ color: 'inherit' }}
-            >
-              <Badge badgeContent={3} color="danger" size="sm">
-                <Notifications />
-              </Badge>
-            </IconButton>
-          )}
-
           {/* Mobile Menu Button */}
           <IconButton
             variant="plain"
@@ -318,22 +301,133 @@ export default function TopNavigation() {
           borderColor: 'primary.300',
           bgcolor: 'primary.600'
         }}>
-          <Input
-            placeholder="Search players, teams, highlights..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            startDecorator={<Search />}
-            endDecorator={
-              <IconButton
-                variant="plain"
-                size="sm"
-                onClick={() => setSearchOpen(false)}
-              >
-                <Close />
-              </IconButton>
-            }
-            sx={{ maxWidth: '600px', mx: 'auto' }}
-          />
+          <Box sx={{ 
+            maxWidth: '600px', 
+            mx: 'auto', 
+            position: 'relative'
+          }}>
+            <Input
+              placeholder="Search players by name... (e.g., LeBron James, Steph Curry)"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && searchResults && searchResults.length > 0) {
+                  // Navigate to first result on Enter
+                  navigate(`/player/${searchResults[0].id}`)
+                  setSearchOpen(false)
+                  setSearchQuery('')
+                }
+              }}
+              startDecorator={<Search />}
+              endDecorator={
+                <IconButton
+                  variant="plain"
+                  size="sm"
+                  onClick={() => {
+                    setSearchOpen(false)
+                    setSearchQuery('')
+                  }}
+                >
+                  <Close />
+                </IconButton>
+              }
+              autoFocus
+              sx={{ 
+                bgcolor: 'background.surface',
+                '--Input-focusedThickness': '2px'
+              }}
+            />
+            
+            {/* Search Results - Floating Dropdown */}
+            {searchQuery.length >= 2 && (
+              <Box sx={{
+                position: 'fixed',
+                top: '140px', // Adjust based on navbar height
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '600px',
+                maxWidth: 'calc(100vw - 32px)',
+                maxHeight: '400px',
+                overflowY: 'auto',
+                bgcolor: 'background.surface',
+                borderRadius: 'sm',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                border: '1px solid',
+                borderColor: 'neutral.300',
+                zIndex: 9999
+              }}>
+                {searchLoading ? (
+                  <Box sx={{ p: 3, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size="sm" />
+                    <Typography level="body-sm">Searching players...</Typography>
+                  </Box>
+                ) : searchResults && searchResults.length > 0 ? (
+                  <List sx={{ p: 0 }}>
+                    {searchResults.map((player: PlayerSearchResult) => (
+                      <ListItem key={player.id} sx={{ p: 0 }}>
+                        <ListItemButton
+                          onClick={() => {
+                            navigate(`/player/${player.id}`)
+                            setSearchOpen(false)
+                            setSearchQuery('')
+                          }}
+                          sx={{
+                            p: 2,
+                            '&:hover': {
+                              bgcolor: 'primary.50'
+                            }
+                          }}
+                        >
+                          <ListItemDecorator>
+                            <Avatar
+                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                              alt={player.name}
+                              size="sm"
+                            />
+                          </ListItemDecorator>
+                          <ListItemContent>
+                            <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
+                              {player.name}
+                            </Typography>
+                            <Typography level="body-xs" color="neutral">
+                              {player.team_name || 'Free Agent'} • {player.position || 'N/A'}
+                            </Typography>
+                          </ListItemContent>
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Box sx={{ p: 3 }}>
+                    <Typography level="body-sm" color="neutral">
+                      No players found matching "{searchQuery}"
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
+            {searchQuery.length === 1 && (
+              <Box sx={{
+                position: 'fixed',
+                top: '140px', // Adjust based on navbar height
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '600px',
+                maxWidth: 'calc(100vw - 32px)',
+                bgcolor: 'background.surface',
+                borderRadius: 'sm',
+                p: 2,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                border: '1px solid',
+                borderColor: 'neutral.300',
+                zIndex: 9999
+              }}>
+                <Typography level="body-sm" color="neutral">
+                  💡 Type at least 2 characters to start searching...
+                </Typography>
+              </Box>
+            )}
+          </Box>
         </Box>
       )}
 

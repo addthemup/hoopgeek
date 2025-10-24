@@ -40,12 +40,25 @@ export function useAutoDraft() {
       return data;
     },
     onSuccess: (data, variables) => {
+      console.log('✅ Auto-draft successful, invalidating queries...');
+      
       // Invalidate relevant queries to refresh the UI
-      queryClient.invalidateQueries({ queryKey: ['draftOrder', variables.leagueId] });
-      queryClient.invalidateQueries({ queryKey: ['nextPick', variables.leagueId] });
-      queryClient.invalidateQueries({ queryKey: ['players-paginated'] }); // This will refresh the players list
+      queryClient.invalidateQueries({ queryKey: ['draft-order', variables.leagueId] });
+      queryClient.invalidateQueries({ queryKey: ['draft-state', variables.leagueId] });
+      queryClient.invalidateQueries({ queryKey: ['next-pick', variables.leagueId] });
       queryClient.invalidateQueries({ queryKey: ['teams', variables.leagueId] });
       queryClient.invalidateQueries({ queryKey: ['roster', variables.leagueId] });
+      
+      // Invalidate available players queries (used in DraftPicks modal)
+      queryClient.invalidateQueries({ queryKey: ['available-players', variables.leagueId] });
+      
+      // Invalidate paginated players queries (used in DraftBestAvailable)
+      queryClient.invalidateQueries({ queryKey: ['players-paginated'] });
+      
+      // Invalidate accepted trades
+      queryClient.invalidateQueries({ queryKey: ['accepted-trades', variables.leagueId] });
+      
+      console.log('🔄 All queries invalidated, UI should refresh');
     },
   });
 }

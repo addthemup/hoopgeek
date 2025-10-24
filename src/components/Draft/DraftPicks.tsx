@@ -12,11 +12,22 @@ import {
   CircularProgress,
   Table,
   Switch,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  Input,
+  List,
+  ListItem,
+  ListItemButton,
+  ListItemDecorator,
+  ListItemContent,
 } from '@mui/joy';
-import { SportsBasketball, Timer, NavigateBefore, NavigateNext, SwapHoriz, FilterList } from '@mui/icons-material';
+import { SportsBasketball, Timer, NavigateBefore, NavigateNext, SwapHoriz, FilterList, Search } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
+import { useMakeDraftPick } from '../../hooks/useMakeDraftPick';
+import { useAuth } from '../../hooks/useAuth';
 import './DraftPicks.css';
 
 interface DraftPicksProps {
@@ -25,9 +36,13 @@ interface DraftPicksProps {
 }
 
 export default function DraftPicks({ leagueId, userTeamId }: DraftPicksProps) {
+  const { user } = useAuth();
   const { data: draftOrder, isLoading, error } = useDraftOrder(leagueId);
+  const makeDraftPick = useMakeDraftPick();
   const [currentRound, setCurrentRound] = useState(1);
   const [showTrades, setShowTrades] = useState(true);
+  const [isPlayerModalOpen, setIsPlayerModalOpen] = useState(false);
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const picksPerPage = 12; // Show 12 picks per page (typical league size)
   
   // Fetch accepted trades directly
@@ -145,10 +160,16 @@ export default function DraftPicks({ leagueId, userTeamId }: DraftPicksProps) {
       }
     });
     
-    // Sort by timestamp (picks first if same time)
+    // Sort by timestamp, then by pick number to maintain draft order
     items.sort((a, b) => {
       const timeDiff = a.timestamp.getTime() - b.timestamp.getTime();
       if (timeDiff !== 0) return timeDiff;
+      
+      // If same time, use pick_number as secondary sort for picks
+      if (a.type === 'pick' && b.type === 'pick') {
+        return a.data.pick_number - b.data.pick_number;
+      }
+      
       // If same time, picks come before trades
       return a.type === 'pick' ? -1 : 1;
     });
@@ -164,12 +185,104 @@ export default function DraftPicks({ leagueId, userTeamId }: DraftPicksProps) {
     return items;
   }, [draftOrder, currentRound, acceptedTrades, showTrades]);
 
-  // Calculate current pick number
-  const currentPick = useMemo(() => {
-    if (!draftOrder) return 1;
+  // Calculate current pick number and details
+  const currentPickData = useMemo(() => {
+    if (!draftOrder) return null;
     const nextPick = draftOrder.find(pick => !pick.is_completed);
-    return nextPick?.pick_number || draftOrder.length + 1;
-  }, [draftOrder]);
+    if (!nextPick) return null;
+    
+    return {
+      pickNumber: nextPick.pick_number,
+      teamId: nextPick.team_id,
+      teamName: nextPick.team_name,
+      round: nextPick.round,
+      isUsersTurn: nextPick.team_id === userTeamId
+    };
+  }, [draftOrder, userTeamId]);
+  
+  const currentPick = currentPickData?.pickNumber || 1;
+
+  // Fetch available players for drafting
+  const { data: availablePlayers = [], isLoading: playersLoading } = useQuery({
+    queryKey: ['available-players', leagueId, playerSearchQuery],
+    queryFn: async () => {
+      if (!leagueId) return [];
+      
+      // Get all already-drafted player IDs
+      const draftedPlayerIds = draftOrder?.filter(pick => pick.player_id).map(pick => pick.player_id) || [];
+      
+      let query = supabase
+        .from('nba_players')
+        .select(`
+          id,
+          name,
+          nba_player_id,
+          position,
+          team_abbreviation,
+          jersey_number,
+          nba_hoopshype_salaries (
+            salary_2025_26
+          )
+        `)
+        .eq('is_active', true)
+        .not('id', 'in', `(${draftedPlayerIds.join(',')})`)
+        .order('name', { ascending: true })
+        .limit(50);
+      
+      if (playerSearchQuery) {
+        query = query.ilike('name', `%${playerSearchQuery}%`);
+      }
+      
+      const { data, error } = await query;
+      
+      if (error) {
+        console.error('❌ Error fetching available players:', error);
+        return [];
+      }
+      
+      return data || [];
+    },
+    enabled: !!leagueId && isPlayerModalOpen,
+    refetchInterval: false,
+  });
+
+  // Handle making a draft pick
+  const handleDraftPlayer = async (player: any) => {
+    if (!currentPickData || !userTeamId) {
+      alert('Cannot make draft pick at this time');
+      return;
+    }
+    
+    if (!currentPickData.isUsersTurn) {
+      alert('It is not your turn to draft!');
+      return;
+    }
+    
+    try {
+      console.log('📝 Making draft pick:', {
+        leagueId,
+        playerId: player.id,
+        teamId: userTeamId,
+        pickNumber: currentPickData.pickNumber
+      });
+      
+      await makeDraftPick.mutateAsync({
+        leagueId,
+        playerId: player.id,
+        teamId: userTeamId,
+        pickNumber: currentPickData.pickNumber
+      });
+      
+      // Force immediate refetch of available players
+      console.log('🔄 Refetching available players after draft pick');
+      
+      setIsPlayerModalOpen(false);
+      setPlayerSearchQuery('');
+    } catch (error: any) {
+      console.error('❌ Error making draft pick:', error);
+      alert(`Failed to make draft pick: ${error.message}`);
+    }
+  };
 
   const getPositionColor = (position: string) => {
     switch (position) {
@@ -242,6 +355,27 @@ export default function DraftPicks({ leagueId, userTeamId }: DraftPicksProps) {
               <Chip size="sm" color="success" variant="soft">
                 {acceptedTrades.length} Trade{acceptedTrades.length !== 1 ? 's' : ''}
               </Chip>
+            )}
+            
+            {/* Draft Button - Only show when it's user's turn */}
+            {currentPickData?.isUsersTurn && (
+              <Button
+                color="success"
+                size="lg"
+                variant="solid"
+                onClick={() => setIsPlayerModalOpen(true)}
+                loading={makeDraftPick.isPending}
+                startDecorator={<Timer />}
+                sx={{
+                  animation: 'pulse 2s infinite',
+                  '@keyframes pulse': {
+                    '0%, 100%': { opacity: 1 },
+                    '50%': { opacity: 0.7 }
+                  }
+                }}
+              >
+                🏀 MAKE YOUR PICK
+              </Button>
             )}
           </Stack>
           
@@ -566,6 +700,108 @@ export default function DraftPicks({ leagueId, userTeamId }: DraftPicksProps) {
           </Button>
         </Stack>
       </Box>
+
+      {/* Player Selection Modal */}
+      <Modal open={isPlayerModalOpen} onClose={() => setIsPlayerModalOpen(false)}>
+        <ModalDialog
+          sx={{
+            maxWidth: 800,
+            width: '90%',
+            maxHeight: '90vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}
+        >
+          <ModalClose />
+          <Typography level="h4" sx={{ mb: 2 }}>
+            Make Your Pick - #{currentPickData?.pickNumber}
+          </Typography>
+          
+          {currentPickData && (
+            <Alert color="success" variant="soft" sx={{ mb: 2 }}>
+              <Typography level="body-sm">
+                <strong>Pick #{currentPickData.pickNumber}</strong> • Round {currentPickData.round} • {currentPickData.teamName}
+              </Typography>
+            </Alert>
+          )}
+          
+          {/* Search Bar */}
+          <Input
+            placeholder="Search players..."
+            value={playerSearchQuery}
+            onChange={(e) => setPlayerSearchQuery(e.target.value)}
+            startDecorator={<Search />}
+            size="lg"
+            sx={{ mb: 2 }}
+          />
+          
+          {/* Player List */}
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
+            {playersLoading ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : availablePlayers.length === 0 ? (
+              <Alert color="neutral">
+                {playerSearchQuery ? `No players found matching "${playerSearchQuery}"` : 'No available players'}
+              </Alert>
+            ) : (
+              <List>
+                {availablePlayers.map((player: any) => {
+                  const salary = player.nba_hoopshype_salaries?.[0]?.salary_2025_26;
+                  return (
+                    <ListItem key={player.id}>
+                      <ListItemButton
+                        onClick={() => handleDraftPlayer(player)}
+                        disabled={makeDraftPick.isPending}
+                        sx={{
+                          '&:hover': {
+                            bgcolor: 'success.50',
+                          }
+                        }}
+                      >
+                        <ListItemDecorator>
+                          <Avatar
+                            src={player.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
+                            size="lg"
+                            sx={{ bgcolor: 'primary.500' }}
+                          >
+                            {player.name.split(' ').map((n: string) => n[0]).join('')}
+                          </Avatar>
+                        </ListItemDecorator>
+                        <ListItemContent>
+                          <Typography level="title-md" fontWeight="bold">
+                            {player.name}
+                          </Typography>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Chip size="sm" variant="soft" color="primary">
+                              {player.position}
+                            </Chip>
+                            <Typography level="body-sm" color="neutral">
+                              {player.team_abbreviation}
+                            </Typography>
+                            {player.jersey_number && (
+                              <Typography level="body-sm" color="neutral">
+                                #{player.jersey_number}
+                              </Typography>
+                            )}
+                            {salary && (
+                              <Chip size="sm" variant="soft" color="success">
+                                ${(salary / 1000000).toFixed(1)}M
+                              </Chip>
+                            )}
+                          </Stack>
+                        </ListItemContent>
+                      </ListItemButton>
+                    </ListItem>
+                  );
+                })}
+              </List>
+            )}
+          </Box>
+        </ModalDialog>
+      </Modal>
     </Box>
   );
 }

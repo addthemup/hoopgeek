@@ -30,13 +30,17 @@ import {
   VisibilityOff,
   SwapHoriz,
   PersonAdd,
-  PersonRemove
+  PersonRemove,
+  Warning
 } from '@mui/icons-material'
 import { useAuth } from '../hooks/useAuth'
 import { useTeams } from '../hooks/useTeams'
+import { useLeague } from '../hooks/useLeagues'
 import { useAddPlayerToRoster, useRemovePlayerFromRoster, useIsPlayerOnRoster, useGetPlayerRosterInfo } from '../hooks/useRosterActions'
 import { useAddToWatchlist, useRemoveFromWatchlist, useIsPlayerOnWatchlist } from '../hooks/usePlayerWatchlist'
 import { useAddToFavorites, useRemoveFromFavorites, useIsPlayerFavorite } from '../hooks/usePlayerFavorites'
+import { useDropPlayer } from '../hooks/useDropPlayer'
+import { usePlayerWaiverStatus } from '../hooks/usePlayersOnWaivers'
 
 interface PlayerActionButtonsProps {
   playerId: string
@@ -53,15 +57,33 @@ export default function PlayerActionButtons({
 }: PlayerActionButtonsProps) {
   const { user } = useAuth()
   const { data: teams } = useTeams(leagueId || '')
+  const { data: league } = useLeague(leagueId || '')
   
   // Get user's team in this league
   const userTeam = teams?.find(team => team.user_id === user?.id)
+  
+  // Get season ID from user's team (most reliable) or from league data
+  const seasonId = userTeam?.season_id || (league as any)?.season_id || (league as any)?.current_season_id
+  
+  // Debug logging for season ID
+  console.log('🔍 PlayerActionButtons season data:', {
+    userTeam,
+    userTeamSeasonId: userTeam?.season_id,
+    league,
+    leagueSeasonId: (league as any)?.season_id,
+    leagueCurrentSeasonId: (league as any)?.current_season_id,
+    finalSeasonId: seasonId
+  })
   
   // Roster management hooks
   const { data: rosterInfo } = useIsPlayerOnRoster(userTeam?.id || '', playerId)
   const { data: playerRosterInfo } = useGetPlayerRosterInfo(playerId)
   const addToRosterMutation = useAddPlayerToRoster()
   const removeFromRosterMutation = useRemovePlayerFromRoster()
+  const dropPlayerMutation = useDropPlayer()
+  
+  // Waiver status hook
+  const { data: waiverStatus } = usePlayerWaiverStatus(playerId, leagueId || '', seasonId || '')
   
   // Watchlist hooks
   const { data: isOnWatchlist } = useIsPlayerOnWatchlist(leagueId || '', playerId)
@@ -77,6 +99,7 @@ export default function PlayerActionButtons({
   const [showNotesModal, setShowNotesModal] = useState(false)
   const [notesAction, setNotesAction] = useState<'watchlist' | 'favorite' | null>(null)
   const [notes, setNotes] = useState('')
+  const [showDropModal, setShowDropModal] = useState(false)
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; color: 'success' | 'error' }>({
     open: false,
     message: '',
@@ -101,16 +124,42 @@ export default function PlayerActionButtons({
   }
 
   const handleRemoveFromRoster = async () => {
-    if (!userTeam) return
+    // Open drop modal instead of directly removing
+    setShowDropModal(true)
+  }
+
+  const handleConfirmDrop = async () => {
+    console.log('🎯 handleConfirmDrop called!')
+    console.log('📊 Drop player data:', {
+      userTeam,
+      leagueId,
+      seasonId,
+      playerId,
+      playerName
+    })
+    
+    if (!userTeam || !leagueId || !seasonId) {
+      console.error('❌ Missing required data:', { userTeam, leagueId, seasonId })
+      setSnackbar({ open: true, message: 'Missing required data to drop player', color: 'error' })
+      return
+    }
     
     try {
-      await removeFromRosterMutation.mutateAsync({
+      console.log('🚀 Calling dropPlayerMutation...')
+      const result = await dropPlayerMutation.mutateAsync({
+        leagueId,
+        seasonId,
         fantasyTeamId: userTeam.id,
-        playerId
+        playerId,
+        notes: `Dropped from player page by user`
       })
-      setSnackbar({ open: true, message: `${playerName} removed from your roster!`, color: 'success' })
+      console.log('✅ Drop successful:', result)
+      setSnackbar({ open: true, message: `${playerName} has been dropped from your roster!`, color: 'success' })
+      setShowDropModal(false)
     } catch (error) {
-      setSnackbar({ open: true, message: 'Failed to remove player from roster', color: 'error' })
+      console.error('❌ Error dropping player:', error)
+      setSnackbar({ open: true, message: 'Failed to drop player', color: 'error' })
+      setShowDropModal(false)
     }
   }
 
@@ -197,15 +246,15 @@ export default function PlayerActionButtons({
             )}
 
             {isOnUserRoster && (
-              <Tooltip title="Remove from your roster">
+              <Tooltip title="Drop player from roster">
                 <IconButton
                   variant="solid"
                   color="danger"
                   onClick={handleRemoveFromRoster}
-                  loading={removeFromRosterMutation.isPending}
+                  loading={dropPlayerMutation.isPending}
                   size="sm"
                 >
-                  <Remove />
+                  <PersonRemove />
                 </IconButton>
               </Tooltip>
             )}
@@ -254,7 +303,18 @@ export default function PlayerActionButtons({
         </Tooltip>
 
         {/* Player Status Indicators */}
-        {isOnAnotherTeam && playerRosterInfo && playerRosterInfo.fantasy_teams && (
+        {waiverStatus && (
+          <Chip
+            size="sm"
+            variant="soft"
+            color={waiverStatus.waiver_status === 'free_agent' || new Date(waiverStatus.becomes_free_agent_at) <= new Date() ? 'success' : 'warning'}
+            startDecorator={<Warning />}
+          >
+            {waiverStatus.waiver_status === 'free_agent' || new Date(waiverStatus.becomes_free_agent_at) <= new Date() ? 'Free Agent' : 'On Waivers'}
+          </Chip>
+        )}
+
+        {!waiverStatus && isOnAnotherTeam && playerRosterInfo && playerRosterInfo.fantasy_teams && (
           <Chip
             size="sm"
             variant="soft"
@@ -264,7 +324,7 @@ export default function PlayerActionButtons({
           </Chip>
         )}
 
-        {isOnUserRoster && (
+        {!waiverStatus && isOnUserRoster && (
           <Chip
             size="sm"
             variant="soft"
@@ -314,6 +374,78 @@ export default function PlayerActionButtons({
               loading={addToWatchlistMutation.isPending || addToFavoritesMutation.isPending}
             >
               Add {notesAction === 'watchlist' ? 'to Watchlist' : 'to Favorites'}
+            </Button>
+          </DialogActions>
+        </ModalDialog>
+      </Modal>
+
+      {/* Drop Player Confirmation Modal */}
+      <Modal open={showDropModal} onClose={() => setShowDropModal(false)}>
+        <ModalDialog variant="outlined" role="alertdialog" sx={{ maxWidth: 400 }}>
+          <DialogTitle sx={{ color: 'danger.500' }}>
+            ⚠️ Drop Player?
+          </DialogTitle>
+          <Divider />
+          <DialogContent>
+            <Stack spacing={2}>
+              <Typography level="body-md">
+                Are you sure you want to drop <strong>{playerName}</strong> from your roster?
+              </Typography>
+              <Alert color="warning" variant="soft">
+                <Typography level="body-sm">
+                  {(() => {
+                    const leagueData = league as any;
+                    const waiverType = leagueData?.waiver_type || 'rolling';
+                    const waiverPeriodHours = leagueData?.waiver_period_hours || 24;
+                    
+                    console.log('🕐 Waiver settings:', { waiverType, waiverPeriodHours, leagueData });
+                    
+                    // If no waivers, player becomes free agent immediately
+                    if (waiverType === 'none') {
+                      return 'This player will become a free agent immediately and can be picked up by any team.';
+                    }
+                    
+                    // Format the time period
+                    const formatWaiverPeriod = (hours: number) => {
+                      if (hours < 24) {
+                        return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+                      } else if (hours % 24 === 0) {
+                        const days = hours / 24;
+                        return `${days} ${days === 1 ? 'day' : 'days'}`;
+                      } else {
+                        const days = Math.floor(hours / 24);
+                        const remainingHours = hours % 24;
+                        return `${days} ${days === 1 ? 'day' : 'days'} and ${remainingHours} ${remainingHours === 1 ? 'hour' : 'hours'}`;
+                      }
+                    };
+                    
+                    const periodText = formatWaiverPeriod(waiverPeriodHours);
+                    
+                    return `This player will be placed on waivers for ${periodText}. Other teams may be able to claim them during this period.`;
+                  })()}
+                </Typography>
+              </Alert>
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button
+              variant="plain"
+              color="neutral"
+              onClick={() => setShowDropModal(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="solid"
+              color="danger"
+              onClick={(e) => {
+                console.log('🔴 Drop Player button clicked!', e);
+                handleConfirmDrop();
+              }}
+              loading={dropPlayerMutation.isPending}
+              startDecorator={<PersonRemove />}
+            >
+              Drop Player
             </Button>
           </DialogActions>
         </ModalDialog>

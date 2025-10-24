@@ -36,6 +36,7 @@ BEGIN
         'salary_cap_enabled', fl.salary_cap_enabled,
         'trades_enabled', fl.trades_enabled,
         'public_league', fl.public_league,
+        'commissioner_notes', fl.commissioner_notes,
         'invite_code', fl.invite_code,
         'created_at', fl.created_at,
         'updated_at', fl.updated_at,
@@ -56,7 +57,20 @@ BEGIN
         'bench_multiplier', fls.bench_multiplier,
         'position_unit_assignments', fls.position_unit_assignments,
         'playoff_teams', fls.playoff_teams,
-        'playoff_weeks', fls.playoff_weeks
+        'playoff_weeks', fls.playoff_weeks,
+        -- Waiver settings
+        'waiver_type', fls.waiver_type,
+        'waiver_period_hours', fls.waiver_period_hours,
+        'waiver_process_time', fls.waiver_process_time,
+        'waiver_budget_amount', fls.waiver_budget_amount,
+        'waiver_min_bid', fls.waiver_min_bid,
+        'waiver_priority_reset', fls.waiver_priority_reset,
+        'waiver_claim_days', fls.waiver_claim_days,
+        'waiver_processing_day', fls.waiver_processing_day,
+        'waiver_processing_time', fls.waiver_processing_time,
+        'waiver_order_reset_type', fls.waiver_order_reset_type,
+        'waiver_order_tie_breaker', fls.waiver_order_tie_breaker,
+        'faab_budget', fls.faab_budget
     ) INTO league_data
     FROM fantasy_leagues fl
     LEFT JOIN fantasy_league_seasons fls ON fl.id = fls.league_id AND fls.is_active = true

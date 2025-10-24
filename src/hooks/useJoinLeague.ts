@@ -52,12 +52,24 @@ export function useJoinLeague() {
 
       return data as JoinLeagueResponse;
     },
-    onSuccess: (data) => {
-      // Invalidate relevant queries
-      queryClient.invalidateQueries({ queryKey: ['leagues'] });
-      queryClient.invalidateQueries({ queryKey: ['league', data.league_id] });
-      queryClient.invalidateQueries({ queryKey: ['league-teams', data.league_id] });
-      queryClient.invalidateQueries({ queryKey: ['user-teams'] });
+    onSuccess: async (data) => {
+      console.log('🎉 Join league successful! Invalidating caches for league:', data.league_id);
+      
+      // Remove all cached data related to this league to force fresh fetches
+      queryClient.removeQueries({ queryKey: ['userLeagues'] });
+      queryClient.removeQueries({ queryKey: ['league', data.league_id] });
+      queryClient.removeQueries({ queryKey: ['leagueDetails', data.league_id] });
+      queryClient.removeQueries({ queryKey: ['league-teams', data.league_id] });
+      queryClient.removeQueries({ queryKey: ['leagueMembers', data.league_id] });
+      
+      // Force immediate refetches
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ['userLeagues'], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['league', data.league_id], type: 'active' }),
+        queryClient.refetchQueries({ queryKey: ['league-teams', data.league_id], type: 'active' }),
+      ]);
+      
+      console.log('✅ Cache invalidation and refetch complete');
     },
   });
 }

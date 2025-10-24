@@ -1,0 +1,18 @@
+{
+  "name": "hoopgeek-dfs-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker for DFS pool management",
+  "main": "update-dfs-pools.js",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "tail": "wrangler tail hoopgeek-dfs"
+  },
+  "keywords": ["cloudflare", "worker", "dfs", "fantasy-sports"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "wrangler": "^3.0.0"
+  }
+}
+

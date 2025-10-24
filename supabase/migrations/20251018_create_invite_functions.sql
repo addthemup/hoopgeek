@@ -16,7 +16,7 @@ BEGIN
         fl.max_teams,
         fl.commissioner_id,
         fl.scoring_type,
-        fl.draft_date,
+        fls.draft_date,
         fls.draft_status
     INTO league_record
     FROM fantasy_leagues fl
@@ -164,24 +164,8 @@ BEGIN
         updated_at = NOW()
     WHERE id = available_team_record.id;
     
-    INSERT INTO fantasy_roster_spots (
-        fantasy_team_id,
-        league_id,
-        season_id,
-        player_id,
-        position_type,
-        created_at,
-        updated_at
-    )
-    SELECT
-        available_team_record.id,
-        league_record.id,
-        available_team_record.season_id,
-        NULL,
-        'regular',
-        NOW(),
-        NOW()
-    FROM generate_series(1, 15);
+    -- Note: Roster spots should already exist from league creation
+    -- We don't create new roster spots here to avoid duplication
     
     RAISE NOTICE 'User % assigned to team % in league %', user_id_param, available_team_record.id, league_record.id;
     

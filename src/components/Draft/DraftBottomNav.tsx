@@ -19,6 +19,9 @@ import {
 } from '@mui/icons-material';
 import { usePendingTradesCount } from '../../hooks/usePendingTradesCount';
 import { useChatMentions } from '../../hooks/useChatMentions';
+import { useCurrentPick } from '../../stores/draftStore';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../../utils/supabase';
 
 interface DraftBottomNavProps {
   activeTab: number;
@@ -32,16 +35,30 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
   // Fetch pending trades count
   const { data: pendingCount = 0 } = usePendingTradesCount(userTeamId, leagueId);
   
-  // Fetch chat mention count
+  // Fetch chat mention count (unread mentions)
   const { data: mentionCount = 0 } = useChatMentions(leagueId || '');
+  
+  // Get current draft pick from store
+  const currentPick = useCurrentPick();
+  
+  // Check if it's the user's turn to pick
+  const { data: isUserOnClock = false } = useQuery({
+    queryKey: ['user-on-clock', leagueId, userTeamId, currentPick?.fantasy_team_id],
+    queryFn: async () => {
+      if (!userTeamId || !currentPick?.fantasy_team_id) return false;
+      return userTeamId === currentPick.fantasy_team_id;
+    },
+    enabled: !!userTeamId && !!currentPick?.fantasy_team_id,
+    refetchInterval: 2000, // Check every 2 seconds
+  });
 
   const tabs = [
     { label: 'Roster', icon: RosterIcon, color: 'primary' },
     { label: 'Players', icon: PlayersIcon, color: 'success' },
     { label: 'Best Available', icon: BestAvailableIcon, color: 'warning' },
-    { label: 'Picks', icon: PicksIcon, color: 'danger' },
-    { label: 'Trade', icon: TradeIcon, color: 'neutral', badge: pendingCount },
-    { label: 'Chat', icon: ChatIcon, color: 'info', badge: mentionCount },
+    { label: 'Picks', icon: PicksIcon, color: 'danger', badge: isUserOnClock ? '!' : undefined, badgeText: isUserOnClock ? 'Your Pick' : undefined },
+    { label: 'Trade', icon: TradeIcon, color: 'neutral', badge: pendingCount > 0 ? pendingCount : undefined },
+    { label: 'Chat', icon: ChatIcon, color: 'info', badge: mentionCount > 0 ? mentionCount : undefined },
     { label: 'Rules', icon: RulesIcon, color: 'info' },
     ...(isCommissioner ? [{ label: 'Commish', icon: CommishIcon, color: 'primary' }] : []),
   ];
@@ -111,12 +128,31 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
               sx={{ minWidth: '80px' }}
             >
               <ListItemDecorator sx={{ mb: 0.5 }}>
-                {tab.badge && tab.badge > 0 ? (
+                {tab.badge ? (
                   <Badge 
                     badgeContent={tab.badge} 
-                    color="danger"
+                    color={tab.label === 'Picks' && isUserOnClock ? 'success' : 'danger'}
                     size="sm"
                     badgeInset="10%"
+                    sx={{
+                      '& .MuiBadge-badge': {
+                        animation: tab.label === 'Picks' && isUserOnClock ? 'pulse 2s infinite' : 'none',
+                        '@keyframes pulse': {
+                          '0%': {
+                            transform: 'scale(1)',
+                            opacity: 1,
+                          },
+                          '50%': {
+                            transform: 'scale(1.1)',
+                            opacity: 0.8,
+                          },
+                          '100%': {
+                            transform: 'scale(1)',
+                            opacity: 1,
+                          },
+                        },
+                      }
+                    }}
                   >
                     <tab.icon fontSize="small" />
                   </Badge>

@@ -116,6 +116,16 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
       }
     }
     
+    if (step === 2) {
+      // Validate that roster size equals draft rounds
+      const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
+      const draftRounds = settings.draft_rounds || 15;
+      
+      if (rosterSize !== draftRounds) {
+        newErrors.push(`Roster size (${rosterSize}) must equal Draft Rounds (${draftRounds}). Adjust your roster configuration.`);
+      }
+    }
+    
     if (step === 3) {
       const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
       const lineupSize = settings.starters_count + settings.rotation_count + settings.bench_count;
@@ -132,8 +142,8 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
         newErrors.push('Rotation count must be between 3 and 7');
       }
       
-      if (settings.bench_count < 3 || settings.bench_count > 5) {
-        newErrors.push('Bench count must be between 3 and 5');
+      if (settings.bench_count < 2 || settings.bench_count > 5) {
+        newErrors.push('Bench count must be between 2 and 5');
       }
     }
     
@@ -356,9 +366,18 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
             <FormLabel>Draft Date & Time</FormLabel>
             <Input
               type="datetime-local"
-              value={settings.draft_date || ''}
+              value={
+                settings.draft_date
+                  ? new Date(settings.draft_date).toISOString().slice(0, 16)
+                  : ''
+              }
               onChange={(e) => handleSettingsChange('draft_date', e.target.value)}
             />
+            {settings.draft_date && (
+              <FormHelperText>
+                Selected: {new Date(settings.draft_date).toLocaleString()}
+              </FormHelperText>
+            )}
           </FormControl>
         </Grid>
         <Grid xs={6}>
@@ -375,20 +394,109 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
           </FormControl>
         </Grid>
       </Grid>
-    </Stack>
-  );
 
-  const renderStep2 = () => (
-    <Stack spacing={3}>
-      <Typography level="h4" sx={{ mb: 2 }}>
-        Roster Configuration
-      </Typography>
-      
-      <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-        Configure how many players at each position each team can have.
+      <Divider sx={{ my: 2 }} />
+
+      <Typography level="title-md" sx={{ mb: 1 }}>
+        Waiver Settings
       </Typography>
 
       <Grid container spacing={2}>
+        <Grid xs={6}>
+          <FormControl>
+            <FormLabel>Waiver Type</FormLabel>
+            <Select
+              value={settings.waiver_type || 'rolling'}
+              onChange={(_, value) => handleSettingsChange('waiver_type', value)}
+            >
+              <Option value="none">No Waivers (Free Agents)</Option>
+              <Option value="rolling">Rolling Waivers</Option>
+              <Option value="faab">FAAB (Blind Bidding)</Option>
+              <Option value="continuous">Continuous Waivers</Option>
+            </Select>
+            <FormHelperText>
+              How players are claimed after being dropped
+            </FormHelperText>
+          </FormControl>
+        </Grid>
+        <Grid xs={6}>
+          <FormControl>
+            <FormLabel>Waiver Period (hours)</FormLabel>
+            <Input
+              type="number"
+              value={settings.waiver_period_hours || 48}
+              onChange={(e) => handleSettingsChange('waiver_period_hours', parseInt(e.target.value))}
+              slotProps={{
+                input: {
+                  min: 0,
+                  max: 168
+                }
+              }}
+              endDecorator="hours"
+            />
+            <FormHelperText>
+              Time dropped players stay on waivers
+            </FormHelperText>
+          </FormControl>
+        </Grid>
+      </Grid>
+
+      {/* Show FAAB Budget input when FAAB is selected */}
+      {settings.waiver_type === 'faab' && (
+        <FormControl>
+          <FormLabel>FAAB Budget</FormLabel>
+          <Input
+            type="number"
+            value={settings.faab_budget || 100}
+            onChange={(e) => handleSettingsChange('faab_budget', parseInt(e.target.value))}
+            slotProps={{
+              input: {
+                min: 1,
+                max: 1000
+              }
+            }}
+            startDecorator="$"
+          />
+          <FormHelperText>
+            Total FAAB budget each team gets for the season (default: $100)
+          </FormHelperText>
+        </FormControl>
+      )}
+    </Stack>
+  );
+
+  const renderStep2 = () => {
+    const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
+    const draftRounds = settings.draft_rounds || 15;
+    const isRosterValid = rosterSize === draftRounds;
+
+    return (
+      <Stack spacing={3}>
+        <Typography level="h4" sx={{ mb: 2 }}>
+          Roster Configuration
+        </Typography>
+        
+        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+          Configure how many players at each position each team can have.
+        </Typography>
+
+        <Alert color={isRosterValid ? 'success' : 'warning'}>
+          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+            Draft Rounds: {draftRounds} | Roster Size: {rosterSize}
+          </Typography>
+          {!isRosterValid && (
+            <Typography level="body-sm" sx={{ mt: 0.5 }}>
+              ⚠️ Roster size must equal Draft Rounds! {rosterSize < draftRounds ? `Add ${draftRounds - rosterSize} more spot(s).` : `Remove ${rosterSize - draftRounds} spot(s).`}
+            </Typography>
+          )}
+          {isRosterValid && (
+            <Typography level="body-sm" sx={{ mt: 0.5 }}>
+              ✅ Roster size matches draft rounds!
+            </Typography>
+          )}
+        </Alert>
+
+        <Grid container spacing={2}>
         {Object.entries(settings.roster_positions).map(([position, count]) => (
           <Grid xs={6} md={4} key={position}>
             <Card variant="outlined">
@@ -430,7 +538,8 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
         </Typography>
       </Alert>
     </Stack>
-  );
+    );
+  };
 
   const renderStep3 = () => {
     const rosterSize = Object.values(settings.roster_positions).reduce((sum, count) => sum + count, 0);
@@ -561,11 +670,11 @@ export default function LeagueCreationForm({ open, onClose, onSuccess }: LeagueC
                     value={settings.bench_count}
                     onChange={(_, value) => handleSettingsChange('bench_count', value)}
                   >
-                    {[3, 4, 5].map(num => (
+                    {[2, 3, 4, 5].map(num => (
                       <Option key={num} value={num}>{num} players</Option>
                     ))}
                   </Select>
-                  <FormHelperText>Range: 3-5 players</FormHelperText>
+                  <FormHelperText>Range: 2-5 players</FormHelperText>
                 </FormControl>
               </Grid>
               <Grid xs={6}>

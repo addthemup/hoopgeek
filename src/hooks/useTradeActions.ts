@@ -39,6 +39,7 @@ export function useAcceptTrade() {
       // Invalidate and refetch all relevant queries immediately
       queryClient.invalidateQueries({ queryKey: ['pending-trades'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['draft-order'], refetchType: 'active' });
+      queryClient.invalidateQueries({ queryKey: ['nextPick'], refetchType: 'active' }); // ✅ CRITICAL: Update current pick ownership
       queryClient.invalidateQueries({ queryKey: ['team-drafted-players'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['available-draft-picks'], refetchType: 'active' });
       queryClient.invalidateQueries({ queryKey: ['pending-trades-count'], refetchType: 'active' });
@@ -50,6 +51,7 @@ export function useAcceptTrade() {
       queryClient.refetchQueries({ queryKey: ['team-drafted-players'] });
       queryClient.refetchQueries({ queryKey: ['available-draft-picks'] });
       queryClient.refetchQueries({ queryKey: ['draft-order'] });
+      queryClient.refetchQueries({ queryKey: ['nextPick'] }); // ✅ CRITICAL: Refetch to show correct user's turn
       queryClient.refetchQueries({ queryKey: ['team-roster'] });
       queryClient.refetchQueries({ queryKey: ['user-team-roster'] });
     },

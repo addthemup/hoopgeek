@@ -104,6 +104,8 @@ export function useToggleTeamAutoDraft() {
   
   return useMutation({
     mutationFn: async ({ teamId, enabled }: { teamId: string; enabled: boolean }) => {
+      console.log(`🤖 Toggling autodraft for team ${teamId}: ${enabled}`);
+      
       const { data, error } = await supabase
         .from('fantasy_teams')
         .update({ autodraft_enabled: enabled })
@@ -114,6 +116,61 @@ export function useToggleTeamAutoDraft() {
       if (error) {
         console.error('Error toggling team auto draft:', error)
         throw new Error(`Failed to toggle team auto draft: ${error.message}`)
+      }
+
+      // If disabling autodraft, extend the timer for current pick if this team is on the clock
+      if (!enabled) {
+        console.log('⏱️ Autodraft disabled - checking if team is on the clock...');
+        
+        // Get the team's league_id
+        const { data: team } = await supabase
+          .from('fantasy_teams')
+          .select('league_id')
+          .eq('id', teamId)
+          .single();
+        
+        if (team) {
+          // Get current draft state
+          const { data: draftState } = await supabase
+            .from('fantasy_draft_current_state')
+            .select('current_pick_id')
+            .eq('league_id', team.league_id)
+            .single();
+          
+          if (draftState?.current_pick_id) {
+            // Check if this pick belongs to the team we're toggling
+            const { data: currentPick } = await supabase
+              .from('fantasy_draft_order')
+              .select('fantasy_team_id, time_expires')
+              .eq('id', draftState.current_pick_id)
+              .single();
+            
+            if (currentPick && currentPick.fantasy_team_id === teamId && currentPick.time_expires) {
+              console.log('⏱️ Team is on the clock! Extending timer...');
+              
+              // Get league settings for full time
+              const { data: league } = await supabase
+                .from('fantasy_leagues')
+                .select('draft_time_per_pick')
+                .eq('id', team.league_id)
+                .single();
+              
+              const fullTime = league?.draft_time_per_pick || 60;
+              const newExpiresAt = new Date(Date.now() + fullTime * 1000);
+              
+              // Extend the timer
+              await supabase
+                .from('fantasy_draft_order')
+                .update({
+                  time_started: new Date().toISOString(),
+                  time_expires: newExpiresAt.toISOString()
+                })
+                .eq('id', draftState.current_pick_id);
+              
+              console.log(`✅ Timer extended to ${fullTime}s for team ${teamId}`);
+            }
+          }
+        }
       }
 
       return data

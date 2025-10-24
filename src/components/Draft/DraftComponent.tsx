@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -28,6 +28,7 @@ import { useNextPick } from '../../hooks/useNextPick';
 import { useDraftOrder } from '../../hooks/useDraftOrder';
 import { useDraftState } from '../../hooks/useDraftState';
 import { useStartDraft } from '../../hooks/useStartDraft';
+import { useDraftSounds } from '../../hooks/useDraftSounds';
 import { supabase } from '../../utils/supabase';
 
 export default function DraftComponent() {
@@ -41,6 +42,7 @@ export default function DraftComponent() {
   const { data: draftOrder } = useDraftOrder(leagueId || '');
   const { data: draftState } = useDraftState(leagueId || '');
   const startDraft = useStartDraft();
+  const { playSwish, playBallBounce } = useDraftSounds();
   const [activeTab, setActiveTab] = useState(0);
   const [timeUntilDraft, setTimeUntilDraft] = useState<string>('');
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
@@ -57,6 +59,11 @@ export default function DraftComponent() {
       round?: number;
     };
   } | null>(null);
+
+  // Track previous pick count for swish sound
+  const prevCompletedPicksRef = useRef<number>(0);
+  // Track previous current pick number for ball bounce sound
+  const prevCurrentPickRef = useRef<number | null>(null);
 
   // Check if user is commissioner
   const isCommissioner = league?.commissioner_id === user?.id;
@@ -173,6 +180,42 @@ export default function DraftComponent() {
     return draftState?.draft_status === 'in_progress';
   }, [draftState]);
 
+  // 🔊 SOUND EFFECTS: Play swish when a pick is made
+  useEffect(() => {
+    if (!draftOrder || !isDraftStarted) return;
+
+    const completedPicks = draftOrder.filter(pick => pick.is_completed).length;
+    
+    // If picks increased (someone just drafted), play swish sound
+    if (completedPicks > prevCompletedPicksRef.current && prevCompletedPicksRef.current > 0) {
+      console.log('🏀 Playing swish sound - pick completed');
+      playSwish();
+    }
+    
+    prevCompletedPicksRef.current = completedPicks;
+  }, [draftOrder, isDraftStarted, playSwish]);
+
+  // 🔊 SOUND EFFECTS: Play ball bounce when it becomes user's turn
+  useEffect(() => {
+    if (!draftState || !userTeam || !isDraftStarted) return;
+
+    const currentPickNumber = draftState.current_pick_number;
+    
+    // If current pick changed and is now the user's pick
+    if (currentPickNumber !== prevCurrentPickRef.current && 
+        prevCurrentPickRef.current !== null) {
+      
+      // Find the current pick to check if it's the user's team
+      const currentPick = draftOrder?.find(pick => pick.pick_number === currentPickNumber);
+      
+      if (currentPick && currentPick.team_id === userTeam.id) {
+        console.log('🏀 Playing ball bounce sound - it\'s your turn!');
+        playBallBounce();
+      }
+    }
+    
+    prevCurrentPickRef.current = currentPickNumber;
+  }, [draftState?.current_pick_number, userTeam, isDraftStarted, draftOrder, playBallBounce]);
 
   // Check if there are picks remaining to be made
   const hasPicksRemaining = useMemo(() => {
@@ -192,56 +235,9 @@ export default function DraftComponent() {
   // Always show carousel
   const shouldShowCarousel = true;
 
-  // Poll draft-manager edge function every 5 seconds when draft is active
-  // This provides near-instant auto-picks when timers expire
-  useEffect(() => {
-    // Only poll if draft has started and is not in lobby
-    if (!isDraftStarted || isLobbyOpen || !leagueId) {
-      return;
-    }
-
-    console.log('🏀 Starting draft-manager polling for league:', leagueId);
-
-    // Call draft-manager immediately on mount
-    const callDraftManager = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/draft-manager`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ leagueId })
-          }
-        );
-
-        if (!response.ok) {
-          console.error('❌ Draft-manager error:', response.status, await response.text());
-        } else {
-          const result = await response.json();
-          console.log('✅ Draft-manager response:', result);
-        }
-      } catch (error) {
-        console.error('❌ Failed to call draft-manager:', error);
-      }
-    };
-
-    // Call immediately
-    callDraftManager();
-
-    // Then poll every 5 seconds for faster response
-    const interval = setInterval(callDraftManager, 5000);
-
-    return () => {
-      console.log('🛑 Stopping draft-manager polling');
-      clearInterval(interval);
-    };
-  }, [isDraftStarted, isLobbyOpen, leagueId]);
+  // Note: Global draft manager service now handles polling for ALL active drafts
+  // This runs in the background even when users switch tabs or close the page
+  // See src/services/draftManagerService.ts
 
   // Countdown timer effect - DISPLAY ONLY, does not trigger draft
   // Draft is triggered by pg_cron every minute checking draft_date

@@ -1,0 +1,26 @@
+name = "hoopgeek-dfs"
+main = "update-dfs-pools.js"
+compatibility_date = "2025-10-23"
+
+# ============================================================================
+# Cloudflare Worker: DFS Pool Management
+# ============================================================================
+# 
+# This worker handles DFS-specific operations:
+# - Updates pool statuses (scheduled → live → completed)
+# - Finalizes completed pools (scoring + ranking)
+# - Manages entry statuses
+#
+# Runs every 5 minutes during game hours (6pm-1am ET)
+# ============================================================================
+
+[triggers]
+# Runs every 5 minutes from 6pm-1am ET (covers all NBA game times)
+# This is less frequent than live-stats since status changes are less time-sensitive
+crons = ["*/5 18-23,0-1 * * *"]
+
+# Free tier limits:
+# - 100,000 requests/day (plenty for this use case)
+# - 10ms CPU time per request (usually sufficient)
+# - Unlimited cron triggers
+

@@ -557,15 +557,126 @@ async function autoPickPlayer(supabase: any, leagueId: string, currentPick: any,
     console.log(`📊 Draft Position: Round ${currentPick.round}/${totalRounds}`);
     console.log(`📊 Picks Completed: ${completedPicks || 0}, Picks Remaining: ${picksRemaining}`);
 
-    // Get best available player with AGGRESSIVE dynamic salary cap strategy
-    const { data: bestPlayerResult, error: playerError } = await supabase
-      .rpc('get_best_available_player', {
-        league_id_param: leagueId,
-        team_id_param: team.id,
-        current_round_param: currentPick.round,
-        picks_remaining_param: picksRemaining,
-        total_picks_param: totalRounds
-      });
+    // ===== CHECK IF WE'RE IN FIRST 20% OF DRAFT =====
+    // For first 20% of draft, ignore salary cap and pick by fantasy points only
+    
+    // Count total picks in the draft
+    const { count: totalPicksInDraft } = await supabase
+      .from('fantasy_draft_order')
+      .select('*', { count: 'exact', head: true })
+      .eq('league_id', leagueId);
+    
+    const totalDraftPicks = totalPicksInDraft || (totalRounds * teams.length);
+    const firstTwentyPercentThreshold = Math.ceil(totalDraftPicks * 0.20);
+    const isInFirstTwentyPercent = currentPick.pick_number <= firstTwentyPercentThreshold;
+    
+    console.log(`🎯 Draft Analytics:`);
+    console.log(`   Total Picks in Draft: ${totalDraftPicks}`);
+    console.log(`   First 20% Threshold: ${firstTwentyPercentThreshold} picks`);
+    console.log(`   Current Pick: ${currentPick.pick_number}`);
+    console.log(`   ${isInFirstTwentyPercent ? '🚀 IN FIRST 20% - IGNORING SALARY CAP' : '💰 Past 20% - Using salary cap logic'}`);
+
+    let bestPlayerResult, playerError;
+
+    // ===== FIRST 20% OF DRAFT: PICK SOLELY BY FANTASY POINTS =====
+    if (isInFirstTwentyPercent) {
+      console.log(`🌟 First 20% of draft - selecting best player by fantasy points only (ignoring salary)`);
+      
+      // Get already-drafted players
+      const { data: draftedPlayers } = await supabase
+        .from('fantasy_draft_picks')
+        .select('player_id')
+        .eq('league_id', leagueId);
+
+      const draftedPlayerIds = draftedPlayers?.map((p: any) => p.player_id) || [];
+      
+      // Get best player by projected fantasy points (ignore salary cap completely)
+      let query = supabase
+        .from('nba_players')
+        .select(`
+          *,
+          nba_hoopshype_salaries(salary_2025_26),
+          nba_espn_projections!inner(
+            proj_2026_gp,
+            proj_2026_pts,
+            proj_2026_reb,
+            proj_2026_ast,
+            proj_2026_stl,
+            proj_2026_blk,
+            proj_2026_to,
+            proj_2026_3pm
+          )
+        `)
+        .eq('is_active', true)
+        .gt('nba_espn_projections.proj_2026_gp', 0); // Must have games projected
+      
+      if (draftedPlayerIds.length > 0) {
+        query = query.not('id', 'in', `(${draftedPlayerIds.join(',')})`);
+      }
+      
+      const { data: topPlayers, error: topPlayersError } = await query.limit(50);
+      
+      if (topPlayersError) {
+        console.error('❌ Error fetching top players by fantasy points:', topPlayersError);
+        playerError = topPlayersError;
+      } else if (topPlayers && topPlayers.length > 0) {
+        // Calculate fantasy points for each player and sort
+        const playersWithFantasyPoints = topPlayers.map((player: any) => {
+          const proj = player.nba_espn_projections?.[0];
+          if (!proj || !proj.proj_2026_gp) return null;
+          
+          // Calculate total season fantasy points (similar to frontend logic)
+          const gp = proj.proj_2026_gp || 0;
+          const pts = (proj.proj_2026_pts || 0) * gp;
+          const reb = (proj.proj_2026_reb || 0) * gp * 1.2;
+          const ast = (proj.proj_2026_ast || 0) * gp * 1.5;
+          const stl = (proj.proj_2026_stl || 0) * gp * 3;
+          const blk = (proj.proj_2026_blk || 0) * gp * 3;
+          const to = (proj.proj_2026_to || 0) * gp * -1;
+          const threepm = (proj.proj_2026_3pm || 0) * gp * 3;
+          
+          const totalFantasyPoints = pts + reb + ast + stl + blk + to + threepm;
+          
+          return {
+            ...player,
+            projected_fantasy_points: totalFantasyPoints,
+            salary_2025_26: player.nba_hoopshype_salaries?.[0]?.salary_2025_26 || 0,
+            team_name: player.team_name || player.team_abbreviation
+          };
+        }).filter(p => p !== null);
+        
+        // Sort by fantasy points descending
+        playersWithFantasyPoints.sort((a: any, b: any) => 
+          (b?.projected_fantasy_points || 0) - (a?.projected_fantasy_points || 0)
+        );
+        
+        bestPlayerResult = playersWithFantasyPoints.slice(0, 1);
+        
+        if (bestPlayerResult.length > 0) {
+          console.log(`🌟 Best player by fantasy points: ${bestPlayerResult[0].name}`);
+          console.log(`   📊 Projected Fantasy Points: ${bestPlayerResult[0].projected_fantasy_points.toFixed(1)}`);
+          console.log(`   💰 Salary: $${(bestPlayerResult[0].salary_2025_26 / 1000000).toFixed(1)}M (NOT CONSIDERED)`);
+        }
+      } else {
+        console.log('⚠️ No players found with projections');
+      }
+    } else {
+      // ===== REMAINING 80%: USE SALARY CAP LOGIC =====
+      console.log(`💰 Using salary cap logic for pick ${currentPick.pick_number}`);
+      
+      // Get best available player with AGGRESSIVE dynamic salary cap strategy
+      const rpcResult = await supabase
+        .rpc('get_best_available_player', {
+          league_id_param: leagueId,
+          team_id_param: team.id,
+          current_round_param: currentPick.round,
+          picks_remaining_param: picksRemaining,
+          total_picks_param: totalRounds
+        });
+      
+      bestPlayerResult = rpcResult.data;
+      playerError = rpcResult.error;
+    }
 
     if (playerError || !bestPlayerResult || bestPlayerResult.length === 0) {
       console.error('Error getting best player:', playerError);
