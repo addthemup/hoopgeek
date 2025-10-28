@@ -49,6 +49,52 @@ export const newspaperTheme = extendTheme({
         },
       },
     },
+    dark: {
+      palette: {
+        primary: {
+          50: '#000000',
+          100: '#1a1a1a',
+          200: '#2d2d2d',
+          300: '#e8e8e8',
+          400: '#f0f0f0',
+          500: '#ffffff', // White for dark mode
+          600: '#ffffff',
+          700: '#ffffff',
+          800: '#ffffff',
+          900: '#ffffff',
+        },
+        neutral: {
+          50: '#000000',
+          100: '#1a1a1a',
+          200: '#000000',
+          300: '#2d2d2d',
+          400: '#4a4a4a',
+          500: '#666666',
+          600: '#808080',
+          700: '#999999',
+          800: '#d1d1d1',
+          900: '#e8e8e8',
+        },
+        danger: {
+          500: '#d32f2f', // Brighter red for dark mode
+        },
+        success: {
+          500: '#4caf50', // Brighter green for dark mode
+        },
+        background: {
+          body: '#000000', // Pure black
+          surface: '#1a1a1a',
+          level1: '#000000',
+          level2: '#1a1a1a',
+          level3: '#2d2d2d',
+        },
+        text: {
+          primary: '#e8e6e0',
+          secondary: '#b8b6b0',
+          tertiary: '#9a9aa5',
+        },
+      },
+    },
   },
   fontFamily: {
     display: '"Libre Baskerville", "Georgia", "Times New Roman", serif', // Headlines
@@ -81,11 +127,11 @@ export const newspaperTheme = extendTheme({
     lg: '0.02em',
   },
   shadow: {
-    xs: '0 1px 2px rgba(0, 0, 0, 0.05)',
-    sm: '0 1px 3px rgba(0, 0, 0, 0.08)',
-    md: '0 2px 4px rgba(0, 0, 0, 0.1)',
-    lg: '0 4px 6px rgba(0, 0, 0, 0.12)',
-    xl: '0 8px 12px rgba(0, 0, 0, 0.15)',
+    xs: '0 1px 2px rgba(0, 0, 0, 0.2)',
+    sm: '0 1px 3px rgba(0, 0, 0, 0.3)',
+    md: '0 2px 4px rgba(0, 0, 0, 0.4)',
+    lg: '0 4px 6px rgba(0, 0, 0, 0.5)',
+    xl: '0 8px 12px rgba(0, 0, 0, 0.6)',
   },
   components: {
     JoyButton: {
@@ -101,11 +147,11 @@ export const newspaperTheme = extendTheme({
     },
     JoyCard: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           borderRadius: '0px',
-          border: '2px solid #1a1a1a',
+          border: `2px solid ${theme.palette.mode === 'dark' ? '#000000' : '#1a1a1a'}`,
           boxShadow: 'none',
-        },
+        }),
       },
     },
     JoyTypography: {
@@ -142,10 +188,74 @@ export const newspaperTheme = extendTheme({
     },
     JoyInput: {
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           borderRadius: '0px',
           fontFamily: '"Crimson Text", "Georgia", serif',
-        },
+          backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+          color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          '--Input-focusedHighlight': theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          '& input': {
+            color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          },
+          '& input::placeholder': {
+            color: theme.palette.mode === 'dark' ? '#999999' : '#666666',
+            opacity: 1,
+          },
+        }),
+      },
+    },
+    JoyTextarea: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          borderRadius: '0px',
+          fontFamily: '"Crimson Text", "Georgia", serif',
+          backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+          color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          '& textarea': {
+            color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          },
+          '& textarea::placeholder': {
+            color: theme.palette.mode === 'dark' ? '#999999' : '#666666',
+            opacity: 1,
+          },
+        }),
+      },
+    },
+    JoySelect: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          borderRadius: '0px',
+          fontFamily: '"Crimson Text", "Georgia", serif',
+          backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+          color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          '& select': {
+            color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          },
+        }),
+      },
+    },
+    JoyFormLabel: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          fontFamily: '"Crimson Text", "Georgia", serif',
+          fontWeight: 600,
+        }),
+      },
+    },
+    JoyOption: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          fontFamily: '"Crimson Text", "Georgia", serif',
+          color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+          '&:hover': {
+            backgroundColor: theme.palette.mode === 'dark' ? '#2d2d2d' : '#f0f0f0',
+          },
+          '&.Mui-selected': {
+            backgroundColor: theme.palette.mode === 'dark' ? '#2d2d2d' : '#e0e0e0',
+          },
+        }),
       },
     },
     JoySheet: {

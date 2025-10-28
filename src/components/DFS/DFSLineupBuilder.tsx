@@ -245,20 +245,20 @@ export default function DFSLineupBuilder({ poolId, entryId, onSuccess, onPlayerC
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: 2 }}>
-          <Box>
-            <Typography level="h3" sx={{ mb: 0.5 }}>
+      <Box sx={{ mb: { xs: 2, md: 3 } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2, flexWrap: 'wrap', gap: { xs: 1.5, md: 2 } }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography level="h3" sx={{ mb: 0.5, fontSize: { xs: '1.25rem', md: '1.75rem' } }}>
               {pool.name}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Chip size="sm" variant="soft">
+            <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Chip size="sm" variant="soft" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}>
                 {pool.slate_name}
               </Chip>
-              <Typography level="body-sm" color="neutral">
+              <Typography level="body-sm" color="neutral" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
                 Entry: {pool.entry_fee === 0 ? 'FREE' : `$${pool.entry_fee}`}
               </Typography>
-              <Typography level="body-sm" color="neutral">
+              <Typography level="body-sm" color="neutral" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
                 • Prize: ${pool.prize_pool.toLocaleString()}
               </Typography>
             </Box>
@@ -271,6 +271,10 @@ export default function DFSLineupBuilder({ poolId, entryId, onSuccess, onPlayerC
             onClick={handleSubmitLineup}
             disabled={salaryData?.playerCount !== 10 || salaryData?.isOverCap}
             loading={submitLineup.isPending}
+            sx={{ 
+              width: { xs: '100%', sm: 'auto' },
+              fontSize: { xs: '0.875rem', sm: '1rem' }
+            }}
           >
             Submit Lineup
           </Button>
@@ -278,12 +282,13 @@ export default function DFSLineupBuilder({ poolId, entryId, onSuccess, onPlayerC
 
         {/* Salary Cap Display */}
         <Card variant="outlined">
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography level="title-md">Salary Cap</Typography>
+          <CardContent sx={{ p: { xs: 1.5, sm: 2 } }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, gap: 1 }}>
+              <Typography level="title-md" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>Salary Cap</Typography>
               <Typography
                 level="h4"
                 color={salaryData?.isOverCap ? 'danger' : 'success'}
+                sx={{ fontSize: { xs: '0.9rem', sm: '1.25rem' } }}
               >
                 {formatSalary(salaryData?.totalSalary || 0)} / {formatSalary(salaryData?.salaryCap || 0)}
               </Typography>
@@ -294,11 +299,11 @@ export default function DFSLineupBuilder({ poolId, entryId, onSuccess, onPlayerC
               color={salaryData?.isOverCap ? 'danger' : 'primary'}
               sx={{ mb: 1 }}
             />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography level="body-sm" color="neutral">
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, flexWrap: { xs: 'wrap', sm: 'nowrap' } }}>
+              <Typography level="body-sm" color="neutral" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
                 {salaryData?.playerCount || 0} / 10 Players
               </Typography>
-              <Typography level="body-sm" color={salaryData?.isOverCap ? 'danger' : 'neutral'}>
+              <Typography level="body-sm" color={salaryData?.isOverCap ? 'danger' : 'neutral'} sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
                 {salaryData?.isOverCap ? 'Over Cap!' : `${formatSalary(salaryData?.remainingSalary || 0)} remaining`}
               </Typography>
             </Box>

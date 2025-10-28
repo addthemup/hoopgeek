@@ -17,6 +17,7 @@ export interface GameData {
   id: string
   game_id: string
   content_type: string
+  source_type?: 'post' | 'algorithmic' // Added to distinguish feed posts from algorithmic content
   game_date: string
   fun_score?: number
   story_data?: {
@@ -111,6 +112,10 @@ export interface FullGameData extends GameData {
     video_script: Array<any>
     total_plays: number
   }
+  thumbnail_url?: string
+  video_url?: string | null
+  views?: number
+  likes?: number
 }
 
 /**
@@ -172,11 +177,14 @@ function transformGameData(raw: any): FullGameData {
   const metadata = raw.gameMetadata || {};
   
   return {
+    id: raw.id || gameId,
     game_id: gameId,
+    content_type: raw.content_type || 'fun',
     game_date: metadata.date || raw.date,
     fun_score: scoreData.fun_score || raw.fun_score || 0,
+    created_at: raw.created_at || new Date().toISOString(),
     
-    story: {
+    story_data: {
       matchup: story.matchup || '',
       final_score: story.final_score || '',
       teams: story.teams || {
@@ -198,22 +206,22 @@ function transformGameData(raw: any): FullGameData {
       advantages: story.advantages || []
     },
     
-    lead_changes: scoreData.lead_changes || raw.lead_changes || {
-      total: 0,
-      last_5_minutes: 0,
-      last_minute: 0,
-      buzzer_beater: 0
-    },
-    
-    dunk_stats: scoreData.dunk_stats || raw.dunk_stats || {
-      'Total Dunks': 0,
-      'Alley Oop': 0,
-      'Putback': 0
-    },
-    
-    deep_shots: scoreData.deep_shots || raw.deep_shots || {
-      deep_threes: 0,
-      four_pointers: 0
+    fun_data: {
+      lead_changes: scoreData.lead_changes || raw.lead_changes || {
+        total: 0,
+        last_5_minutes: 0,
+        last_minute: 0,
+        buzzer_beater: 0
+      },
+      dunk_stats: scoreData.dunk_stats || raw.dunk_stats || {
+        'Total Dunks': 0,
+        'Alley Oop': 0,
+        'Putback': 0
+      },
+      deep_shots: scoreData.deep_shots || raw.deep_shots || {
+        deep_threes: 0,
+        four_pointers: 0
+      }
     },
     
     team_stats: scoreData.team_stats || raw.team_stats,

@@ -42,7 +42,7 @@ export default function BlogManager() {
             <Typography level="h2" startDecorator={<Article />}>
               📝 Blog Management
             </Typography>
-            <Typography level="body-sm" color="neutral">
+            <Typography level="body-sm" sx={{ color: '#000', fontWeight: 'bold' }}>
               Create and manage homepage content (90's newspaper theme)
             </Typography>
           </Box>
@@ -56,19 +56,19 @@ export default function BlogManager() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Total Posts</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Total Posts</Typography>
             <Typography level="h3">0</Typography>
           </CardContent>
         </Card>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Published</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Published</Typography>
             <Typography level="h3">0</Typography>
           </CardContent>
         </Card>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Drafts</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Drafts</Typography>
             <Typography level="h3">0</Typography>
           </CardContent>
         </Card>
@@ -88,8 +88,26 @@ export default function BlogManager() {
             Recent Posts
           </Typography>
           
-          <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'hidden' }}>
-            <Table>
+          <Sheet variant="outlined" sx={{ borderRadius: 0, border: '3px solid #000', overflow: 'hidden' }}>
+            <Table sx={{
+              '& thead th': {
+                bgcolor: '#000',
+                color: '#fff',
+                fontFamily: 'serif',
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                borderBottom: '3px solid #000',
+                fontSize: '0.85rem',
+                letterSpacing: '0.05em'
+              },
+              '& tbody td': {
+                borderBottom: '2px solid #000',
+                fontFamily: 'serif'
+              },
+              '& tbody tr:hover': {
+                bgcolor: '#f0f0f0'
+              }
+            }}>
               <thead>
                 <tr>
                   <th>Title</th>
@@ -103,7 +121,7 @@ export default function BlogManager() {
                 <tr>
                   <td colSpan={5}>
                     <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography level="body-sm" color="neutral">
+                      <Typography level="body-sm" sx={{ color: '#000', fontWeight: 'bold' }}>
                         No blog posts yet. Create your first post to get started!
                       </Typography>
                     </Box>

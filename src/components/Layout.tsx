@@ -7,7 +7,8 @@ export default function Layout() {
     <Box sx={{ 
       minHeight: '100vh',
       width: '100%',
-      maxWidth: '100vw',
+      maxWidth: '100%',
+      overflowX: 'hidden',
       display: 'flex',
       flexDirection: 'column'
     }}>

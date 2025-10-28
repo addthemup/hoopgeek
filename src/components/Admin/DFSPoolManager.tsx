@@ -27,7 +27,7 @@ import {
   IconButton,
   Tooltip,
 } from '@mui/joy';
-import { MonetizationOn, Add, Warning, CalendarToday, CheckCircle, Edit, Delete } from '@mui/icons-material';
+import { MonetizationOn, Add, Warning, CalendarToday, CheckCircle, Edit, Delete, Visibility } from '@mui/icons-material';
 import { useIsAdmin } from '../../hooks/useIsAdmin';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
@@ -35,6 +35,7 @@ import { format } from 'date-fns';
 import { useCreateDFSPool, CreateDFSPoolParams } from '../../hooks/useCreateDFSPool';
 import { useUpdateDFSPool, UpdateDFSPoolParams } from '../../hooks/useUpdateDFSPool';
 import { useDeleteDFSPool } from '../../hooks/useDeleteDFSPool';
+import AdminPoolViewModal from './AdminPoolViewModal';
 
 interface FormData {
   pool_name: string;
@@ -55,6 +56,7 @@ export default function DFSPoolManager() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [selectedGames, setSelectedGames] = useState<string[]>([]);
@@ -246,6 +248,12 @@ export default function DFSPoolManager() {
     setShowDeleteDialog(true);
   };
 
+  // Open view modal
+  const openViewModal = (poolId: string) => {
+    setSelectedPoolId(poolId);
+    setShowViewModal(true);
+  };
+
   // Reset form
   const resetForm = () => {
     setFormData({
@@ -290,7 +298,7 @@ export default function DFSPoolManager() {
             <Typography level="h2" startDecorator={<MonetizationOn />}>
               🏀 DFS Pool Management
             </Typography>
-            <Typography level="body-sm" color="neutral">
+            <Typography level="body-sm" sx={{ color: '#000', fontWeight: 'bold' }}>
               Create and manage Daily Fantasy Sports contests with REAL NBA salaries
             </Typography>
           </Box>
@@ -304,13 +312,13 @@ export default function DFSPoolManager() {
       <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Total Pools</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Pools</Typography>
             <Typography level="h3">{pools?.length || 0}</Typography>
           </CardContent>
         </Card>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Active Today</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold', textTransform: 'uppercase' }}>Active Today</Typography>
             <Typography level="h3">
               {pools?.filter(p => p.slate_date === format(new Date(), 'yyyy-MM-dd')).length || 0}
             </Typography>
@@ -318,7 +326,7 @@ export default function DFSPoolManager() {
         </Card>
         <Card variant="outlined" sx={{ flex: 1 }}>
           <CardContent>
-            <Typography level="body-xs" color="neutral">Total Entries</Typography>
+            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold', textTransform: 'uppercase' }}>Total Entries</Typography>
             <Typography level="h3">
               {pools?.reduce((sum, p) => sum + (p.current_entries || 0), 0) || 0}
             </Typography>
@@ -333,6 +341,19 @@ export default function DFSPoolManager() {
           size="lg" 
           fullWidth
           onClick={() => setShowCreateModal(true)}
+          sx={{
+            bgcolor: '#000',
+            color: '#fff',
+            fontFamily: 'serif',
+            fontWeight: 900,
+            borderRadius: 0,
+            border: '2px solid #000',
+            '&:hover': {
+              bgcolor: '#333',
+              transform: 'translate(-2px, -2px)',
+              boxShadow: '4px 4px 0px #000',
+            },
+          }}
         >
           Create New DFS Pool
         </Button>
@@ -346,8 +367,26 @@ export default function DFSPoolManager() {
           </Typography>
           
           {pools && pools.length > 0 ? (
-            <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'auto' }}>
-              <Table>
+            <Sheet variant="outlined" sx={{ borderRadius: 0, border: '3px solid #000', overflow: 'auto' }}>
+              <Table sx={{
+                '& thead th': {
+                  bgcolor: '#000',
+                  color: '#fff',
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  textTransform: 'uppercase',
+                  borderBottom: '3px solid #000',
+                  fontSize: '0.85rem',
+                  letterSpacing: '0.05em'
+                },
+                '& tbody td': {
+                  borderBottom: '2px solid #000',
+                  fontFamily: 'serif'
+                },
+                '& tbody tr:hover': {
+                  bgcolor: '#f0f0f0'
+                }
+              }}>
                 <thead>
                   <tr>
                     <th>Name</th>
@@ -356,7 +395,7 @@ export default function DFSPoolManager() {
                     <th>Entries</th>
                     <th>Prize Pool</th>
                     <th>Games</th>
-                    <th style={{ width: '100px' }}>Actions</th>
+                    <th style={{ width: '140px' }}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -366,7 +405,7 @@ export default function DFSPoolManager() {
                         <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                           {pool.name}
                         </Typography>
-                        <Typography level="body-xs" color="neutral">
+                        <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>
                           {pool.slate_name}
                         </Typography>
                       </td>
@@ -384,7 +423,7 @@ export default function DFSPoolManager() {
                         <Typography level="body-sm">
                           {pool.current_entries} / {pool.max_entries}
                         </Typography>
-                        <Typography level="body-xs" color="neutral">
+                        <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>
                           {pool.fill_pct}% full
                         </Typography>
                       </td>
@@ -400,6 +439,16 @@ export default function DFSPoolManager() {
                       </td>
                       <td>
                         <Stack direction="row" spacing={1}>
+                          <Tooltip title="View pool details">
+                            <IconButton
+                              size="sm"
+                              variant="outlined"
+                              color="success"
+                              onClick={() => openViewModal(pool.pool_id)}
+                            >
+                              <Visibility />
+                            </IconButton>
+                          </Tooltip>
                           <Tooltip title="Edit pool">
                             <IconButton
                               size="sm"
@@ -429,7 +478,7 @@ export default function DFSPoolManager() {
             </Sheet>
           ) : (
             <Box sx={{ textAlign: 'center', py: 4 }}>
-              <Typography level="body-sm" color="neutral">
+              <Typography level="body-sm" sx={{ color: '#000', fontWeight: 'bold' }}>
                 No pools yet. Create your first DFS pool to get started!
               </Typography>
             </Box>
@@ -728,7 +777,7 @@ export default function DFSPoolManager() {
                             <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
                               {game.away_team} @ {game.home_team}
                             </Typography>
-                            <Typography level="body-xs" color="neutral">
+                            <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>
                               {format(new Date(game.game_date), 'EEEE, MMM dd • h:mm a')}
                             </Typography>
                           </Box>
@@ -779,6 +828,21 @@ export default function DFSPoolManager() {
                   onClick={handleCreatePool}
                   disabled={createPool.isPending || selectedGames.length === 0}
                   startDecorator={createPool.isPending ? <CircularProgress size="sm" /> : <Add />}
+                  sx={{
+                    bgcolor: '#000',
+                    color: '#fff',
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    borderRadius: 0,
+                    border: '2px solid #000',
+                    '&:hover': {
+                      bgcolor: '#333',
+                    },
+                    '&:disabled': {
+                      bgcolor: '#666',
+                      color: '#999',
+                    },
+                  }}
                 >
                   {createPool.isPending ? 'Creating Pool...' : 'Create Pool'}
                 </Button>
@@ -911,6 +975,21 @@ export default function DFSPoolManager() {
                   onClick={handleEditPool}
                   disabled={updatePool.isPending}
                   startDecorator={updatePool.isPending ? <CircularProgress size="sm" /> : <Edit />}
+                  sx={{
+                    bgcolor: '#000',
+                    color: '#fff',
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    borderRadius: 0,
+                    border: '2px solid #000',
+                    '&:hover': {
+                      bgcolor: '#333',
+                    },
+                    '&:disabled': {
+                      bgcolor: '#666',
+                      color: '#999',
+                    },
+                  }}
                 >
                   {updatePool.isPending ? 'Updating...' : 'Update Pool'}
                 </Button>
@@ -919,6 +998,16 @@ export default function DFSPoolManager() {
           </DialogContent>
         </ModalDialog>
       </Modal>
+
+      {/* View Pool Modal */}
+      <AdminPoolViewModal
+        poolId={selectedPoolId}
+        open={showViewModal}
+        onClose={() => {
+          setShowViewModal(false);
+          setSelectedPoolId(null);
+        }}
+      />
 
       {/* Delete Confirmation Dialog */}
       <Modal open={showDeleteDialog} onClose={() => !deletePool.isPending && setShowDeleteDialog(false)}>
@@ -962,6 +1051,21 @@ export default function DFSPoolManager() {
               disabled={deletePool.isPending}
               startDecorator={deletePool.isPending ? <CircularProgress size="sm" /> : <Delete />}
               fullWidth
+              sx={{
+                bgcolor: '#ef4444',
+                color: '#fff',
+                fontFamily: 'serif',
+                fontWeight: 900,
+                borderRadius: 0,
+                border: '2px solid #ef4444',
+                '&:hover': {
+                  bgcolor: '#dc2626',
+                },
+                '&:disabled': {
+                  bgcolor: '#fca5a5',
+                  color: '#fff',
+                },
+              }}
             >
               {deletePool.isPending ? 'Deleting...' : 'Delete Pool'}
             </Button>

@@ -9,6 +9,9 @@ import {
   LinearProgress,
   Tooltip,
   IconButton,
+  Card,
+  CardContent,
+  Stack,
 } from '@mui/joy';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
@@ -123,9 +126,9 @@ export default function TodaysContests() {
   return (
     <Box>
       {/* Header */}
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Box>
-          <Typography level="h2" sx={{ mb: 0.5 }}>
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ mb: 2 }}>
+          <Typography level="h2" sx={{ mb: 0.5, fontSize: { xs: '1.5rem', md: '2rem' } }}>
             Today's Contests
           </Typography>
           <Typography level="body-sm" color="neutral">
@@ -134,11 +137,12 @@ export default function TodaysContests() {
         </Box>
 
         {/* Difficulty Filter */}
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 0.5, overflowX: 'auto', pb: 0.5 }}>
           <Button
             size="sm"
             variant={selectedDifficulty === null ? 'solid' : 'outlined'}
             onClick={() => setSelectedDifficulty(null)}
+            sx={{ flexShrink: 0 }}
           >
             All
           </Button>
@@ -147,6 +151,7 @@ export default function TodaysContests() {
             variant={selectedDifficulty === 'elite' ? 'solid' : 'outlined'}
             color="danger"
             onClick={() => setSelectedDifficulty('elite')}
+            sx={{ flexShrink: 0 }}
           >
             Standard
           </Button>
@@ -155,6 +160,7 @@ export default function TodaysContests() {
             variant={selectedDifficulty === 'pro' ? 'solid' : 'outlined'}
             color="warning"
             onClick={() => setSelectedDifficulty('pro')}
+            sx={{ flexShrink: 0 }}
           >
             Apron 1
           </Button>
@@ -163,6 +169,7 @@ export default function TodaysContests() {
             variant={selectedDifficulty === 'standard' ? 'solid' : 'outlined'}
             color="success"
             onClick={() => setSelectedDifficulty('standard')}
+            sx={{ flexShrink: 0 }}
           >
             Apron 2
           </Button>
@@ -191,16 +198,120 @@ export default function TodaysContests() {
         </Box>
       )}
 
-      {/* Contests Table */}
+      {/* Contests Table - Desktop Only */}
       {!isLoading && filteredContests && filteredContests.length > 0 && (
-        <Sheet
-          variant="outlined"
-          sx={{
-            borderRadius: 'sm',
-            overflow: 'hidden',
-          }}
-        >
-          <Table
+        <>
+          {/* Mobile Card Layout */}
+          <Box sx={{ display: { xs: 'block', md: 'none' } }}>
+            <Stack spacing={2}>
+              {filteredContests.map((contest) => (
+                <Card key={contest.pool_id} variant="outlined">
+                  <CardContent>
+                    {/* Contest Header */}
+                    <Box sx={{ mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', gap: 0.5, mb: 0.75, flexWrap: 'wrap' }}>
+                        {contest.is_featured && (
+                          <Chip size="sm" color="primary" variant="soft">Featured</Chip>
+                        )}
+                        {contest.is_guaranteed && (
+                          <Chip size="sm" color="success" variant="soft">Guaranteed</Chip>
+                        )}
+                        <Chip size="sm" color={getDifficultyColor(contest.difficulty_tier)} variant="soft">
+                          {getDifficultyName(contest.difficulty_tier)}
+                        </Chip>
+                      </Box>
+                      <Typography 
+                        level="title-lg" 
+                        sx={{ fontWeight: 'bold', mb: 0.5 }}
+                        onClick={() => setSelectedPoolId(contest.pool_id)}
+                      >
+                        {contest.name}
+                      </Typography>
+                      <Typography level="body-xs" color="neutral">
+                        {contest.slate_name} • {formatSalaryCap(contest.salary_cap)} cap
+                      </Typography>
+                    </Box>
+
+                    {/* Contest Stats */}
+                    <Stack spacing={1} sx={{ mb: 2 }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography level="body-sm" color="neutral">Entry Fee</Typography>
+                        <Typography level="title-md" sx={{ fontWeight: 'bold' }}>
+                          ${contest.entry_fee.toFixed(2)}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography level="body-sm" color="neutral">Prize Pool</Typography>
+                        <Typography level="title-md" sx={{ fontWeight: 'bold', color: 'warning.500' }}>
+                          ${contest.prize_pool.toLocaleString()}
+                        </Typography>
+                      </Box>
+                      <Box>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                          <Typography level="body-sm" color="neutral">Entries</Typography>
+                          <Typography level="body-sm">
+                            {contest.current_entries} / {contest.max_entries}
+                          </Typography>
+                        </Box>
+                        <LinearProgress
+                          determinate
+                          value={contest.fill_percentage}
+                          sx={{ height: 6 }}
+                          color={contest.fill_percentage >= 80 ? 'success' : 'primary'}
+                        />
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography level="body-sm" color="neutral">Games</Typography>
+                        <Typography level="body-sm">{contest.games_count} games</Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography level="body-sm" color="neutral">Locks In</Typography>
+                        <Chip size="sm" color={contest.seconds_until_lock < 3600 ? 'danger' : 'neutral'}>
+                          {formatTimeUntilLock(contest.seconds_until_lock)}
+                        </Chip>
+                      </Box>
+                    </Stack>
+
+                    {/* Action Buttons */}
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Button 
+                        fullWidth
+                        color="primary" 
+                        onClick={() => window.location.href = `/dfs/lineup/${contest.pool_id}`}
+                        disabled={contest.seconds_until_lock <= 0}
+                      >
+                        Enter Contest
+                      </Button>
+                      <IconButton 
+                        variant="outlined"
+                        onClick={() => setSelectedPoolId(contest.pool_id)}
+                      >
+                        <InfoOutlined />
+                      </IconButton>
+                      <IconButton
+                        variant="outlined"
+                        onClick={() => handleShare(contest.pool_id)}
+                        color={copiedPoolId === contest.pool_id ? 'success' : 'neutral'}
+                      >
+                        <Share />
+                      </IconButton>
+                    </Box>
+                  </CardContent>
+                </Card>
+              ))}
+            </Stack>
+          </Box>
+
+          {/* Desktop Table Layout */}
+          <Sheet
+            variant="outlined"
+            sx={{
+              borderRadius: 'sm',
+              overflow: 'hidden',
+              display: { xs: 'none', md: 'block' }
+            }}
+          >
+            <Table
             sx={{
               '& thead th': {
                 bgcolor: 'background.level1',
@@ -373,6 +484,7 @@ export default function TodaysContests() {
             </tbody>
           </Table>
         </Sheet>
+        </>
       )}
 
       {/* Pool Details Modal */}

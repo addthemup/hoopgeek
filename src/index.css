@@ -2,19 +2,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Crimson+Text:wght@400;600;700&display=swap');
 
 :root {
-  /* Newspaper Color Palette */
-  --newsprint-bg: #f9f7f1;
-  --paper-white: #fefdfb;
-  --ink-black: #1a1a1a;
-  --ink-gray: #4a4a42;
-  --accent-red: #8B0000;
-  --border-dark: #2d2d28;
+  /* Dark Newspaper Color Palette */
+  --newsprint-bg: #000000;
+  --paper-white: #1a1a1a;
+  --ink-black: #ffffff;
+  --ink-gray: #cccccc;
+  --accent-red: #ef4444;
+  --border-dark: #000000;
   
   font-family: 'Crimson Text', Georgia, 'Times New Roman', serif;
   line-height: 1.6;
   font-weight: 400;
 
-  color-scheme: light;
+  color-scheme: dark;
   color: var(--ink-black);
   background-color: var(--newsprint-bg);
 
@@ -23,6 +23,11 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+}
+
+html {
+  overflow-x: hidden;
+  width: 100%;
 }
 
 body {
@@ -35,20 +40,23 @@ body {
       0deg,
       transparent,
       transparent 2px,
-      rgba(0,0,0,.02) 2px,
-      rgba(0,0,0,.02) 4px
+      rgba(255,255,255,.015) 2px,
+      rgba(255,255,255,.015) 4px
     );
+  overflow-x: hidden;
+  width: 100%;
 }
 
 #root {
   width: 100%;
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
 }
 
 /* Newspaper-style text selection */
 ::selection {
-  background-color: var(--ink-black);
+  background-color: var(--accent-red);
   color: var(--paper-white);
 }
 
@@ -72,7 +80,7 @@ body {
 /* Print-style horizontal rule */
 hr {
   border: none;
-  border-top: 2px solid var(--ink-black);
+  border-top: 2px solid var(--border-dark);
   margin: 1.5rem 0;
 }
 
@@ -90,7 +98,7 @@ a:hover {
 
 /* Classic blockquote styling */
 blockquote {
-  border-left: 3px solid var(--ink-black);
+  border-left: 3px solid var(--border-dark);
   margin: 1.5rem 0;
   padding-left: 1rem;
   font-style: italic;

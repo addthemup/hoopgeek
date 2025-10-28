@@ -13,14 +13,15 @@ export default function DFSLineup() {
   const navigate = useNavigate();
 
   return (
-    <Box sx={{ maxWidth: 1600, mx: 'auto', p: { xs: 2, md: 3 } }}>
+    <Box sx={{ maxWidth: 1600, mx: 'auto', p: { xs: 1, sm: 2, md: 3 } }}>
       {/* Back Button */}
         <Button
           variant="plain"
           color="neutral"
           startDecorator={<ArrowBack />}
           onClick={() => navigate('/dfs')}
-          sx={{ mb: 2 }}
+          size="sm"
+          sx={{ mb: { xs: 1, sm: 2 }, fontSize: { xs: '0.8rem', sm: '1rem' } }}
         >
           Back to Contests
         </Button>

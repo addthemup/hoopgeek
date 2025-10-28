@@ -14,7 +14,6 @@ import {
   FormLabel,
   Switch,
   Chip,
-  Grid,
   IconButton,
   List,
   ListItem,
@@ -29,15 +28,13 @@ import {
   Tabs,
   TabList,
   Tab,
-  TabPanel
+  TabPanel,
 } from '@mui/joy';
 import {
   Person,
   Star,
   Notifications,
   Tune,
-  Security,
-  ChevronRight,
   Delete,
   Edit,
   Save,
@@ -45,7 +42,11 @@ import {
   SportsBasketball,
   Group,
   Article,
-  MonetizationOn
+  MonetizationOn,
+  DynamicFeed,
+  Analytics,
+  PhotoCamera,
+  AccountBalanceWallet
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
 import { useIsAdmin } from '../hooks/useIsAdmin';
@@ -63,6 +64,9 @@ import { usePlayerFavorites, useRemoveFromFavorites } from '../hooks/usePlayerFa
 import { useNavigate } from 'react-router-dom';
 import BlogManager from '../components/Admin/BlogManager';
 import DFSPoolManager from '../components/Admin/DFSPoolManager';
+import FeedContentManager from '../components/Admin/FeedContentManager';
+import InvestorDashboard from './InvestorDashboard';
+import WalletTab from '../components/Wallet/WalletTab';
 
 export default function UserSettings() {
   const navigate = useNavigate();
@@ -70,13 +74,7 @@ export default function UserSettings() {
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
   const [activeTab, setActiveTab] = useState(0);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
-
-  // Debug logging
-  console.log('🎨 UserSettings render:', {
-    userId: user?.id,
-    isAdmin,
-    adminLoading,
-  });
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   // Profile state
   const { data: userProfile, isLoading: profileLoading } = useUserProfile(user?.id);
@@ -128,6 +126,49 @@ export default function UserSettings() {
     }
   };
 
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      // Import supabase client
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(
+        import.meta.env.VITE_SUPABASE_URL,
+        import.meta.env.VITE_SUPABASE_ANON_KEY
+      );
+
+      // Upload to Supabase Storage
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `avatars/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // Update user profile with new avatar URL
+      await updateProfile.mutateAsync({
+        user_id: user.id,
+        avatar_url: publicUrl
+      });
+
+      console.log('Avatar uploaded successfully:', publicUrl);
+    } catch (error) {
+      console.error('Error uploading avatar:', error);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const handleRemoveFavoritePlayer = async (playerId: string) => {
     if (!user?.id) return;
     await removeFromFavorites.mutateAsync({ playerId });
@@ -156,77 +197,441 @@ export default function UserSettings() {
 
   if (!user) {
     return (
-      <Box sx={{ p: 4, textAlign: 'center' }}>
-        <Alert color="warning">
-          Please sign in to access settings
-        </Alert>
-        <Button sx={{ mt: 2 }} onClick={() => navigate('/login')}>
-          Sign In
-        </Button>
+      <Box sx={{ 
+        maxWidth: { xs: '100%', sm: 805, md: 1035 },
+        mx: 'auto',
+        pt: { xs: '77px', md: '85px' },
+        px: { xs: 2, md: 2 },
+        pb: 4,
+      }}>
+        <Card
+          sx={{
+            border: '3px solid #000',
+            borderRadius: 0,
+            boxShadow: '4px 4px 0px #000',
+            p: 4,
+            textAlign: 'center',
+            bgcolor: '#FFC72C',
+          }}
+        >
+          <Typography level="h3" sx={{ fontFamily: 'serif', fontWeight: 900, mb: 2, textTransform: 'uppercase' }}>
+            Sign In Required
+          </Typography>
+          <Typography sx={{ fontFamily: 'serif', mb: 3 }}>
+            Please sign in to access your settings
+          </Typography>
+          <Button
+            onClick={() => navigate('/login')}
+            sx={{
+              bgcolor: '#000',
+              color: '#fff',
+              fontFamily: 'serif',
+              fontWeight: 900,
+              border: '3px solid #000',
+              borderRadius: 0,
+              textTransform: 'uppercase',
+              '&:hover': {
+                bgcolor: '#333',
+                transform: 'translate(-2px, -2px)',
+                boxShadow: '4px 4px 0px #000',
+              }
+            }}
+          >
+            Sign In
+          </Button>
+        </Card>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 4 } }}>
-      {/* Header */}
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 4 }}>
-        <Avatar sx={{ '--Avatar-size': '64px' }}>
-          {userProfile?.display_name?.charAt(0) || user.email?.charAt(0)}
-        </Avatar>
-        <Box sx={{ flex: 1 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Typography level="h2">
-              {userProfile?.display_name || user.email}
-            </Typography>
-            {isAdmin && (
-              <Chip size="sm" color="warning" variant="soft">
-                🛡️ Admin
-              </Chip>
-            )}
+    <Box sx={{ 
+      maxWidth: { xs: '100%', sm: 805, md: 1035 },
+      mx: 'auto',
+      pt: { xs: '57px', md: '65px' },
+      px: { xs: 2, md: 2 },
+      pb: 4,
+    }}>
+      {/* User Info Card */}
+      <Card
+        sx={{
+          mb: 2,
+          border: '3px solid #000',
+          borderRadius: 0,
+          boxShadow: '4px 4px 0px #000',
+          overflow: 'hidden',
+          bgcolor: '#fff',
+        }}
+      >
+        <Box sx={{ bgcolor: '#000', color: '#fff', p: 2 }}>
+          <Stack direction="row" spacing={2} alignItems="center">
+            {/* Avatar Upload */}
+            <Box sx={{ position: 'relative' }}>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: 'none' }}
+                id="avatar-upload-input"
+                onChange={handleAvatarUpload}
+              />
+              <label htmlFor="avatar-upload-input">
+                <Box
+                  sx={{
+                    position: 'relative',
+                    cursor: 'pointer',
+                    '&:hover .avatar-overlay': {
+                      opacity: 1,
+                    },
+                  }}
+                >
+                  <Avatar 
+                    sx={{ 
+                      '--Avatar-size': '64px',
+                      border: '3px solid #fff',
+                      boxShadow: '0 0 0 2px #000',
+                    }}
+                    src={userProfile?.avatar_url || undefined}
+                    alt={userProfile?.display_name || user.email}
+                  >
+                    {user.email?.charAt(0).toUpperCase() || '?'}
+                  </Avatar>
+                  {/* Hover Overlay */}
+                  <Box
+                    className="avatar-overlay"
+                    sx={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      bgcolor: 'rgba(0, 0, 0, 0.7)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: '50%',
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                    }}
+                  >
+                    {isUploadingAvatar ? (
+                      <CircularProgress size="sm" sx={{ color: '#fff' }} />
+                    ) : (
+                      <PhotoCamera sx={{ color: '#fff', fontSize: 28 }} />
+                    )}
+                  </Box>
+                </Box>
+              </label>
+            </Box>
+            <Box sx={{ flex: 1 }}>
+              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+                <Typography sx={{ fontFamily: 'serif', fontWeight: 900, fontSize: '1.5rem' }}>
+                  {userProfile?.display_name || user.email?.split('@')[0]}
+                </Typography>
+                {isAdmin && (
+                  <Chip
+                    size="sm"
+                    sx={{
+                      bgcolor: '#FFD700',
+                      color: '#000',
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      borderRadius: 0,
+                      border: '2px solid #fff',
+                    }}
+                  >
+                    🛡️ ADMIN
+                  </Chip>
+                )}
+              </Stack>
+              <Typography sx={{ fontFamily: 'serif', fontSize: '0.85rem', color: '#fff' }}>
+                {user.email}
+              </Typography>
+            </Box>
           </Stack>
-          <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-            Manage your account settings and preferences
-          </Typography>
         </Box>
-      </Stack>
+      </Card>
 
       {/* Tabs */}
       <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as number)}>
-        <TabList>
-          <Tab><Person sx={{ mr: 1 }} /> Profile</Tab>
-          <Tab><Star sx={{ mr: 1 }} /> Favorites</Tab>
-          <Tab><Notifications sx={{ mr: 1 }} /> Notifications</Tab>
-          <Tab><Tune sx={{ mr: 1 }} /> Feed</Tab>
+        <TabList
+          sx={{
+            bgcolor: '#fff',
+            border: '3px solid #000',
+            borderRadius: 0,
+            boxShadow: '3px 3px 0px #000',
+            mb: 3,
+            '--List-padding': '0px',
+            '--List-radius': '0px',
+            '--ListItem-minHeight': '48px',
+            overflowX: 'auto',
+            flexWrap: 'nowrap',
+          }}
+        >
+          <Tab
+            value={0}
+            sx={{
+              fontFamily: 'serif',
+              fontWeight: 900,
+              fontSize: { xs: '0.85rem', md: '0.95rem' },
+              textTransform: 'uppercase',
+              borderRadius: 0,
+              borderRight: '2px solid #000',
+              gap: 1,
+              '&.Mui-selected': {
+                bgcolor: '#000',
+                color: '#fff',
+              },
+              '&:hover': {
+                bgcolor: '#f0f0f0',
+              },
+              '&.Mui-selected:hover': {
+                bgcolor: '#333',
+              },
+            }}
+          >
+            <Person sx={{ fontSize: 20 }} /> Profile
+          </Tab>
+          <Tab
+            value={1}
+            sx={{
+              fontFamily: 'serif',
+              fontWeight: 900,
+              fontSize: { xs: '0.85rem', md: '0.95rem' },
+              textTransform: 'uppercase',
+              borderRadius: 0,
+              borderRight: '2px solid #000',
+              gap: 1,
+              '&.Mui-selected': {
+                bgcolor: '#000',
+                color: '#fff',
+              },
+              '&:hover': {
+                bgcolor: '#f0f0f0',
+              },
+              '&.Mui-selected:hover': {
+                bgcolor: '#333',
+              },
+            }}
+          >
+            <Star sx={{ fontSize: 20 }} /> Favorites
+          </Tab>
+          <Tab
+            value={2}
+            sx={{
+              fontFamily: 'serif',
+              fontWeight: 900,
+              fontSize: { xs: '0.85rem', md: '0.95rem' },
+              textTransform: 'uppercase',
+              borderRadius: 0,
+              borderRight: '2px solid #000',
+              gap: 1,
+              '&.Mui-selected': {
+                bgcolor: '#000',
+                color: '#fff',
+              },
+              '&:hover': {
+                bgcolor: '#f0f0f0',
+              },
+              '&.Mui-selected:hover': {
+                bgcolor: '#333',
+              },
+            }}
+          >
+            <Notifications sx={{ fontSize: 20 }} /> Notifs
+          </Tab>
+          <Tab
+            value={3}
+            sx={{
+              fontFamily: 'serif',
+              fontWeight: 900,
+              fontSize: { xs: '0.85rem', md: '0.95rem' },
+              textTransform: 'uppercase',
+              borderRadius: 0,
+              borderRight: '2px solid #000',
+              gap: 1,
+              '&.Mui-selected': {
+                bgcolor: '#000',
+                color: '#fff',
+              },
+              '&:hover': {
+                bgcolor: '#f0f0f0',
+              },
+              '&.Mui-selected:hover': {
+                bgcolor: '#333',
+              },
+            }}
+          >
+            <Tune sx={{ fontSize: 20 }} /> Feed
+          </Tab>
+          <Tab
+            value={4}
+            sx={{
+              fontFamily: 'serif',
+              fontWeight: 900,
+              fontSize: { xs: '0.85rem', md: '0.95rem' },
+              textTransform: 'uppercase',
+              borderRadius: 0,
+              borderRight: isAdmin ? '2px solid #000' : 'none',
+              gap: 1,
+              '&.Mui-selected': {
+                bgcolor: '#000',
+                color: '#fff',
+              },
+              '&:hover': {
+                bgcolor: '#f0f0f0',
+              },
+              '&.Mui-selected:hover': {
+                bgcolor: '#333',
+              },
+            }}
+          >
+            <AccountBalanceWallet sx={{ fontSize: 20 }} /> Wallet
+          </Tab>
           {isAdmin && (
-            <Tab sx={{ bgcolor: 'warning.50' }}>
-              <Article sx={{ mr: 1 }} /> 
-              Blog
-              <Chip size="sm" color="warning" variant="soft" sx={{ ml: 1 }}>Admin</Chip>
-            </Tab>
-          )}
-          {isAdmin && (
-            <Tab sx={{ bgcolor: 'warning.50' }}>
-              <MonetizationOn sx={{ mr: 1 }} /> 
-              DFS Pools
-              <Chip size="sm" color="warning" variant="soft" sx={{ ml: 1 }}>Admin</Chip>
-            </Tab>
+            <>
+              <Tab
+                value={5}
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '0.85rem', md: '0.95rem' },
+                  textTransform: 'uppercase',
+                  borderRadius: 0,
+                  borderRight: '2px solid #000',
+                  gap: 1,
+                  bgcolor: '#FFC72C',
+                  '&.Mui-selected': {
+                    bgcolor: '#000',
+                    color: '#fff',
+                  },
+                  '&:hover': {
+                    bgcolor: '#FFD700',
+                  },
+                  '&.Mui-selected:hover': {
+                    bgcolor: '#333',
+                  },
+                }}
+              >
+                <DynamicFeed sx={{ fontSize: 20 }} /> Content
+              </Tab>
+              <Tab
+                value={6}
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '0.85rem', md: '0.95rem' },
+                  textTransform: 'uppercase',
+                  borderRadius: 0,
+                  borderRight: '2px solid #000',
+                  gap: 1,
+                  bgcolor: '#FFC72C',
+                  '&.Mui-selected': {
+                    bgcolor: '#000',
+                    color: '#fff',
+                  },
+                  '&:hover': {
+                    bgcolor: '#FFD700',
+                  },
+                  '&.Mui-selected:hover': {
+                    bgcolor: '#333',
+                  },
+                }}
+              >
+                <Article sx={{ fontSize: 20 }} /> Blog
+              </Tab>
+              <Tab
+                value={7}
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '0.85rem', md: '0.95rem' },
+                  textTransform: 'uppercase',
+                  borderRadius: 0,
+                  borderRight: '2px solid #000',
+                  gap: 1,
+                  bgcolor: '#FFC72C',
+                  '&.Mui-selected': {
+                    bgcolor: '#000',
+                    color: '#fff',
+                  },
+                  '&:hover': {
+                    bgcolor: '#FFD700',
+                  },
+                  '&.Mui-selected:hover': {
+                    bgcolor: '#333',
+                  },
+                }}
+              >
+                <MonetizationOn sx={{ fontSize: 20 }} /> DFS
+              </Tab>
+              <Tab
+                value={8}
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '0.85rem', md: '0.95rem' },
+                  textTransform: 'uppercase',
+                  borderRadius: 0,
+                  gap: 1,
+                  bgcolor: '#16A34A',
+                  color: '#fff',
+                  '&.Mui-selected': {
+                    bgcolor: '#000',
+                    color: '#fff',
+                  },
+                  '&:hover': {
+                    bgcolor: '#15803d',
+                  },
+                  '&.Mui-selected:hover': {
+                    bgcolor: '#333',
+                  },
+                }}
+              >
+                <Analytics sx={{ fontSize: 20 }} /> Analytics
+              </Tab>
+            </>
           )}
         </TabList>
 
         {/* Profile Tab */}
-        <TabPanel value={0}>
-          <Card variant="outlined">
-            <CardContent>
-              <Stack spacing={3}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography level="h4">Profile Information</Typography>
+        <TabPanel value={0} sx={{ p: 0 }}>
+          <Stack spacing={3}>
+            {/* Profile Information */}
+            <Card
+              sx={{
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
+                overflow: 'hidden',
+                bgcolor: '#fff',
+              }}
+            >
+              <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    ✏️ Profile Information
+                  </Typography>
                   {!isEditingProfile ? (
                     <Button
                       size="sm"
-                      variant="soft"
                       startDecorator={<Edit />}
                       onClick={() => setIsEditingProfile(true)}
+                      sx={{
+                        bgcolor: '#fff',
+                        color: '#000',
+                        fontFamily: 'serif',
+                        fontWeight: 'bold',
+                        borderRadius: 0,
+                        '&:hover': {
+                          bgcolor: '#f0f0f0',
+                        }
+                      }}
                     >
                       Edit
                     </Button>
@@ -234,213 +639,339 @@ export default function UserSettings() {
                     <Stack direction="row" spacing={1}>
                       <Button
                         size="sm"
-                        variant="soft"
-                        color="neutral"
                         startDecorator={<Cancel />}
                         onClick={() => setIsEditingProfile(false)}
+                        sx={{
+                          bgcolor: '#666',
+                          color: '#fff',
+                          fontFamily: 'serif',
+                          fontWeight: 'bold',
+                          borderRadius: 0,
+                          '&:hover': {
+                            bgcolor: '#555',
+                          }
+                        }}
                       >
                         Cancel
                       </Button>
                       <Button
                         size="sm"
-                        variant="solid"
                         startDecorator={<Save />}
                         onClick={handleSaveProfile}
                         loading={updateProfile.isPending}
+                        sx={{
+                          bgcolor: '#16A34A',
+                          color: '#fff',
+                          fontFamily: 'serif',
+                          fontWeight: 'bold',
+                          borderRadius: 0,
+                          '&:hover': {
+                            bgcolor: '#15803d',
+                          }
+                        }}
                       >
                         Save
                       </Button>
                     </Stack>
                   )}
-                </Box>
+                </Stack>
+              </Box>
 
-                <Divider />
+              <Box sx={{ p: 2.5 }}>
+                <Stack spacing={2.5}>
+                  <FormControl>
+                    <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                      Display Name
+                    </FormLabel>
+                    <Input
+                      value={profileForm.display_name}
+                      onChange={(e) => setProfileForm({ ...profileForm, display_name: e.target.value })}
+                      disabled={!isEditingProfile}
+                      placeholder="Enter your display name"
+                      sx={{
+                        fontFamily: 'serif',
+                        border: '2px solid #000',
+                        borderRadius: 0,
+                        '&:focus-within': {
+                          borderColor: '#000',
+                          outline: '2px solid #000',
+                        }
+                      }}
+                    />
+                  </FormControl>
 
-                <FormControl>
-                  <FormLabel>Display Name</FormLabel>
-                  <Input
-                    value={profileForm.display_name}
-                    onChange={(e) => setProfileForm({ ...profileForm, display_name: e.target.value })}
-                    disabled={!isEditingProfile}
-                    placeholder="Enter your display name"
-                  />
-                </FormControl>
+                  <FormControl>
+                    <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                      Email
+                    </FormLabel>
+                    <Input
+                      value={user.email || ''}
+                      disabled
+                      sx={{
+                        fontFamily: 'serif',
+                        border: '2px solid #000',
+                        borderRadius: 0,
+                        bgcolor: '#f0f0f0',
+                      }}
+                    />
+                    <Typography level="body-xs" sx={{ mt: 0.5, fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
+                      Email cannot be changed
+                    </Typography>
+                  </FormControl>
 
-                <FormControl>
-                  <FormLabel>Email</FormLabel>
-                  <Input value={user.email || ''} disabled />
-                  <Typography level="body-xs" sx={{ mt: 0.5, color: 'text.secondary' }}>
-                    Email cannot be changed
-                  </Typography>
-                </FormControl>
+                  <FormControl>
+                    <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                      Bio
+                    </FormLabel>
+                    <Textarea
+                      value={profileForm.bio}
+                      onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })}
+                      disabled={!isEditingProfile}
+                      placeholder="Tell us about yourself..."
+                      minRows={3}
+                      sx={{
+                        fontFamily: 'serif',
+                        border: '2px solid #000',
+                        borderRadius: 0,
+                        '&:focus-within': {
+                          borderColor: '#000',
+                          outline: '2px solid #000',
+                        }
+                      }}
+                    />
+                  </FormControl>
 
-                <FormControl>
-                  <FormLabel>Bio</FormLabel>
-                  <Textarea
-                    value={profileForm.bio}
-                    onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })}
-                    disabled={!isEditingProfile}
-                    placeholder="Tell us about yourself..."
-                    minRows={3}
-                  />
-                </FormControl>
-
-                <FormControl>
-                  <FormLabel>Theme</FormLabel>
-                  <Select
-                    value={profileForm.theme}
-                    onChange={(_, value) => setProfileForm({ ...profileForm, theme: value as any })}
-                    disabled={!isEditingProfile}
-                  >
-                    <Option value="light">Light</Option>
-                    <Option value="dark">Dark</Option>
-                    <Option value="system">System</Option>
-                  </Select>
-                </FormControl>
-              </Stack>
-            </CardContent>
-          </Card>
+                  <FormControl>
+                    <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                      Theme
+                    </FormLabel>
+                    <Select
+                      value={profileForm.theme}
+                      onChange={(_, value) => setProfileForm({ ...profileForm, theme: value as any })}
+                      disabled={!isEditingProfile}
+                      sx={{
+                        fontFamily: 'serif',
+                        border: '2px solid #000',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <Option value="light">Light</Option>
+                      <Option value="dark">Dark</Option>
+                      <Option value="system">System</Option>
+                    </Select>
+                  </FormControl>
+                </Stack>
+              </Box>
+            </Card>
+          </Stack>
         </TabPanel>
 
         {/* Favorites Tab */}
-        <TabPanel value={1}>
+        <TabPanel value={1} sx={{ p: 0 }}>
           <Stack spacing={3}>
             {/* Favorite Players */}
-            <Card variant="outlined">
-              <CardContent>
-                <Stack spacing={2}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Typography level="h4" startDecorator={<SportsBasketball />}>
-                      Favorite Players ({favoritePlayers?.length || 0})
-                    </Typography>
-                    <Button
-                      size="sm"
-                      variant="soft"
-                      onClick={() => navigate('/players')}
-                    >
-                      Browse Players
-                    </Button>
+            <Card
+              sx={{
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
+                overflow: 'hidden',
+                bgcolor: '#fff',
+              }}
+            >
+              <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    🏀 Favorite Players ({favoritePlayers?.length || 0})
+                  </Typography>
+                  <Button
+                    size="sm"
+                    onClick={() => navigate('/players')}
+                    sx={{
+                      bgcolor: '#fff',
+                      color: '#000',
+                      fontFamily: 'serif',
+                      fontWeight: 'bold',
+                      borderRadius: 0,
+                      '&:hover': {
+                        bgcolor: '#f0f0f0',
+                      }
+                    }}
+                  >
+                    Browse
+                  </Button>
+                </Stack>
+              </Box>
+
+              <Box sx={{ p: 2.5 }}>
+                {playersLoading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress />
                   </Box>
-
-                  <Divider />
-
-                  {playersLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                      <CircularProgress />
-                    </Box>
-                  ) : favoritePlayers && favoritePlayers.length > 0 ? (
-                    <List>
-                      {favoritePlayers.map((favorite) => (
-                        <ListItem key={favorite.id}>
-                          <ListItemButton onClick={() => navigate(`/player/${favorite.player_id}`)}>
-                            <ListItemDecorator>
-                              <Avatar
-                                src={`https://cdn.nba.com/headshots/nba/latest/260x190/${favorite.nba_players.nba_player_id}.png`}
-                                size="sm"
-                              >
-                                {favorite.nba_players.name.charAt(0)}
-                              </Avatar>
-                            </ListItemDecorator>
-                            <ListItemContent>
-                              <Typography level="title-sm">{favorite.nba_players.name}</Typography>
-                              <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                                {favorite.nba_players.position || 'N/A'} • {favorite.nba_players.team_name || 'Free Agent'}
-                              </Typography>
-                              {favorite.notes && (
-                                <Typography level="body-xs" sx={{ color: 'text.tertiary', fontStyle: 'italic', mt: 0.5 }}>
-                                  "{favorite.notes}"
-                                </Typography>
-                              )}
-                            </ListItemContent>
-                            <IconButton
-                              color="danger"
-                              variant="soft"
+                ) : favoritePlayers && favoritePlayers.length > 0 ? (
+                  <List sx={{ '--List-padding': '0px', '--List-gap': '0px' }}>
+                    {favoritePlayers.map((favorite) => (
+                      <ListItem key={favorite.id} sx={{ p: 0, borderBottom: '2px solid #000', '&:last-child': { borderBottom: 'none' } }}>
+                        <ListItemButton
+                          onClick={() => navigate(`/player/${favorite.player_id}`)}
+                          sx={{
+                            fontFamily: 'serif',
+                            p: 1.5,
+                            '&:hover': {
+                              bgcolor: '#f0f0f0',
+                            }
+                          }}
+                        >
+                          <ListItemDecorator>
+                            <Avatar
+                              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${favorite.nba_players.nba_player_id}.png`}
                               size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveFavoritePlayer(favorite.player_id);
+                              alt={favorite.nba_players.name}
+                              sx={{
+                                border: '2px solid #000',
                               }}
                             >
-                              <Delete />
-                            </IconButton>
-                          </ListItemButton>
-                        </ListItem>
-                      ))}
-                    </List>
-                  ) : (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                        No favorite players yet. Browse the player database to add some!
-                      </Typography>
-                    </Box>
-                  )}
-                </Stack>
-              </CardContent>
+                              {favorite.nba_players.name.charAt(0).toUpperCase()}
+                            </Avatar>
+                          </ListItemDecorator>
+                          <ListItemContent>
+                            <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
+                              {favorite.nba_players.name}
+                            </Typography>
+                            <Typography level="body-xs" sx={{ fontFamily: 'serif' }}>
+                              {favorite.nba_players.position || 'N/A'} • {favorite.nba_players.team_name || 'Free Agent'}
+                            </Typography>
+                          </ListItemContent>
+                          <IconButton
+                            color="danger"
+                            variant="solid"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFavoritePlayer(favorite.player_id);
+                            }}
+                            sx={{
+                              borderRadius: 0,
+                              bgcolor: '#ef4444',
+                              '&:hover': {
+                                bgcolor: '#dc2626',
+                              }
+                            }}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
+                      No favorite players yet. Browse the player database to add some!
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
             </Card>
 
             {/* Favorite Teams */}
-            <Card variant="outlined">
-              <CardContent>
-                <Stack spacing={2}>
-                  <Typography level="h4" startDecorator={<Group />}>
-                    Favorite Teams ({favoriteTeams?.length || 0})
-                  </Typography>
+            <Card
+              sx={{
+                border: '3px solid #000',
+                borderRadius: 0,
+                boxShadow: '4px 4px 0px #000',
+                overflow: 'hidden',
+                bgcolor: '#fff',
+              }}
+            >
+              <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                <Typography sx={{ 
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: '1rem',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em',
+                }}>
+                  🏆 Favorite Teams ({favoriteTeams?.length || 0})
+                </Typography>
+              </Box>
 
-                  <Divider />
-
-                  {teamsLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                      <CircularProgress />
-                    </Box>
-                  ) : favoriteTeams && favoriteTeams.length > 0 ? (
-                    <List>
-                      {favoriteTeams.map((team) => (
-                        <ListItem key={team.id}>
-                          <ListItemButton>
-                            <ListItemDecorator>
-                              <Box
-                                component="img"
-                                src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/nba/500/${team.team_abbreviation}.png&h=50&w=50`}
-                                alt={team.team_abbreviation}
-                                sx={{ width: 32, height: 32 }}
-                              />
-                            </ListItemDecorator>
-                            <ListItemContent>
-                              <Typography level="title-sm">{team.team_name}</Typography>
-                              <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                                {team.team_conference} • {team.team_division}
-                              </Typography>
-                            </ListItemContent>
-                            <IconButton
-                              color="danger"
-                              variant="soft"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRemoveFavoriteTeam(team.team_id);
-                              }}
-                            >
-                              <Delete />
-                            </IconButton>
-                          </ListItemButton>
-                        </ListItem>
-                      ))}
-                    </List>
-                  ) : (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                        No favorite teams yet.
-                      </Typography>
-                    </Box>
-                  )}
-                </Stack>
-              </CardContent>
+              <Box sx={{ p: 2.5 }}>
+                {teamsLoading ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                    <CircularProgress />
+                  </Box>
+                ) : favoriteTeams && favoriteTeams.length > 0 ? (
+                  <List sx={{ '--List-padding': '0px', '--List-gap': '0px' }}>
+                    {favoriteTeams.map((team) => (
+                      <ListItem key={team.id} sx={{ p: 0, borderBottom: '2px solid #000', '&:last-child': { borderBottom: 'none' } }}>
+                        <ListItemButton
+                          sx={{
+                            fontFamily: 'serif',
+                            p: 1.5,
+                            '&:hover': {
+                              bgcolor: '#f0f0f0',
+                            }
+                          }}
+                        >
+                          <ListItemDecorator>
+                            <Box
+                              component="img"
+                              src={`https://a.espncdn.com/combiner/i?img=/i/teamlogos/nba/500/${team.team_abbreviation}.png&h=50&w=50`}
+                              alt={team.team_abbreviation}
+                              sx={{ width: 32, height: 32, border: '2px solid #000' }}
+                            />
+                          </ListItemDecorator>
+                          <ListItemContent>
+                            <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
+                              {team.team_name}
+                            </Typography>
+                            <Typography level="body-xs" sx={{ fontFamily: 'serif' }}>
+                              {team.team_conference} • {team.team_division}
+                            </Typography>
+                          </ListItemContent>
+                          <IconButton
+                            color="danger"
+                            variant="solid"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRemoveFavoriteTeam(team.team_id);
+                            }}
+                            sx={{
+                              borderRadius: 0,
+                              bgcolor: '#ef4444',
+                              '&:hover': {
+                                bgcolor: '#dc2626',
+                              }
+                            }}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </ListItemButton>
+                      </ListItem>
+                    ))}
+                  </List>
+                ) : (
+                  <Box sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
+                      No favorite teams yet.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
             </Card>
           </Stack>
         </TabPanel>
 
         {/* Notifications Tab */}
-        <TabPanel value={2}>
+        <TabPanel value={2} sx={{ p: 0 }}>
           <Stack spacing={3}>
             {notifsLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -449,15 +980,34 @@ export default function UserSettings() {
             ) : (
               <>
                 {/* General Notifications */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>General</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      🔔 General
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={2}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">Enable Notifications</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Enable Notifications
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Master toggle for all notifications
                           </Typography>
                         </Box>
@@ -468,8 +1018,10 @@ export default function UserSettings() {
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Box>
-                          <Typography level="title-sm">Email Notifications</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Email Notifications
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Receive notifications via email
                           </Typography>
                         </Box>
@@ -479,19 +1031,38 @@ export default function UserSettings() {
                         />
                       </Box>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
 
                 {/* Content Notifications */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>Content</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      📺 Content
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={2}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">New Highlights</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            New Highlights
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Notify when new game highlights are available
                           </Typography>
                         </Box>
@@ -502,8 +1073,10 @@ export default function UserSettings() {
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Box>
-                          <Typography level="title-sm">Featured Games</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Featured Games
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Notify about high fun score games
                           </Typography>
                         </Box>
@@ -513,19 +1086,38 @@ export default function UserSettings() {
                         />
                       </Box>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
 
                 {/* Fantasy League Notifications */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>Fantasy Leagues</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      🏀 Fantasy Leagues
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={2}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">League Results</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            League Results
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Matchup results and weekly recaps
                           </Typography>
                         </Box>
@@ -534,10 +1126,12 @@ export default function UserSettings() {
                           onChange={(e) => handleNotificationToggle('league_results', e.target.checked)}
                         />
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">Trade Proposals</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Trade Proposals
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             New trade offers and updates
                           </Typography>
                         </Box>
@@ -548,8 +1142,10 @@ export default function UserSettings() {
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Box>
-                          <Typography level="title-sm">Lineup Reminders</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Lineup Reminders
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Set your lineup before games start
                           </Typography>
                         </Box>
@@ -559,19 +1155,38 @@ export default function UserSettings() {
                         />
                       </Box>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
 
                 {/* Player Notifications */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>Players</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      ⭐ Players
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={2}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">Injury Reports</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Injury Reports
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Player injury news and updates
                           </Typography>
                         </Box>
@@ -582,8 +1197,10 @@ export default function UserSettings() {
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Box>
-                          <Typography level="title-sm">Favorite Player Games</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Favorite Player Games
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Notify when favorite players have games
                           </Typography>
                         </Box>
@@ -593,7 +1210,7 @@ export default function UserSettings() {
                         />
                       </Box>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
               </>
             )}
@@ -601,7 +1218,7 @@ export default function UserSettings() {
         </TabPanel>
 
         {/* Feed Tab */}
-        <TabPanel value={3}>
+        <TabPanel value={3} sx={{ p: 0 }}>
           <Stack spacing={3}>
             {feedLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
@@ -610,15 +1227,34 @@ export default function UserSettings() {
             ) : (
               <>
                 {/* Algorithm Preferences */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>Feed Algorithm</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      🎯 Feed Algorithm
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={3}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">Prioritize Favorite Teams</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Prioritize Favorite Teams
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Show games with your favorite teams first
                           </Typography>
                         </Box>
@@ -627,10 +1263,12 @@ export default function UserSettings() {
                           onChange={(e) => handleFeedPreferenceChange('prioritize_favorite_teams', e.target.checked)}
                         />
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
                         <Box>
-                          <Typography level="title-sm">Prioritize Favorite Players</Typography>
-                          <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                          <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                            Prioritize Favorite Players
+                          </Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000' }}>
                             Show games with your favorite players first
                           </Typography>
                         </Box>
@@ -641,7 +1279,9 @@ export default function UserSettings() {
                       </Box>
                       
                       <FormControl>
-                        <FormLabel>Minimum Fun Score Threshold</FormLabel>
+                        <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Minimum Fun Score Threshold
+                        </FormLabel>
                         <Stack direction="row" spacing={2} alignItems="center">
                           <Slider
                             value={feedPrefs?.min_fun_score_threshold ?? 7.0}
@@ -651,19 +1291,36 @@ export default function UserSettings() {
                             step={0.5}
                             marks
                             valueLabelDisplay="on"
-                            sx={{ flex: 1 }}
+                            sx={{ 
+                              flex: 1,
+                              '& .MuiSlider-markLabel': {
+                                fontFamily: 'serif',
+                              }
+                            }}
                           />
-                          <Typography level="body-sm" sx={{ minWidth: '40px' }}>
+                          <Chip
+                            size="md"
+                            sx={{
+                              minWidth: '60px',
+                              bgcolor: '#000',
+                              color: '#fff',
+                              fontFamily: 'serif',
+                              fontWeight: 'bold',
+                              borderRadius: 0,
+                            }}
+                          >
                             {feedPrefs?.min_fun_score_threshold ?? 7.0}
-                          </Typography>
+                          </Chip>
                         </Stack>
-                        <Typography level="body-xs" sx={{ color: 'text.secondary', mt: 0.5 }}>
+                        <Typography level="body-xs" sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#000', mt: 0.5 }}>
                           Only show games above this fun score
                         </Typography>
                       </FormControl>
 
                       <FormControl>
-                        <FormLabel>Days Back to Show</FormLabel>
+                        <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Days Back to Show
+                        </FormLabel>
                         <Stack direction="row" spacing={2} alignItems="center">
                           <Slider
                             value={feedPrefs?.days_back_to_show ?? 90}
@@ -672,66 +1329,130 @@ export default function UserSettings() {
                             max={365}
                             step={7}
                             valueLabelDisplay="on"
-                            sx={{ flex: 1 }}
+                            sx={{ 
+                              flex: 1,
+                              '& .MuiSlider-markLabel': {
+                                fontFamily: 'serif',
+                              }
+                            }}
                           />
-                          <Typography level="body-sm" sx={{ minWidth: '60px' }}>
-                            {feedPrefs?.days_back_to_show ?? 90} days
-                          </Typography>
+                          <Chip
+                            size="md"
+                            sx={{
+                              minWidth: '80px',
+                              bgcolor: '#000',
+                              color: '#fff',
+                              fontFamily: 'serif',
+                              fontWeight: 'bold',
+                              borderRadius: 0,
+                            }}
+                          >
+                            {feedPrefs?.days_back_to_show ?? 90}d
+                          </Chip>
                         </Stack>
                       </FormControl>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
 
                 {/* Content Filters */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>Content Filters</Typography>
-                    <Divider sx={{ mb: 2 }} />
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      🎮 Content Filters
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
                     <Stack spacing={2}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography level="title-sm">Buzzer Beaters</Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
+                        <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Buzzer Beaters
+                        </Typography>
                         <Switch
                           checked={feedPrefs?.show_buzzer_beaters ?? true}
                           onChange={(e) => handleFeedPreferenceChange('show_buzzer_beaters', e.target.checked)}
                         />
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography level="title-sm">Close Games</Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
+                        <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Close Games
+                        </Typography>
                         <Switch
                           checked={feedPrefs?.show_close_games ?? true}
                           onChange={(e) => handleFeedPreferenceChange('show_close_games', e.target.checked)}
                         />
                       </Box>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography level="title-sm">High Scoring</Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 2, borderBottom: '2px solid #000' }}>
+                        <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          High Scoring
+                        </Typography>
                         <Switch
                           checked={feedPrefs?.show_high_scoring ?? true}
                           onChange={(e) => handleFeedPreferenceChange('show_high_scoring', e.target.checked)}
                         />
                       </Box>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Typography level="title-sm">Overtime Games</Typography>
+                        <Typography level="title-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Overtime Games
+                        </Typography>
                         <Switch
                           checked={feedPrefs?.show_overtime_games ?? true}
                           onChange={(e) => handleFeedPreferenceChange('show_overtime_games', e.target.checked)}
                         />
                       </Box>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
 
                 {/* View Preferences */}
-                <Card variant="outlined">
-                  <CardContent>
-                    <Typography level="h4" sx={{ mb: 2 }}>View Settings</Typography>
-                    <Divider sx={{ mb: 2 }} />
-                    <Stack spacing={2}>
+                <Card
+                  sx={{
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxShadow: '4px 4px 0px #000',
+                    overflow: 'hidden',
+                    bgcolor: '#fff',
+                  }}
+                >
+                  <Box sx={{ bgcolor: '#000', color: '#fff', px: 2, py: 1.5 }}>
+                    <Typography sx={{ 
+                      fontFamily: 'serif',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.05em',
+                    }}>
+                      👁️ View Settings
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 2.5 }}>
+                    <Stack spacing={2.5}>
                       <FormControl>
-                        <FormLabel>Default Feed View</FormLabel>
+                        <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Default Feed View
+                        </FormLabel>
                         <Select
                           value={feedPrefs?.default_feed_view ?? 'grid'}
                           onChange={(_, value) => handleFeedPreferenceChange('default_feed_view', value)}
+                          sx={{
+                            fontFamily: 'serif',
+                            border: '2px solid #000',
+                            borderRadius: 0,
+                          }}
                         >
                           <Option value="grid">Grid</Option>
                           <Option value="list">List</Option>
@@ -740,10 +1461,17 @@ export default function UserSettings() {
                       </FormControl>
 
                       <FormControl>
-                        <FormLabel>Games Per Page</FormLabel>
+                        <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.85rem' }}>
+                          Games Per Page
+                        </FormLabel>
                         <Select
                           value={feedPrefs?.games_per_page ?? 12}
                           onChange={(_, value) => handleFeedPreferenceChange('games_per_page', value)}
+                          sx={{
+                            fontFamily: 'serif',
+                            border: '2px solid #000',
+                            borderRadius: 0,
+                          }}
                         >
                           <Option value={6}>6 games</Option>
                           <Option value={12}>12 games</Option>
@@ -752,24 +1480,131 @@ export default function UserSettings() {
                         </Select>
                       </FormControl>
                     </Stack>
-                  </CardContent>
+                  </Box>
                 </Card>
               </>
             )}
           </Stack>
         </TabPanel>
 
+        {/* Wallet Tab */}
+        <TabPanel value={4} sx={{ p: 0 }}>
+          <WalletTab />
+        </TabPanel>
+
         {/* Admin Tabs */}
         {isAdmin && (
           <>
+            {/* Feed Content Management Tab */}
+            <TabPanel value={5} sx={{ p: 0 }}>
+              <Card
+                sx={{
+                  border: '3px solid #000',
+                  borderRadius: 0,
+                  boxShadow: '4px 4px 0px #000',
+                  overflow: 'hidden',
+                  bgcolor: '#fff',
+                }}
+              >
+                <Box sx={{ bgcolor: '#FFC72C', color: '#000', px: 2, py: 1.5, borderBottom: '3px solid #000' }}>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    🛡️ Feed Content Management
+                  </Typography>
+                </Box>
+                <Box sx={{ p: 2.5 }}>
+                  <FeedContentManager />
+                </Box>
+              </Card>
+            </TabPanel>
+
             {/* Blog Management Tab */}
-            <TabPanel value={4}>
-              <BlogManager />
+            <TabPanel value={6} sx={{ p: 0 }}>
+              <Card
+                sx={{
+                  border: '3px solid #000',
+                  borderRadius: 0,
+                  boxShadow: '4px 4px 0px #000',
+                  overflow: 'hidden',
+                  bgcolor: '#fff',
+                }}
+              >
+                <Box sx={{ bgcolor: '#FFC72C', color: '#000', px: 2, py: 1.5, borderBottom: '3px solid #000' }}>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    📝 Blog Management
+                  </Typography>
+                </Box>
+                <Box sx={{ p: 2.5 }}>
+                  <BlogManager />
+                </Box>
+              </Card>
             </TabPanel>
 
             {/* DFS Pool Management Tab */}
-            <TabPanel value={5}>
-              <DFSPoolManager />
+            <TabPanel value={7} sx={{ p: 0 }}>
+              <Card
+                sx={{
+                  border: '3px solid #000',
+                  borderRadius: 0,
+                  boxShadow: '4px 4px 0px #000',
+                  overflow: 'hidden',
+                  bgcolor: '#fff',
+                }}
+              >
+                <Box sx={{ bgcolor: '#FFC72C', color: '#000', px: 2, py: 1.5, borderBottom: '3px solid #000' }}>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    💰 DFS Pool Management
+                  </Typography>
+                </Box>
+                <Box sx={{ p: 2.5 }}>
+                  <DFSPoolManager />
+                </Box>
+              </Card>
+            </TabPanel>
+
+            {/* Analytics Dashboard Tab */}
+            <TabPanel value={8} sx={{ p: 0 }}>
+              <Card
+                sx={{
+                  border: '3px solid #000',
+                  borderRadius: 0,
+                  boxShadow: '4px 4px 0px #000',
+                  overflow: 'hidden',
+                  bgcolor: '#fff',
+                }}
+              >
+                <Box sx={{ bgcolor: '#16A34A', color: '#fff', px: 2, py: 1.5, borderBottom: '3px solid #000' }}>
+                  <Typography sx={{ 
+                    fontFamily: 'serif',
+                    fontWeight: 900,
+                    fontSize: '1rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                  }}>
+                    📊 Analytics Dashboard
+                  </Typography>
+                </Box>
+                <Box sx={{ p: 2.5 }}>
+                  <InvestorDashboard />
+                </Box>
+              </Card>
             </TabPanel>
           </>
         )}
@@ -777,4 +1612,3 @@ export default function UserSettings() {
     </Box>
   );
 }
-

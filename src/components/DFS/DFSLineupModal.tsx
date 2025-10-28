@@ -21,11 +21,13 @@ export default function DFSLineupModal({ poolId, open, onClose }: DFSLineupModal
     <Modal open={open} onClose={onClose}>
       <ModalDialog
         sx={{
-          minWidth: { xs: '95vw', sm: 900, md: 1200 },
-          maxWidth: 1400,
-          maxHeight: '95vh',
+          width: { xs: '100vw', sm: 900, md: 1200 },
+          maxWidth: { xs: '100vw', sm: 1400 },
+          maxHeight: '100vh',
           overflow: 'auto',
-          p: 3,
+          p: { xs: 1, sm: 2, md: 3 },
+          m: { xs: 0, sm: 2 },
+          borderRadius: { xs: 0, sm: 'md' },
         }}
       >
         <ModalClose />

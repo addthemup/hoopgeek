@@ -1,63 +1,201 @@
-import { Box, Typography, Stack, Card, Chip, IconButton, Grid, CircularProgress, CardContent } from '@mui/joy'
+import { Box, Typography, Stack, Card, Chip, IconButton, CircularProgress, CardContent } from '@mui/joy'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Favorite from '@mui/icons-material/Favorite'
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
-import { getAllGames, GameData } from '../utils/gameLoader'
+import { supabase } from '../utils/supabase'
 import SocialEngagement from './SocialEngagement'
+import CommentsDrawer from '../components/CommentsDrawer'
+import PostsStories from '../components/PostsStories'
+import PlayerStatsCircle from '../components/PlayerStatsCircle'
+import { useEngagementTracking, useVideoTracking } from '../hooks/useEngagementTracking'
+
+// Feed post interface
+interface FeedPost {
+  id: string
+  post_type: string
+  status: string
+  title: string
+  description: string
+  game_id: string
+  game_date: string
+  team_tricodes: string[] | null
+  player_ids: number[] | null
+  slides: any // JSON string that needs to be parsed
+  metadata: any // JSON string that needs to be parsed
+  thumbnail_url: string | null
+  likes_count: number
+  comments_count: number
+  shares_count: number
+  views_count: number
+  published_at: string
+  created_at: string
+  updated_at: string
+}
 
 // Detect if mobile device
 const isMobile = () => {
   return window.innerWidth < 900 // MUI's md breakpoint
 }
 
-// Algorithm to calculate feed priority
-const calculateFeedScore = (game: GameData): number => {
-  const now = Date.now()
-  const gameDate = new Date(game.game_date).getTime()
-  const daysAgo = (now - gameDate) / (1000 * 60 * 60 * 24)
+// Viewport Detector - Only renders the post that's currently in view
+interface LazyPostWrapperProps {
+  children: React.ReactNode
+  postId: string
+  minHeight?: string
+  isCurrentlyViewing: boolean // NEW: Only render if this is the active post
+}
+
+function LazyPostWrapper({ children, postId, minHeight = '600px', isCurrentlyViewing }: LazyPostWrapperProps) {
+  const [hasBeenViewed, setHasBeenViewed] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
   
-  // Adjust fun score (divide by 10) so 100 becomes 10
-  const adjustedFunScore = (game.fun_score || 0) / 10
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setHasBeenViewed(true)
+          }
+        })
+      },
+      {
+        root: null,
+        rootMargin: '100px', // Start preparing 100px before viewport
+        threshold: 0.5 // 50% of post must be visible
+      }
+    )
+    
+    if (containerRef.current) {
+      observer.observe(containerRef.current)
+    }
+    
+    return () => {
+      if (containerRef.current) {
+        observer.unobserve(containerRef.current)
+      }
+    }
+  }, [])
   
-  // Fun score is the primary factor (weight: 70%)
-  const funScoreWeight = 0.7
-  const normalizedFunScore = (adjustedFunScore / 10) * funScoreWeight
+  // Only render actual content if this is the currently viewing post
+  const shouldRenderContent = isCurrentlyViewing && hasBeenViewed
   
-  // Recency score with exponential decay (weight: 30%)
-  const recencyWeight = 0.3
-  const decayRate = 0.05 // Slower decay as requested
-  const recencyScore = Math.exp(-decayRate * daysAgo) * recencyWeight
-  
-  // Add random factor for games older than 30 days (can bubble up)
-  const randomBoost = daysAgo > 30 ? Math.random() * 0.15 : 0
-  
-  return normalizedFunScore + recencyScore + randomBoost
+  return (
+    <Box 
+      ref={containerRef}
+      sx={{ minHeight: shouldRenderContent ? 'auto' : minHeight }}
+    >
+      {shouldRenderContent ? children : (
+        <Card 
+          variant="outlined"
+          sx={{
+            height: minHeight,
+            bgcolor: 'background.level1',
+            border: { xs: 'none', md: '3px solid' },
+            borderColor: 'divider',
+            borderRadius: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            p: { xs: 0, md: 1 },
+            animation: 'pulse 1.5s ease-in-out infinite',
+            '@keyframes pulse': {
+              '0%, 100%': { opacity: 0.6 },
+              '50%': { opacity: 1 },
+            }
+          }}
+        >
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 2,
+            bgcolor: '#000',
+            width: '100%',
+            height: '100%',
+            borderRadius: { xs: 0, md: '12px' },
+            justifyContent: 'center'
+          }}>
+            <CircularProgress size="lg" sx={{ color: '#fff' }} />
+            <Typography level="body-sm" sx={{ color: '#fff', opacity: 0.7, fontFamily: 'serif' }}>
+              {hasBeenViewed ? 'Loading...' : 'Scroll to view'}
+            </Typography>
+          </Box>
+        </Card>
+      )}
+    </Box>
+  )
 }
 
 interface GameCardProps {
-  game: GameData
-  onClick: () => void
+  game: FeedPost
   userId?: string
   username?: string
+  onView?: (contentId: string) => void
+  onComplete?: () => void
+  onSlideChange?: (postId: string, slideIndex: number, totalSlides: number) => void
+  onVideoProgress?: (seconds: number) => void
+  isCurrentlyViewing?: boolean
 }
 
-function GameCard({ game, onClick, userId, username }: GameCardProps) {
-  const { story_data, fun_score, fun_data, video_script } = game
+function GameCard({ game, userId, username, onView, onComplete, onSlideChange, onVideoProgress, isCurrentlyViewing = true }: GameCardProps) {
   const [currentSlide, setCurrentSlide] = useState(0)
   const [touchStart, setTouchStart] = useState(0)
   const [touchEnd, setTouchEnd] = useState(0)
   const [fullGameData, setFullGameData] = useState<any>(null)
   const [isLoadingCarousel, setIsLoadingCarousel] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [hasMarkedViewed, setHasMarkedViewed] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
   
-  // Extract data from the new structure
-  const story = story_data || {}
-  const lead_changes = fun_data?.lead_changes || { total: 0, last_5_minutes: 0, last_minute: 0, buzzer_beater: 0 }
-  const dunk_stats = fun_data?.dunk_stats || { 'Total Dunks': 0, 'Alley Oop': 0, 'Putback': 0 }
-  const deep_shots = fun_data?.deep_shots || { deep_threes: 0, four_pointers: 0 }
+  // Track video watch time
+  useVideoTracking(videoRef, onVideoProgress)
+  
+  // Auto-pause video when not in view
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+    
+    if (!isCurrentlyViewing && !video.paused) {
+      video.pause()
+      console.log('⏸️ Paused video (not in view):', game.id)
+    } else if (isCurrentlyViewing && video.paused) {
+      video.play().catch(err => {
+        console.log('▶️ Could not auto-play:', err)
+      })
+    }
+  }, [isCurrentlyViewing, game.id])
+  
+  // Mark as viewed when user interacts with the post
+  useEffect(() => {
+    if (!hasMarkedViewed && onView && game.id) {
+      // Mark as viewed after a short delay (user has seen it)
+      const timer = setTimeout(() => {
+        onView(game.id)
+        setHasMarkedViewed(true)
+      }, 2000) // 2 seconds
+      
+      return () => clearTimeout(timer)
+    }
+  }, [game.id, hasMarkedViewed, onView])
+  
+  // Parse JSON fields
+  const parsedSlides = typeof game.slides === 'string' ? JSON.parse(game.slides) : (game.slides || [])
+  const parsedMetadata = typeof game.metadata === 'string' ? JSON.parse(game.metadata) : (game.metadata || {})
+  
+  // Extract data from metadata
+  const story_data = parsedMetadata.story_data || {}
+  const fun_data = parsedMetadata.fun_data || {}
+  const fun_score = fun_data.fun_score || 0
+  
+  // Extract data from the structure
+  const story = story_data as any || {}
+  const lead_changes = (fun_data as any)?.lead_changes || { total: 0, last_5_minutes: 0, last_minute: 0, buzzer_beater: 0 }
+  const dunk_stats = (fun_data as any)?.dunk_stats || { 'Total Dunks': 0, 'Alley Oop': 0, 'Putback': 0 }
+  const deep_shots = (fun_data as any)?.deep_shots || { deep_threes: 0, four_pointers: 0 }
   
   // Safe access to team data with fallbacks
   const hasTeamData = story?.teams?.winner && story?.teams?.loser
@@ -88,17 +226,17 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
     
     setIsLoadingCarousel(true)
     try {
-      // Use the video_script from the database directly
-      if (video_script && video_script.length > 0) {
+      // Use the slides from the database directly
+      if (parsedSlides && parsedSlides.length > 0) {
         setFullGameData({
           script: {
-            video_script: video_script,
-            total_plays: game.total_plays || video_script.length
+            video_script: parsedSlides,
+            total_plays: parsedSlides.length
           },
           gameMetadata: {
             date: game.game_date,
-            arena: 'NBA Arena', // You might want to add this to your schema
-            season: '2024' // You might want to add this to your schema
+            arena: parsedMetadata.arena || 'NBA Arena',
+            season: parsedMetadata.season || '2024-25'
           }
         })
       }
@@ -113,45 +251,42 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
   const getSlides = () => {
     const slides = []
     
-    // Get all video highlights from database
-    if (video_script && Array.isArray(video_script)) {
-      const videos = video_script
-        .filter((play: any) => play.mp4 && play.description)
-        .slice(0, 10) // Limit to 10 video slides
-      
-      videos.forEach((video, index) => {
-        slides.push({
-          type: 'video',
-          isFirstSlide: index === 0, // Mark first slide for special overlay
-          gameMetadata: index === 0 ? {
-            date: game.game_date,
-            arena: 'NBA Arena',
-            season: '2024',
-            homeTeam: {
-              quarters: [0, 0, 0, 0] // You might want to add this to your schema
-            },
-            awayTeam: {
-              quarters: [0, 0, 0, 0] // You might want to add this to your schema
-            }
-          } : null,
-          ...video
+    console.log('🎬 GameCard Debug:', {
+      game_id: game.game_id,
+      post_type: game.post_type,
+      slides_length: parsedSlides?.length,
+      slides_sample: parsedSlides?.[0],
+      first_slide_metadata: parsedSlides?.[0]?.metadata
+    })
+    
+    // For feed posts, slides contains the video array
+    if (parsedSlides && Array.isArray(parsedSlides)) {
+      parsedSlides.forEach((slide: any, index) => {
+          console.log(`📽️ Processing slide ${index}:`, slide)
+        // Feed post slides have video_url
+          const videoUrl = slide.video_url || slide.mp4
+          if (videoUrl) {
+            console.log(`✅ Found video URL: ${videoUrl}`)
+            slides.push({
+              type: 'video',
+              isFirstSlide: index === 0,
+              gameMetadata: index === 0 ? {
+                date: game.game_date,
+              arena: parsedMetadata.arena || 'NBA Arena',
+              season: parsedMetadata.season || '2024-25',
+                homeTeam: { quarters: [0, 0, 0, 0] },
+                awayTeam: { quarters: [0, 0, 0, 0] }
+              } : null,
+              mp4: videoUrl,
+              description: slide.description || slide.caption || '',
+              ...slide
+            })
+          } else {
+            console.log(`❌ No video URL found in slide ${index}`)
+          }
         })
-      })
-    } else if (fullGameData?.script?.video_script && Array.isArray(fullGameData.script.video_script)) {
-      // Fallback to full game data
-      const videos = fullGameData.script.video_script
-        .filter((play: any) => play.mp4 && play.description)
-        .slice(0, 10)
-      
-      videos.forEach((video, index) => {
-        slides.push({
-          type: 'video',
-          isFirstSlide: index === 0,
-          gameMetadata: index === 0 ? fullGameData?.gameMetadata : null,
-          ...video
-        })
-      })
-    }
+      }
+      console.log(`📊 Total slides created: ${slides.length}`)
     
     return slides
   }
@@ -159,6 +294,36 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
   const slides = getSlides()
   const hasMultipleSlides = slides.length > 1
   const currentSlideData = slides[currentSlide]
+  
+  // Notify parent of slide changes
+  useEffect(() => {
+    if (onSlideChange && slides.length > 0) {
+      onSlideChange(game.id, currentSlide, slides.length)
+    }
+  }, [currentSlide, slides.length, game.id, onSlideChange])
+  
+  // Auto-advance carousel when video ends
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video) return
+
+    const handleVideoEnd = () => {
+      if (currentSlide < slides.length - 1) {
+        // Move to next slide
+        setCurrentSlide(prev => prev + 1)
+      } else {
+        // Last slide ended - move to next post
+        if (onComplete) {
+          setTimeout(() => {
+            onComplete()
+          }, 500) // Small delay before moving to next post
+        }
+      }
+    }
+
+    video.addEventListener('ended', handleVideoEnd)
+    return () => video.removeEventListener('ended', handleVideoEnd)
+  }, [currentSlide, slides.length, onComplete])
   
   // Swipe handlers
   const minSwipeDistance = 50
@@ -207,28 +372,31 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
       onMouseEnter={loadFullGameData}
       sx={{ 
         width: '100%',
-        cursor: 'pointer',
-        transition: 'all 0.2s',
-        borderRadius: 0,
-        border: '3px solid var(--ink-black)',
-        boxShadow: '4px 4px 0px rgba(0,0,0,0.15)',
-        overflow: 'hidden',
-        '&:hover': { 
-          transform: 'translateY(-2px)',
-          boxShadow: '6px 6px 0px rgba(0,0,0,0.2)'
-        }
+        maxWidth: '100%',
+        borderRadius: 0, // Square card
+        border: { xs: 'none', md: '3px solid var(--ink-black)' }, // No border on mobile
+        boxShadow: 'none',
+        overflow: 'visible', // Allow rounded video to show
+        mx: 0,
+        boxSizing: 'border-box',
+        bgcolor: 'transparent',
+        p: { xs: 0, md: 1 }, // No padding on mobile for full-screen feel
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
+    
       {/* Instagram-style Carousel */}
       <Box 
         sx={{ 
           position: 'relative',
           width: '100%',
-          height: 0,
-          paddingBottom: '125%', // 4:5 aspect ratio (Instagram portrait)
+          height: { xs: 'calc(100vh - 180px)', md: 0 }, // Full height on mobile minus nav/header
+          paddingBottom: { xs: 0, md: '56.25%' }, // 16:9 aspect ratio on desktop only
           overflow: 'hidden',
           margin: 0,
-          backgroundColor: '#000'
+          backgroundColor: '#000',
+          borderRadius: { xs: 0, md: '4px' }, // No border radius on mobile
         }}
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -237,9 +405,9 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
         {/* Video rendering */}
         {currentSlideData?.mp4 ? (
           <video
+            ref={videoRef}
             key={currentSlideData.mp4}
             autoPlay
-            loop
             muted
             playsInline
             style={{ 
@@ -249,16 +417,41 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              margin: 0,
-              padding: 0
+              objectPosition: 'top',
+              marginTop: 20,
+              marginBottom: 100,
+              marginLeft: 0,
+              padding: 0,
+              borderRadius: '12px', // Rounded video
             }}
-            onClick={onClick}
           >
             <source src={currentSlideData.mp4} type="video/mp4" />
           </video>
+        ) : slides.length === 0 ? (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: '#000',
+              color: '#fff',
+              p: 2,
+              borderRadius: '12px',
+            }}
+          >
+            <Typography level="body-lg" sx={{ mb: 1 }}>No video content</Typography>
+            <Typography level="body-sm" sx={{ opacity: 0.7, textAlign: 'center' }}>
+              Check browser console for debug info
+            </Typography>
+          </Box>
         ) : (
           <Box
-            onClick={onClick}
             sx={{
               position: 'absolute',
               top: 0,
@@ -269,139 +462,33 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
               alignItems: 'center',
               justifyContent: 'center',
               backgroundColor: '#000',
-              color: '#fff'
+              color: '#fff',
+              borderRadius: '12px',
             }}
           >
             <Typography level="body-lg">Loading...</Typography>
           </Box>
         )}
         
-        {/* First slide special overlay with game metadata */}
-        {currentSlideData?.isFirstSlide && currentSlideData?.gameMetadata && (
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              background: 'linear-gradient(to bottom, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 40%, transparent 100%)',
-              padding: '4rem 1.5rem 3rem',
-              zIndex: 2,
-              pointerEvents: 'none'
-            }}
-          >
-            {/* Date and Arena */}
-            <Stack spacing={0.5} sx={{ mb: 2 }}>
-              <Typography 
-                level="body-sm" 
-                sx={{ 
-                  textAlign: 'center',
-                  fontFamily: '"Libre Baskerville", Georgia, serif',
-                  fontWeight: 700,
-                  color: '#fff',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  fontSize: '0.75rem'
-                }}
-              >
-                {new Date(currentSlideData.gameMetadata.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-              </Typography>
-              <Typography 
-                level="body-xs" 
-                sx={{ 
-                  textAlign: 'center',
-                  color: 'rgba(255,255,255,0.85)',
-                  fontStyle: 'italic',
-                  fontSize: '0.75rem'
-                }}
-              >
-                {currentSlideData.gameMetadata.arena}
-              </Typography>
-            </Stack>
-            
-            {/* Quarter Scores */}
-            {currentSlideData.gameMetadata.homeTeam && currentSlideData.gameMetadata.awayTeam && (
-              <Box 
-                sx={{ 
-                  backgroundColor: 'rgba(0,0,0,0.6)',
-                  borderRadius: '4px',
-                  padding: 1.5,
-                  backdropFilter: 'blur(8px)'
-                }}
-              >
-                <Typography 
-                  level="body-xs" 
-                  sx={{ 
-                    textAlign: 'center',
-                    fontWeight: 700,
-                    mb: 1,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.1em',
-                    color: 'rgba(255,255,255,0.7)',
-                    fontSize: '0.7rem'
-                  }}
-                >
-                  Score by Quarter
-                </Typography>
-                <Grid container spacing={1}>
-                  {[0, 1, 2, 3].map(qtr => (
-                    <Grid key={qtr} xs={3}>
-                      <Box sx={{ textAlign: 'center' }}>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            fontWeight: 600,
-                            mb: 0.5,
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: '0.7rem'
-                          }}
-                        >
-                          Q{qtr + 1}
-                        </Typography>
-                        <Typography 
-                          level="body-sm" 
-                          sx={{ 
-                            fontWeight: 700,
-                            color: '#fff',
-                            fontFamily: '"Libre Baskerville", Georgia, serif'
-                          }}
-                        >
-                          {currentSlideData.gameMetadata.homeTeam.quarters[qtr]}-{currentSlideData.gameMetadata.awayTeam.quarters[qtr]}
-                        </Typography>
-                      </Box>
-                    </Grid>
-                  ))}
-                </Grid>
-              </Box>
-            )}
-          </Box>
-        )}
-        
-        {/* Metacritic-style score badge - top left (only for fun content) */}
-        {game.content_type === 'fun' && (
+        {/* Player avatar with stats - top left */}
+        {currentSlideData?.metadata?.personId && (
           <Box
             sx={{
               position: 'absolute',
               top: 12,
               left: 12,
-              backgroundColor: getMetacriticColor(adjustedFunScore),
-              color: '#fff',
-              width: 48,
-              height: 48,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontFamily: '"Libre Baskerville", Georgia, serif',
-              fontWeight: 700,
-              fontSize: '1.5rem',
-              border: '3px solid #fff',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-              zIndex: 3
+              zIndex: 3,
+              pointerEvents: 'none'
             }}
           >
-            {Math.round(adjustedFunScore * 10)}
+            <PlayerStatsCircle
+              playerId={currentSlideData.metadata.personId}
+              gameId={game.game_id}
+              playerName={currentSlideData.metadata.playerNameI || currentSlideData.metadata.playerName}
+            />
           </Box>
         )}
+        
         
         {/* Instagram-style carousel indicators (dots) - top center */}
         {hasMultipleSlides && (
@@ -486,144 +573,21 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
           </>
         )}
         
-        {/* Bottom overlay with team scores and play description */}
+        {/* Bottom overlay with social engagement only */}
         <Box
-          onClick={onClick}
           sx={{
             position: 'absolute',
             bottom: 0,
             left: 0,
             right: 0,
-            background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.6) 60%, transparent 100%)',
-            padding: '3rem 1rem 1rem',
-            zIndex: 2
+            background: 'linear-gradient(to top, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 50%, transparent 100%)',
+            padding: '2rem 1rem 0.75rem',
+            zIndex: 2,
+            borderRadius: '0 0 12px 12px', // Rounded bottom corners
           }}
         >
-          {/* Team matchup */}
-          {hasTeamData ? (
-            <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1, mb: 1 }}>
-              {/* Winner */}
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box
-                  component="img"
-                  src={getTeamLogoUrl(winnerTricode)}
-                  alt={winnerTricode}
-                  sx={{ width: 28, height: 28, objectFit: 'contain' }}
-                />
-                <Box>
-                  <Typography level="body-xs" sx={{ color: '#fff', opacity: 0.8, fontSize: '0.7rem' }}>
-                    {winnerTricode}
-                  </Typography>
-                  <Typography level="h4" sx={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem', lineHeight: 1 }}>
-                    {winnerPoints}
-                  </Typography>
-                </Box>
-              </Stack>
-              
-              <Typography level="body-xs" sx={{ color: '#fff', opacity: 0.6, fontWeight: 600, px: 1 }}>
-                VS
-              </Typography>
-              
-              {/* Loser */}
-              <Stack direction="row" alignItems="center" spacing={1}>
-                <Box>
-                  <Typography level="body-xs" sx={{ color: '#fff', opacity: 0.7, fontSize: '0.7rem', textAlign: 'right' }}>
-                    {loserTricode}
-                  </Typography>
-                  <Typography level="h4" sx={{ color: '#fff', fontWeight: 700, fontSize: '1.1rem', lineHeight: 1, opacity: 0.7, textAlign: 'right' }}>
-                    {loserPoints}
-                  </Typography>
-                </Box>
-                <Box
-                  component="img"
-                  src={getTeamLogoUrl(loserTricode)}
-                  alt={loserTricode}
-                  sx={{ width: 28, height: 28, objectFit: 'contain', opacity: 0.7 }}
-                />
-              </Stack>
-            </Stack>
-          ) : (
-            <Stack direction="row" alignItems="center" justifyContent="center" sx={{ px: 1, mb: 1 }}>
-              <Typography level="body-sm" sx={{ color: '#fff', opacity: 0.7 }}>
-                Game Data Loading...
-              </Typography>
-            </Stack>
-          )}
-          
-          {/* Play description */}
-          {currentSlideData?.description && !currentSlideData?.isFirstSlide && (
-            <Typography 
-              level="body-sm"
-              sx={{ 
-                color: '#fff',
-                textAlign: 'center',
-                fontSize: '0.85rem',
-                fontFamily: '"Crimson Text", Georgia, serif',
-                px: 2,
-                lineHeight: 1.3,
-                mb: 1
-              }}
-            >
-              {currentSlideData.description}
-            </Typography>
-          )}
-          
-          {/* Game highlight icons - overlayed on video */}
-          <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="center" sx={{ mt: 1 }}>
-            {lead_changes.buzzer_beater > 0 && (
-              <Box 
-                title="Buzzer Beater"
-                sx={{ 
-                  fontSize: '1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))'
-                }}
-              >
-                🎯
-              </Box>
-            )}
-            {lead_changes.total >= 10 && (
-              <Box 
-                title={`${lead_changes.total} Lead Changes`}
-                sx={{ 
-                  fontSize: '1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))'
-                }}
-              >
-                ↔️
-              </Box>
-            )}
-            {dunk_stats['Total Dunks'] >= 15 && (
-              <Box 
-                title={`${dunk_stats['Total Dunks']} Dunks`}
-                sx={{ 
-                  fontSize: '1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))'
-                }}
-              >
-                💪
-              </Box>
-            )}
-            {deep_shots.four_pointers > 0 && (
-              <Box 
-                title="4-Pointer"
-                sx={{ 
-                  fontSize: '1.5rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))'
-                }}
-              >
-                🏀
-              </Box>
-            )}
-            
-            {/* Social Engagement - inline with icons */}
+          {/* Social engagement - centered */}
+          <Stack direction="row" alignItems="center" justifyContent="center" sx={{ mt: 1 }}>
             <SocialEngagement
               contentId={game.id}
               userId={userId || 'anonymous'}
@@ -631,45 +595,29 @@ function GameCard({ game, onClick, userId, username }: GameCardProps) {
               initialLikes={game.likes_count || 0}
               initialComments={game.comments_count || 0}
               initialShares={game.shares_count || 0}
+              initialViews={game.views_count || 0}
               compact={true}
+              onCommentClick={() => setCommentsOpen(true)}
             />
           </Stack>
         </Box>
-      </Box>
-      
-      {/* Instagram-style Social Engagement Section */}
-      <Box sx={{ p: 2, backgroundColor: 'background.body' }}>
-        <SocialEngagement
+        
+        {/* Comments Drawer - slides up from bottom */}
+        <CommentsDrawer
+          open={commentsOpen}
+          onClose={() => setCommentsOpen(false)}
           contentId={game.id}
           userId={userId || 'anonymous'}
           username={username || 'Anonymous'}
-          initialLikes={game.likes_count || 0}
-          initialComments={game.comments_count || 0}
-          initialShares={game.shares_count || 0}
-          compact={false}
         />
-        
-        {/* Game Stats Summary */}
-        <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Stack direction="row" spacing={2} justifyContent="center">
-            {lead_changes.total >= 10 && (
-              <Chip size="sm" color="warning" variant="soft">
-                {lead_changes.total} Lead Changes
-              </Chip>
-            )}
-            {dunk_stats['Total Dunks'] >= 15 && (
-              <Chip size="sm" color="success" variant="soft">
-                {dunk_stats['Total Dunks']} Dunks
-              </Chip>
-            )}
-            {deep_shots.four_pointers > 0 && (
-              <Chip size="sm" color="primary" variant="soft">
-                4-Pointer Alert!
-              </Chip>
-            )}
-          </Stack>
-        </Box>
       </Box>
+      
+      {/* Bottom separator on mobile between posts */}
+      <Box sx={{ 
+        display: { xs: 'block', md: 'none' },
+        height: '8px',
+        bgcolor: 'background.level2',
+      }} />
     </Card>
   )
 }
@@ -681,67 +629,352 @@ const DESKTOP_BATCH_SIZE = 12 // Load 12 at a time on desktop (4 rows of 3)
 export default function Highlights() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const [allGames, setAllGames] = useState<GameData[]>([])
-  const [displayedGames, setDisplayedGames] = useState<GameData[]>([])
+  const [displayedPosts, setDisplayedPosts] = useState<FeedPost[]>([])
+  const [allPosts, setAllPosts] = useState<FeedPost[]>([]) // Store all posts for shuffling
   const [page, setPage] = useState(0)
   const [loading, setLoading] = useState(false)
+  const [isShuffling, setIsShuffling] = useState(false) // New loading state for shuffle
   const [hasMore, setHasMore] = useState(true)
   const [showScrollTop, setShowScrollTop] = useState(false)
   const observerTarget = useRef<HTMLDivElement>(null)
-
-  // Sort games using the feed algorithm
-  const sortedGames = useMemo(() => {
-    return [...allGames].sort((a, b) => calculateFeedScore(b) - calculateFeedScore(a))
-  }, [allGames])
-
-  // Load initial games
+  const postRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const [currentViewingPost, setCurrentViewingPost] = useState<string | null>(null)
+  const [currentSlideIndex, setCurrentSlideIndex] = useState<number>(0)
+  const [totalSlides, setTotalSlides] = useState<number>(0)
+  const [activePlaylist, setActivePlaylist] = useState<string | null>(null) // Track fun_score playlist
+  
+  // Detect which post is currently in viewport
   useEffect(() => {
-    const loadGames = async () => {
+    if (displayedPosts.length === 0) return
+    
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting && entry.intersectionRatio >= 0.5) {
+            // Find the post ID from the ref map
+            const postId = Array.from(postRefs.current.entries()).find(
+              ([_, element]) => element === entry.target
+            )?.[0]
+            
+            if (postId && postId !== currentViewingPost) {
+              console.log('📺 Now viewing post:', postId)
+              setCurrentViewingPost(postId)
+            }
+          }
+        })
+      },
+      {
+        root: null,
+        rootMargin: '0px',
+        threshold: 0.5 // Post must be 50%+ visible
+      }
+    )
+    
+    // Observe all post refs
+    postRefs.current.forEach((element) => {
+      observer.observe(element)
+    })
+    
+    // Set first post as viewing on mount
+    if (!currentViewingPost && displayedPosts.length > 0) {
+      setCurrentViewingPost(displayedPosts[0].id)
+    }
+    
+    return () => {
+      observer.disconnect()
+    }
+  }, [displayedPosts, currentViewingPost])
+  
+  // 📊 ENGAGEMENT TRACKING - For Investor Analytics
+  const {
+    startSession,
+    endSession,
+    startPostView,
+    updatePostView,
+    endPostView,
+    trackEvent,
+    sessionMetrics,
+    isTracking
+  } = useEngagementTracking(user?.id)
+  
+  // Start session on mount
+  useEffect(() => {
+    if (user?.id) {
+      startSession('/highlights')
+      console.log('📊 Engagement tracking started for user:', user.id)
+    }
+    
+    return () => {
+      if (user?.id) {
+        endSession('/highlights', 'navigation_away')
+      }
+    }
+  }, [user?.id, startSession, endSession])
+  
+  // Log session metrics for debugging
+  useEffect(() => {
+    if (isTracking) {
+      console.log('📈 Session Metrics:', sessionMetrics)
+    }
+  }, [sessionMetrics, isTracking])
+
+  // Mark post as viewed (increment views count)
+  const markPostAsViewed = useCallback(async (postId: string) => {
+    if (!user) return
+    
+    try {
+      // Get current views count and increment it
+      const { data: currentPost } = await supabase
+        .from('feed_posts')
+        .select('views_count')
+        .eq('id', postId)
+        .single()
+      
+      if (currentPost) {
+        const { error } = await supabase
+          .from('feed_posts')
+          .update({ views_count: (currentPost.views_count || 0) + 1 })
+          .eq('id', postId)
+        
+        if (error) throw error
+      }
+      
+      console.log('✅ Marked post as viewed:', postId)
+    } catch (error) {
+      console.error('❌ Error marking post as viewed:', error)
+    }
+  }, [user])
+
+  // Handle slide change tracking
+  const handleSlideChange = useCallback((postId: string, slideIndex: number, totalSlides: number) => {
+    setCurrentViewingPost(postId)
+    setCurrentSlideIndex(slideIndex)
+    setTotalSlides(totalSlides)
+    
+    // Track post view start (first slide)
+    if (slideIndex === 0 && user?.id) {
+      startPostView(postId, totalSlides, false)
+    }
+    
+    // Update progress when slides change
+    if (user?.id && slideIndex > 0) {
+      updatePostView(slideIndex + 1) // +1 because slides are 0-indexed
+      
+      // Track slide change event
+      trackEvent('slide_change', postId, {
+        from_slide: slideIndex - 1,
+        to_slide: slideIndex,
+        total_slides: totalSlides
+      })
+    }
+  }, [user?.id, startPostView, updatePostView, trackEvent])
+  
+  // Handle video progress tracking
+  const handleVideoProgress = useCallback((seconds: number) => {
+    if (user?.id && seconds > 0) {
+      updatePostView(currentSlideIndex + 1, seconds)
+      
+      // Track video progress event every 10 seconds
+      if (seconds % 10 === 0) {
+        trackEvent('video_progress', currentViewingPost || undefined, {
+          watch_seconds: seconds,
+          slide_index: currentSlideIndex
+        })
+      }
+    }
+  }, [user?.id, currentSlideIndex, currentViewingPost, updatePostView, trackEvent])
+
+  // Handle post complete - scroll to next post with better centering
+  const handlePostComplete = useCallback((completedPostId: string) => {
+    // End current post view and track completion
+    if (user?.id) {
+      endPostView('auto_advance')
+      trackEvent('post_complete', completedPostId, {
+        completed_at: new Date().toISOString(),
+        slides_viewed: totalSlides
+      })
+    }
+    
+    const currentIndex = displayedPosts.findIndex(p => p.id === completedPostId)
+    if (currentIndex === -1 || currentIndex >= displayedPosts.length - 1) return
+    
+    const nextPost = displayedPosts[currentIndex + 1]
+    const nextPostElement = postRefs.current.get(nextPost.id)
+    
+    if (nextPostElement) {
+      // Get the height of the fixed header (nav + avatar bar)
+      const headerHeight = window.innerWidth < 900 ? 117 : 126
+      
+      // Calculate the position to scroll to
+      const elementRect = nextPostElement.getBoundingClientRect()
+      const absoluteElementTop = elementRect.top + window.pageYOffset
+      const scrollToPosition = absoluteElementTop - headerHeight
+      
+      // Smooth scroll to position
+      window.scrollTo({
+        top: scrollToPosition,
+        behavior: 'smooth'
+      })
+    }
+  }, [displayedPosts, user?.id, endPostView, trackEvent, totalSlides])
+  
+  // Fisher-Yates shuffle algorithm
+  const shuffleArray = <T,>(array: T[]): T[] => {
+    const shuffled = [...array]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled
+  }
+  
+  // Shuffle and reorganize posts when avatar is clicked
+  const scrollToPost = useCallback(async (postId: string) => {
+    // Track avatar click and end current post view
+    if (user?.id) {
+      endPostView('click_away')
+      trackEvent('post_interaction', postId, {
+        action: 'avatar_click',
+        clicked_from_stories: true
+      })
+    }
+    
+    setIsShuffling(true)
+    
+    // Find the clicked post
+    const clickedPost = allPosts.find(p => p.id === postId)
+    if (!clickedPost) return
+    
+    // Check if it's a fun_score post
+    const isFunScore = clickedPost.post_type === 'fun_score'
+    
+    let newPostOrder: FeedPost[] = []
+    
+    if (isFunScore && clickedPost.game_id) {
+      // FUN SCORE PLAYLIST: Group all posts with same game_id
+      const playlistPosts = allPosts.filter(p => p.game_id === clickedPost.game_id)
+      const otherPosts = allPosts.filter(p => p.game_id !== clickedPost.game_id)
+      
+      // Shuffle the playlist posts (keep them together but randomize their order)
+      const shuffledPlaylist = shuffleArray(playlistPosts)
+      
+      // Put fun_score post first, then other playlist posts, then shuffled remaining
+      const funScorePost = shuffledPlaylist.find(p => p.id === postId)
+      const otherPlaylistPosts = shuffledPlaylist.filter(p => p.id !== postId)
+      const shuffledOthers = shuffleArray(otherPosts)
+      
+      newPostOrder = funScorePost 
+        ? [funScorePost, ...otherPlaylistPosts, ...shuffledOthers]
+        : shuffledPlaylist
+      
+      setActivePlaylist(clickedPost.game_id)
+    } else {
+      // REGULAR POST: Put clicked post first, shuffle the rest
+      const otherPosts = allPosts.filter(p => p.id !== postId)
+      const shuffledOthers = shuffleArray(otherPosts)
+      
+      newPostOrder = [clickedPost, ...shuffledOthers]
+      setActivePlaylist(null)
+    }
+    
+    // Simulate loading time for smooth transition
+    await new Promise(resolve => setTimeout(resolve, 300))
+    
+    setDisplayedPosts(newPostOrder.slice(0, 20)) // Show first 20
+    setIsShuffling(false)
+    
+    // Start tracking the clicked post (will be marked as clicked from avatar)
+    if (user?.id && clickedPost) {
+      const slides = typeof clickedPost.slides === 'string' 
+        ? JSON.parse(clickedPost.slides) 
+        : (clickedPost.slides || [])
+      startPostView(postId, Array.isArray(slides) ? slides.length : 0, true)
+    }
+    
+    // Scroll to top after shuffle
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [allPosts, user?.id, endPostView, trackEvent, startPostView])
+
+  // Load feed posts
+  const loadPosts = useCallback(async (offset: number) => {
+    try {
+      setLoading(true)
+      const batchSize = isMobile() ? MOBILE_BATCH_SIZE : DESKTOP_BATCH_SIZE
+      
+      // Fetch published feed posts
+      const { data, error } = await supabase
+        .from('feed_posts')
+        .select('*')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .range(offset, offset + batchSize - 1)
+      
+      if (error) throw error
+      return (data || []) as FeedPost[]
+    } catch (error) {
+      console.error('❌ Error loading posts:', error)
+      return []
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  // Load ALL posts on mount and shuffle
+  useEffect(() => {
+    const loadAllPosts = async () => {
       try {
         setLoading(true)
-        const games = await getAllGames()
-        setAllGames(games)
         
-        // Load first batch
-        const batchSize = isMobile() ? MOBILE_BATCH_SIZE : DESKTOP_BATCH_SIZE
-        const sortedData = [...games].sort((a, b) => calculateFeedScore(b) - calculateFeedScore(a))
-        setDisplayedGames(sortedData.slice(0, batchSize))
-        setPage(1)
-        setHasMore(sortedData.length > batchSize)
+        // Fetch ALL published posts
+        const { data, error } = await supabase
+          .from('feed_posts')
+          .select('*')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false })
+        
+        if (error) throw error
+        
+        const posts = (data || []) as FeedPost[]
+        
+        // Shuffle on initial load
+        const shuffled = shuffleArray(posts)
+        
+        setAllPosts(posts)
+        setDisplayedPosts(shuffled.slice(0, 20)) // Show first 20
+        setHasMore(shuffled.length > 20)
       } catch (error) {
-        console.error('Error loading games:', error)
-        setAllGames([])
+        console.error('❌ Error loading posts:', error)
       } finally {
         setLoading(false)
       }
     }
-    loadGames()
+    
+    loadAllPosts()
   }, [])
 
-  // Load more games when scrolling
-  const loadMoreGames = useCallback(() => {
+  // Load more posts when scrolling
+  const loadMorePosts = useCallback(async () => {
     if (loading || !hasMore) return
 
     const batchSize = isMobile() ? MOBILE_BATCH_SIZE : DESKTOP_BATCH_SIZE
-    const startIndex = page * batchSize
-    const endIndex = startIndex + batchSize
-    const nextBatch = sortedGames.slice(startIndex, endIndex)
+    const offset = page * batchSize
+    const nextBatch = await loadPosts(offset)
 
     if (nextBatch.length > 0) {
-      setDisplayedGames(prev => [...prev, ...nextBatch])
+      setDisplayedPosts(prev => [...prev, ...nextBatch])
       setPage(prev => prev + 1)
-      setHasMore(endIndex < sortedGames.length)
+      setHasMore(nextBatch.length === batchSize)
     } else {
       setHasMore(false)
     }
-  }, [page, sortedGames, loading, hasMore])
+  }, [page, loading, hasMore, loadPosts])
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !loading) {
-          loadMoreGames()
+          loadMorePosts()
         }
       },
       { threshold: 0.1, rootMargin: '100px' } // Start loading a bit before reaching the bottom
@@ -757,7 +990,7 @@ export default function Highlights() {
         observer.unobserve(currentTarget)
       }
     }
-  }, [loadMoreGames, hasMore, loading])
+  }, [loadMorePosts, hasMore, loading])
 
   // Show/hide scroll to top button
   useEffect(() => {
@@ -769,130 +1002,248 @@ export default function Highlights() {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
-  const handleGameClick = (gameId: string) => {
-    navigate(`/game/${gameId}`)
-  }
-
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   return (
     <Box sx={{ 
-      maxWidth: 1400, 
-      mx: 'auto', 
-      pt: { xs: 1, md: 2 }, 
-      pb: 2, 
-      px: { xs: 1, md: 2 } 
+      bgcolor: 'background.body',
+      minHeight: '100vh',
+      overflowX: 'hidden', // Prevent horizontal scroll
+      width: '100%',
     }}>
-      {/* Page Title */}
-      <Box sx={{ mb: 3, textAlign: 'center' }}>
-        <Typography 
-          level="h2" 
-          sx={{ 
-            fontFamily: '"Libre Baskerville", Georgia, serif',
-            fontWeight: 700,
-            mb: 1
-          }}
-        >
-          🎬 Game Highlights
-        </Typography>
-        <Typography level="body-md" color="neutral">
-          Relive the most epic moments from the NBA season
-        </Typography>
-      </Box>
+      {/* Posts Stories */}
+      <PostsStories 
+        posts={displayedPosts}
+        currentViewingPost={currentViewingPost || undefined}
+        currentSlideIndex={currentSlideIndex}
+        totalSlides={totalSlides}
+        onAvatarClick={scrollToPost}
+      />
 
-      {/* Floating Filter Bar (Instagram-style) */}
+      {/* Main Feed Container - Fixed width, loads structure first */}
       <Box sx={{ 
-        position: 'sticky', 
-        top: { xs: 56, md: 64 }, // Account for nav height
-        zIndex: 10,
-        mb: 2,
-        backdropFilter: 'blur(10px)',
-        bgcolor: 'background.body',
-        mx: -2,
-        px: 2,
-        py: 1,
-        borderBottom: '1px solid',
-        borderColor: 'divider'
+        maxWidth: { xs: '100%', sm: 805, md: 1035 }, // 15% wider
+        minWidth: { xs: '100%', sm: 805, md: 1035 }, // Fixed width
+        mx: 'auto', 
+        pt: { xs: '117px', md: '126px' },
+        pb: { xs: 0, md: 2 }, // No bottom padding on mobile 
+        px: { xs: 0, sm: 2, md: 2 }, // No horizontal padding on mobile for full-width posts
+        overflowX: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box',
       }}>
-        <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', '&::-webkit-scrollbar': { display: 'none' } }}>
-          <Chip 
-            size="sm" 
-            variant="solid" 
-            color="primary"
-            sx={{ flexShrink: 0 }}
-          >
-            🔥 All Games
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="danger"
-            sx={{ flexShrink: 0 }}
-          >
-            🎯 Buzzer Beaters
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="warning"
-            sx={{ flexShrink: 0 }}
-          >
-            ⚡ Close Games
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="success"
-            sx={{ flexShrink: 0 }}
-          >
-            💪 High Scoring
-          </Chip>
-          <Chip 
-            size="sm" 
-            variant="soft" 
-            color="neutral"
-            sx={{ flexShrink: 0 }}
-          >
-            📅 Recent
-          </Chip>
-        </Stack>
-      </Box>
-
-      {/* Initial Loading State */}
-      {loading && displayedGames.length === 0 && (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-          <Stack spacing={2} alignItems="center">
-            <CircularProgress size="lg" />
-            <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-              Loading epic games...
-            </Typography>
+      {/* Initial Loading State - Show skeleton grid immediately */}
+        {loading && displayedPosts.length === 0 && (
+        <Box sx={{ px: { xs: 0, md: 0 } }}>
+          <Stack spacing={{ xs: 4, md: 5 }}>
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Card
+                key={i}
+                variant="outlined"
+                sx={{
+                  height: { xs: 500, md: 600 },
+                  bgcolor: 'background.level1',
+                  border: '3px solid',
+                  borderColor: 'divider',
+                  borderRadius: 0,
+                  boxSizing: 'border-box',
+                  width: '100%',
+                  maxWidth: '100%',
+                  p: 1,
+                  animation: 'pulse 1.5s ease-in-out infinite',
+                  '@keyframes pulse': {
+                    '0%, 100%': { opacity: 0.6 },
+                    '50%': { opacity: 1 },
+                  }
+                }}
+              >
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'center', 
+                  alignItems: 'center', 
+                  height: '100%',
+                  flexDirection: 'column',
+                  gap: 2,
+                  bgcolor: 'background.level2',
+                  borderRadius: '12px',
+                }}>
+                  <CircularProgress size="lg" />
+                  <Typography level="body-sm" sx={{ fontFamily: 'serif', color: 'text.secondary' }}>
+                    Loading highlights...
+                  </Typography>
+                </Box>
+              </Card>
+            ))}
           </Stack>
         </Box>
       )}
 
-      {/* Games Feed - Pinterest/Instagram Style */}
-      {displayedGames.length > 0 && (
+        {/* Shuffling State - Skeleton Loader */}
+        {isShuffling && (
+          <Box sx={{ px: { xs: 0, md: 0 }, position: 'relative', zIndex: 10 }}>
+            <Stack spacing={{ xs: 4, md: 5 }}>
+              {[1, 2, 3].map((i) => (
+                <Card
+                  key={i}
+                  variant="outlined"
+                  sx={{
+                    height: { xs: 500, md: 600 },
+                    bgcolor: '#F5F1E8',
+                    border: '3px solid #000',
+                    borderRadius: 0,
+                    boxSizing: 'border-box',
+                    width: '100%',
+                    maxWidth: '100%',
+                    p: 1,
+                    animation: 'pulse 1.5s ease-in-out infinite',
+                    '@keyframes pulse': {
+                      '0%, 100%': { opacity: 0.6 },
+                      '50%': { opacity: 1 },
+                    }
+                  }}
+                >
+                  <Box sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    alignItems: 'center', 
+                    height: '100%',
+                    flexDirection: 'column',
+                    gap: 2,
+                    bgcolor: '#000',
+                    borderRadius: '12px',
+                  }}>
+                    <CircularProgress size="lg" sx={{ color: '#fff' }} />
+                    <Typography level="body-sm" sx={{ fontFamily: 'serif', color: '#fff' }}>
+                      Reshuffling deck...
+                    </Typography>
+                  </Box>
+                </Card>
+              ))}
+            </Stack>
+          </Box>
+        )}
+
+        {/* Posts Feed */}
+        {displayedPosts.length > 0 && !isShuffling && (
         <>
-          <Grid
-            container
-            spacing={{ xs: 1.5, sm: 2, md: 3 }}
+          <Stack
+            spacing={{ xs: 0, md: 5 }} // No spacing on mobile for full-screen posts
             sx={{
-              '--Grid-borderWidth': '0px',
+              width: '100%',
+              maxWidth: '100%',
+              boxSizing: 'border-box',
+              px: 0,
             }}
           >
-            {displayedGames.map((game, index) => (
-              <Grid
-                key={game.game_id}
-                xs={12}
-                sm={6}
-                md={4}
+              {displayedPosts.map((post, index) => {
+                // Check if this post is part of active playlist
+                const isInPlaylist = activePlaylist && post.game_id === activePlaylist
+                const prevPost = index > 0 ? displayedPosts[index - 1] : null
+                const isPrevInPlaylist = prevPost && activePlaylist && prevPost.game_id === activePlaylist
+                const showPathway = isInPlaylist && isPrevInPlaylist
+                const isCurrentPost = currentViewingPost === post.id
+                
+                return (
+                  <Box key={post.id}>
+                    {/* Visual Pathway Connector - Motion Blur Effect */}
+                    {showPathway && (
+                      <Box
+                        sx={{
+                          height: { xs: 24, md: 32 },
+              mx: 'auto',
+                          my: { xs: -1, md: -1.5 },
+              width: '100%',
+                          maxWidth: '100%',
+                          position: 'relative',
+                          zIndex: 5,
+                          overflow: 'hidden',
+                        }}
+                      >
+                        {/* Base white pathway */}
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: 0,
+                            right: 0,
+                            height: { xs: 4, md: 6 },
+                            transform: 'translateY(-50%)',
+                            background: 'linear-gradient(90deg, transparent, #FFFFFF 10%, #FFFFFF 90%, transparent)',
+                            opacity: 1,
+                          }}
+                        />
+                        
+                        {/* Motion blur layers */}
+                        {[0, 1, 2, 3, 4].map((i) => (
+                          <Box
+                            key={i}
+                            sx={{
+                              position: 'absolute',
+                              top: '50%',
+                              left: 0,
+                              right: 0,
+                              height: { xs: 8 + i * 2, md: 12 + i * 3 },
+                              transform: 'translateY(-50%)',
+                              background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15) 15%, rgba(255, 255, 255, 0.15) 85%, transparent)',
+                              opacity: 1 - i * 0.15,
+                              filter: `blur(${i * 2}px)`,
+                            }}
+                          />
+                        ))}
+                        
+                        {/* Gold accent glow */}
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: 0,
+                            right: 0,
+                            height: { xs: 16, md: 24 },
+                            transform: 'translateY(-50%)',
+                            background: 'linear-gradient(90deg, transparent, rgba(255, 199, 44, 0.3) 20%, rgba(255, 199, 44, 0.3) 80%, transparent)',
+                            filter: 'blur(8px)',
+                            animation: 'pathwayPulse 2s ease-in-out infinite',
+                            '@keyframes pathwayPulse': {
+                              '0%, 100%': { opacity: 0.4 },
+                              '50%': { opacity: 0.7 },
+                            }
+                          }}
+                        />
+                      </Box>
+                    )}
+                    
+                    <Box
+                      ref={(el) => {
+                        if (el) {
+                          postRefs.current.set(post.id, el as unknown as HTMLDivElement)
+                        } else {
+                          postRefs.current.delete(post.id)
+                        }
+                      }}
                 sx={{
                   // Staggered fade-in animation
                   animation: 'fadeInUp 0.5s ease-out',
-                  animationDelay: `${(index % 12) * 0.05}s`,
+                  animationDelay: `${index * 0.05}s`,
                   animationFillMode: 'both',
+                        // Playlist glow effect
+                        ...(isInPlaylist && {
+                          position: 'relative',
+                          '&::before': {
+                            content: '""',
+                            position: 'absolute',
+                            top: -4,
+                            left: -4,
+                            right: -4,
+                            bottom: -4,
+                            background: 'linear-gradient(45deg, #FFC72C, #FFD700)',
+                            borderRadius: '12px',
+                            opacity: 0.3,
+                            zIndex: -1,
+                            animation: 'glow 2s ease-in-out infinite',
+                          },
+                        }),
                   '@keyframes fadeInUp': {
                     from: {
                       opacity: 0,
@@ -902,18 +1253,34 @@ export default function Highlights() {
                       opacity: 1,
                       transform: 'translateY(0)'
                     }
+                        },
+                        '@keyframes glow': {
+                          '0%, 100%': { opacity: 0.2 },
+                          '50%': { opacity: 0.4 },
                   }
                 }}
               >
-                <GameCard 
-                  game={game} 
-                  onClick={() => handleGameClick(game.game_id)} 
-                  userId={user?.id}
-                  username={user?.email}
-                />
-              </Grid>
-            ))}
-          </Grid>
+                <LazyPostWrapper 
+                  postId={post.id}
+                  minHeight={isMobile() ? 'calc(100vh - 100px)' : '600px'}
+                  isCurrentlyViewing={currentViewingPost === post.id}
+                >
+                  <GameCard 
+                    game={post} 
+                    userId={user?.id}
+                    username={user?.email}
+                    onView={markPostAsViewed}
+                    onComplete={() => handlePostComplete(post.id)}
+                    onSlideChange={handleSlideChange}
+                    onVideoProgress={handleVideoProgress}
+                    isCurrentlyViewing={currentViewingPost === post.id}
+                  />
+                </LazyPostWrapper>
+              </Box>
+              </Box>
+            );
+          })}
+          </Stack>
 
           {/* Infinite Scroll Trigger & Loading Indicator */}
           <Box 
@@ -929,8 +1296,11 @@ export default function Highlights() {
             {hasMore ? (
               <Stack spacing={1} alignItems="center">
                 <CircularProgress size="md" />
-                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                  Loading more games...
+                  <Typography level="body-sm" sx={{ 
+                    color: 'text.secondary',
+                    fontFamily: 'serif' 
+                  }}>
+                    Loading more highlights...
                 </Typography>
               </Stack>
             ) : (
@@ -938,17 +1308,30 @@ export default function Highlights() {
                 <Typography level="h4" sx={{ fontSize: '2rem' }}>
                   🎉
                 </Typography>
-                <Typography level="title-lg" sx={{ textAlign: 'center' }}>
-                  You've watched all {allGames.length} games!
+                  <Typography level="title-lg" sx={{ 
+                    textAlign: 'center',
+                    fontFamily: 'serif',
+                    fontWeight: 900 
+                  }}>
+                    You've caught up!
                 </Typography>
-                <Typography level="body-sm" sx={{ color: 'text.secondary', textAlign: 'center' }}>
+                  <Typography level="body-sm" sx={{ 
+                    color: 'text.secondary', 
+                    textAlign: 'center',
+                    fontFamily: 'serif' 
+                  }}>
                   Check back later for more epic highlights
                 </Typography>
                 <Chip 
                   variant="soft" 
                   color="primary"
                   onClick={scrollToTop}
-                  sx={{ cursor: 'pointer', mt: 2 }}
+                    sx={{ 
+                      cursor: 'pointer', 
+                      mt: 2,
+                      fontFamily: 'serif',
+                      fontWeight: 700 
+                    }}
                 >
                   ⬆️ Back to Top
                 </Chip>
@@ -972,15 +1355,20 @@ export default function Highlights() {
             width: 56,
             height: 56,
             borderRadius: '50%',
-            boxShadow: 'lg',
+                  bgcolor: '#000',
+                  color: '#fff',
+                  border: '3px solid #000',
+                  boxShadow: '4px 4px 0px rgba(0,0,0,0.3)',
             animation: 'fadeIn 0.3s ease-out',
             '@keyframes fadeIn': {
               from: { opacity: 0, transform: 'scale(0.8)' },
               to: { opacity: 1, transform: 'scale(1)' }
             },
             '&:hover': {
-              transform: 'scale(1.1)',
-              transition: 'transform 0.2s'
+                    transform: 'translate(-2px, -2px)',
+                    boxShadow: '6px 6px 0px rgba(0,0,0,0.3)',
+                    transition: 'all 0.2s',
+                    bgcolor: '#333',
             }
           }}
         >
@@ -989,16 +1377,59 @@ export default function Highlights() {
       )}
 
       {/* Empty State */}
-      {!loading && displayedGames.length === 0 && (
-        <Box sx={{ textAlign: 'center', py: 8 }}>
-          <Typography level="h3" sx={{ mb: 2 }}>
-            No games found
+        {!loading && displayedPosts.length === 0 && (
+          <Box sx={{ textAlign: 'center', py: 8, px: 2 }}>
+            <Typography level="h3" sx={{ 
+              mb: 2,
+              fontFamily: 'serif',
+              fontWeight: 900 
+            }}>
+              No posts yet
           </Typography>
-          <Typography level="body-md" sx={{ color: 'text.secondary' }}>
-            Run the index generator to load games
+            <Typography level="body-md" sx={{ 
+              color: 'text.secondary',
+              fontFamily: 'serif' 
+            }}>
+              {user ? 'Check back soon for new highlights!' : 'Sign in to see personalized highlights'}
           </Typography>
         </Box>
       )}
+
+        {/* Floating Scroll to Top Button (Instagram-style) */}
+        {showScrollTop && (
+          <IconButton
+            variant="solid"
+            color="primary"
+            onClick={scrollToTop}
+            sx={{
+              position: 'fixed',
+              bottom: { xs: 16, md: 24 },
+              right: { xs: 16, md: 24 },
+              zIndex: 1000,
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              bgcolor: '#000',
+              color: '#fff',
+              border: '3px solid #000',
+              boxShadow: '4px 4px 0px rgba(0,0,0,0.3)',
+              animation: 'fadeIn 0.3s ease-out',
+              '@keyframes fadeIn': {
+                from: { opacity: 0, transform: 'scale(0.8)' },
+                to: { opacity: 1, transform: 'scale(1)' }
+              },
+              '&:hover': {
+                transform: 'translate(-2px, -2px)',
+                boxShadow: '6px 6px 0px rgba(0,0,0,0.3)',
+                transition: 'all 0.2s',
+                bgcolor: '#333',
+              }
+            }}
+          >
+            <KeyboardArrowUpIcon />
+          </IconButton>
+        )}
+      </Box>
     </Box>
   )
 }

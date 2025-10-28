@@ -427,7 +427,7 @@ export default function LineupsNew({ leagueId }: LineupsNewProps) {
                           cursor: 'pointer',
                           transition: 'all 0.2s',
                           '&:hover': {
-                            borderColor: '#1976d2',
+                            borderColor: '#000',
                             bgcolor: 'rgba(255,255,255,0.7)'
                           }
                         }}
@@ -485,7 +485,7 @@ export default function LineupsNew({ leagueId }: LineupsNewProps) {
                           cursor: 'pointer',
                           transition: 'all 0.2s',
                           '&:hover': {
-                            borderColor: '#1976d2',
+                            borderColor: '#000',
                             bgcolor: 'rgba(255,255,255,0.7)'
                           }
                         }}
@@ -565,7 +565,7 @@ export default function LineupsNew({ leagueId }: LineupsNewProps) {
                           cursor: 'pointer',
                           transition: 'all 0.2s',
                           '&:hover': {
-                            borderColor: '#1976d2',
+                            borderColor: '#000',
                             bgcolor: 'rgba(255,255,255,0.7)'
                           }
                         }}

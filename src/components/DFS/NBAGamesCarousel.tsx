@@ -7,6 +7,7 @@ import {
   CardContent,
   CardOverflow,
   IconButton,
+  Skeleton,
 } from '@mui/joy';
 import {
   NavigateBefore,
@@ -33,9 +34,64 @@ interface NBAGame {
 
 interface NBAGamesCarouselProps {
   games: NBAGame[];
+  isLoading?: boolean;
 }
 
-export default function NBAGamesCarousel({ games }: NBAGamesCarouselProps) {
+// Skeleton loader for game cards
+function GameCardSkeleton() {
+  return (
+    <Card orientation="horizontal" variant="outlined" sx={{ width: 220, height: 80 }}>
+      <CardOverflow>
+        <Box sx={{ 
+          width: 60,
+          height: '100%',
+          display: 'flex', 
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 0.25,
+          bgcolor: 'background.level1',
+          p: 0.5
+        }}>
+          <Skeleton variant="circular" width={26} height={26} />
+          <Skeleton width={20} height={10} />
+          <Skeleton variant="circular" width={26} height={26} />
+        </Box>
+      </CardOverflow>
+      
+      <CardContent sx={{ py: 0.75, px: 1 }}>
+        <Stack spacing={0.25}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Skeleton width={40} height={12} />
+            <Skeleton width={30} height={16} />
+          </Stack>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Skeleton width={40} height={12} />
+            <Skeleton width={30} height={16} />
+          </Stack>
+          <Skeleton width={60} height={10} sx={{ mt: 0.25 }} />
+        </Stack>
+      </CardContent>
+      
+      <CardOverflow
+        variant="soft"
+        sx={{
+          px: 0.15,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          borderLeft: '1px solid',
+          borderColor: 'divider',
+          minWidth: '16px'
+        }}
+      >
+        <Skeleton width={12} height={40} />
+      </CardOverflow>
+    </Card>
+  );
+}
+
+export default function NBAGamesCarousel({ games, isLoading = false }: NBAGamesCarouselProps) {
   const carouselRef = useRef<HTMLDivElement>(null);
   const [scrollPosition, setScrollPosition] = useState(0);
   const cardWidth = 220; // Width of each game card (smaller horizontal card)
@@ -70,6 +126,26 @@ export default function NBAGamesCarousel({ games }: NBAGamesCarouselProps) {
       setScrollPosition(carouselRef.current.scrollLeft);
     }
   };
+
+  // Show skeleton loader while loading
+  if (isLoading) {
+    return (
+      <Box sx={{ 
+        display: 'flex', 
+        gap: 1.5, 
+        overflowX: 'auto',
+        scrollbarWidth: 'thin',
+        px: 1,
+        py: 1
+      }}>
+        {[...Array(5)].map((_, index) => (
+          <Box key={index} sx={{ minWidth: cardWidth }}>
+            <GameCardSkeleton />
+          </Box>
+        ))}
+      </Box>
+    );
+  }
 
   if (games.length === 0) {
     return (

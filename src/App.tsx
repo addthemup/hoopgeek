@@ -2,7 +2,6 @@ import { Routes, Route, useParams } from 'react-router-dom'
 import { Box } from '@mui/joy'
 import Layout from './components/Layout'
 import Home from './pages/Home'
-import DFS from './pages/DFS'
 import DFSLineup from './pages/DFSLineup'
 import DFSPoolLeaderboard from './pages/DFSPoolLeaderboard'
 import JoinDFSPool from './pages/JoinDFSPool'
@@ -25,8 +24,9 @@ import CommissionerTools from './pages/CommissionerTools'
 import UserSettings from './pages/UserSettings'
 import PlayerPage from './pages/PlayerPage'
 
-// Import Highlights page
+// Import Highlights and Post pages
 import Highlights from './pages/Highlights'
+import Post from './pages/Post'
 
 // Import global draft manager service (auto-starts on import)
 import './services/draftManagerService'
@@ -108,15 +108,21 @@ function App() {
       width: '100%',
       maxWidth: '100vw',
       position: 'relative',
-      backgroundColor: 'var(--newsprint-bg)',
-      // Newspaper texture overlay
-      backgroundImage: `
+      backgroundColor: 'background.body',
+      // Newspaper texture overlay - adapts to dark/light mode
+      backgroundImage: (theme) => `
         repeating-linear-gradient(
           0deg,
           transparent,
           transparent 2px,
-          rgba(0,0,0,.015) 2px,
-          rgba(0,0,0,.015) 4px
+          ${theme.palette.mode === 'dark' 
+            ? 'rgba(255,255,255,.015)' 
+            : 'rgba(0,0,0,.015)'
+          } 2px,
+          ${theme.palette.mode === 'dark' 
+            ? 'rgba(255,255,255,.015)' 
+            : 'rgba(0,0,0,.015)'
+          } 4px
         )
       `,
       fontFamily: 'var(--joy-fontFamily-body)',
@@ -127,7 +133,9 @@ function App() {
         left: 0,
         right: 0,
         height: '3px',
-        background: 'linear-gradient(90deg, #000 0%, #000 33%, #8B0000 33%, #8B0000 34%, #000 34%, #000 100%)',
+        background: (theme) => theme.palette.mode === 'dark'
+          ? 'linear-gradient(90deg, #e8e6e0 0%, #e8e6e0 33%, #d32f2f 33%, #d32f2f 34%, #e8e6e0 34%, #e8e6e0 100%)'
+          : 'linear-gradient(90deg, #000 0%, #000 33%, #8B0000 33%, #8B0000 34%, #000 34%, #000 100%)',
         zIndex: 10000,
       }
     }}>
@@ -136,17 +144,18 @@ function App() {
         <Route path="/join/:inviteCode" element={<JoinLeague />} />
         
         <Route path="/" element={<Layout />}>
-          <Route index element={<Home />} />
+          <Route index element={<Highlights />} />
           <Route path="login" element={<Login />} />
           
-          {/* DFS Routes */}
-          <Route path="dfs" element={<DFS />} />
+          {/* DFS Routes - now combined with Today */}
+          <Route path="dfs" element={<Home />} />
           <Route path="dfs/join/:poolId" element={<JoinDFSPool />} />
           <Route path="dfs/lineup/:poolId" element={<DFSLineup />} />
           <Route path="dfs/pool/:poolId" element={<DFSPoolLeaderboard />} />
           
           {/* Game Highlights Routes */}
           <Route path="game/:id" element={<GamePage />} />
+          <Route path="post/:postId" element={<Post />} />
           
           {/* Fantasy Routes */}
           <Route path="fantasy" element={<Dashboard />} />
@@ -165,7 +174,7 @@ function App() {
           <Route path="draft/:id" element={<Draft />} />
           
           {/* New Feature Routes */}
-          <Route path="highlights" element={<Highlights />} />
+          <Route path="today" element={<Home />} />
           <Route path="analysis" element={<Analysis />} />
           <Route path="betting" element={<Betting />} />
           <Route path="community" element={<Community />} />

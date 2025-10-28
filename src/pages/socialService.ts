@@ -169,6 +169,7 @@ export class SocialService {
     likesCount: number
     commentsCount: number
     sharesCount: number
+    viewsCount: number
     userLiked: boolean
   }> {
     try {
@@ -190,6 +191,13 @@ export class SocialService {
         .select('*', { count: 'exact', head: true })
         .eq('content_id', contentId)
 
+      // Get views count from feed_posts
+      const { data: postData } = await supabase
+        .from('feed_posts')
+        .select('views_count')
+        .eq('id', contentId)
+        .single()
+
       // Check if current user has liked (you'll need to pass userId)
       const userLiked = false // This would need to be implemented with actual user auth
 
@@ -197,6 +205,7 @@ export class SocialService {
         likesCount: likesCount || 0,
         commentsCount: commentsCount || 0,
         sharesCount: sharesCount || 0,
+        viewsCount: postData?.views_count || 0,
         userLiked
       }
     } catch (error) {
@@ -205,6 +214,7 @@ export class SocialService {
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
+        viewsCount: 0,
         userLiked: false
       }
     }
@@ -215,7 +225,7 @@ export class SocialService {
    */
   static async shareToExternal(contentId: string, platform: 'twitter' | 'facebook' | 'copy'): Promise<void> {
     const baseUrl = window.location.origin
-    const shareUrl = `${baseUrl}/game/${contentId}`
+    const shareUrl = `${baseUrl}/post/${contentId}`
     const shareText = `Check out this epic NBA highlight! 🏀`
 
     switch (platform) {

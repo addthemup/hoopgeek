@@ -26,14 +26,17 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { useUserLeagues, useRefreshLeagues } from '../hooks/useUserLeagues'
 import { useDeleteLeague } from '../hooks/useDeleteLeague'
+import { useNBAScoreboard } from '../hooks/useNBAScoreboard'
 import { format } from 'date-fns'
 import { useState } from 'react'
 import LeagueCreationForm from '../components/LeagueCreationForm'
+import GamesAvatarBar from '../components/GamesAvatarBar'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: leagues, isLoading, isError, error } = useUserLeagues()
+  const { data: nbaScoreboard, isLoading: scoreboardLoading } = useNBAScoreboard()
   const refreshLeagues = useRefreshLeagues()
   const deleteLeagueMutation = useDeleteLeague()
   const [showCreateLeague, setShowCreateLeague] = useState(false)
@@ -77,38 +80,120 @@ export default function Dashboard() {
   // Show user-specific content when available
   if (!user) {
     return (
-      <Box sx={{ textAlign: 'center', py: 4 }}>
-        <Typography level="h2">Please sign in to access your dashboard</Typography>
-        <Button size="lg" onClick={() => navigate('/login')} sx={{ mt: 2 }}>
-          Sign In
-        </Button>
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <GamesAvatarBar 
+          games={nbaScoreboard?.games || []} 
+          isLoading={scoreboardLoading}
+        />
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          minWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto',
+          pt: { xs: '117px', md: '126px' },
+          pb: 2,
+          px: { xs: 2, sm: 2, md: 2 },
+          textAlign: 'center'
+        }}>
+          <Typography level="h2">Please sign in to access your dashboard</Typography>
+          <Button size="lg" onClick={() => navigate('/login')} sx={{ mt: 2 }}>
+            Sign In
+          </Button>
+        </Box>
       </Box>
     )
   }
 
   if (isLoading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
-        <CircularProgress size="lg" />
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <GamesAvatarBar 
+          games={nbaScoreboard?.games || []} 
+          isLoading={scoreboardLoading}
+        />
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          minWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto',
+          pt: { xs: '117px', md: '126px' },
+          pb: 2,
+          px: { xs: 2, sm: 2, md: 2 },
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          minHeight: '50vh'
+        }}>
+          <CircularProgress size="lg" />
+        </Box>
       </Box>
     )
   }
 
   if (isError) {
     return (
-      <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-        <Alert color="danger" sx={{ mb: 3 }}>
-          Error loading leagues: {error?.message || 'Unknown error'}
-        </Alert>
-        <Button onClick={() => window.location.reload()}>
-          Try Again
-        </Button>
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <GamesAvatarBar 
+          games={nbaScoreboard?.games || []} 
+          isLoading={scoreboardLoading}
+        />
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          minWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto',
+          pt: { xs: '117px', md: '126px' },
+          pb: 2,
+          px: { xs: 2, sm: 2, md: 2 },
+        }}>
+          <Alert color="danger" sx={{ mb: 3 }}>
+            Error loading leagues: {error?.message || 'Unknown error'}
+          </Alert>
+          <Button onClick={() => window.location.reload()}>
+            Try Again
+          </Button>
+        </Box>
       </Box>
     )
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+    <Box sx={{ 
+      bgcolor: 'background.body',
+      minHeight: '100vh',
+      overflowX: 'hidden',
+      width: '100%',
+    }}>
+      {/* Games Avatar Bar */}
+      <GamesAvatarBar 
+        games={nbaScoreboard?.games || []} 
+        isLoading={scoreboardLoading}
+      />
+
+      {/* Main Content Container - Fixed width */}
+      <Box sx={{ 
+        maxWidth: { xs: '100%', sm: 805, md: 1035 },
+        minWidth: { xs: '100%', sm: 805, md: 1035 },
+        mx: 'auto',
+        pt: { xs: '117px', md: '126px' },
+        pb: 2,
+        px: { xs: 2, sm: 2, md: 2 },
+        overflowX: 'hidden',
+        width: '100%',
+        boxSizing: 'border-box',
+      }}>
       <Typography level="h2" sx={{ mb: 3 }}>
         Dashboard
       </Typography>
@@ -282,6 +367,7 @@ export default function Dashboard() {
           </Card>
         )}
       </Stack>
+      </Box>
 
       {/* League Creation Form */}
       <LeagueCreationForm

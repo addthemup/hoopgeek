@@ -197,13 +197,13 @@ export default function DFSBasketballCourt({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 1,
-          p: 2,
+          gap: { xs: 0.5, sm: 1 },
+          p: { xs: 1, sm: 2 },
           borderRadius: 'md',
           bgcolor: isEmpty ? 'background.level1' : 'background.surface',
           border: '2px dashed',
           borderColor: isEmpty ? 'divider' : 'primary.outlinedBorder',
-          minWidth: 120,
+          minWidth: { xs: 80, sm: 120 },
           cursor: 'pointer',
           transition: 'all 0.2s',
           '&:hover': {
@@ -229,14 +229,14 @@ export default function DFSBasketballCourt({
           <>
             <Avatar
               sx={{
-                '--Avatar-size': '64px',
+                '--Avatar-size': { xs: '48px', sm: '64px' },
                 bgcolor: 'background.level2',
                 color: 'text.tertiary',
               }}
             >
               ?
             </Avatar>
-            <Typography level="body-sm" color="neutral">
+            <Typography level="body-sm" color="neutral" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
               Empty
             </Typography>
           </>
@@ -254,36 +254,51 @@ export default function DFSBasketballCourt({
                 }}
                 sx={{
                   position: 'absolute',
-                  top: 4,
-                  right: 4,
+                  top: 2,
+                  right: 2,
                   zIndex: 10,
+                  minWidth: { xs: 24, sm: 32 },
+                  minHeight: { xs: 24, sm: 32 },
                 }}
               >
-                <Close fontSize="small" />
+                <Close sx={{ fontSize: { xs: 14, sm: 18 } }} />
               </IconButton>
             )}
 
             {/* Player Avatar */}
             <Avatar
               src={player.avatar}
-              sx={{ '--Avatar-size': '64px' }}
+              sx={{ '--Avatar-size': { xs: '48px', sm: '64px' } }}
             >
               {player.name.charAt(0)}
             </Avatar>
 
             {/* Player Info */}
-            <Box sx={{ textAlign: 'center' }}>
-              <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+            <Box sx={{ textAlign: 'center', width: '100%', overflow: 'hidden' }}>
+              <Typography 
+                level="body-sm" 
+                sx={{ 
+                  fontWeight: 'bold',
+                  fontSize: { xs: '0.7rem', sm: '0.875rem' },
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
+                }}
+              >
                 {player.name.split(' ').pop()}
               </Typography>
-              <Typography level="body-xs" color="neutral">
+              <Typography 
+                level="body-xs" 
+                color="neutral"
+                sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+              >
                 {player.team}
               </Typography>
             </Box>
 
             {/* Salary */}
             {salary !== undefined && (
-              <Chip size="sm" variant="outlined">
+              <Chip size="sm" variant="outlined" sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}>
                 {formatSalary(salary)}
               </Chip>
             )}
@@ -321,8 +336,8 @@ export default function DFSBasketballCourt({
             sm: 'repeat(3, 1fr)',
             md: unit === 'starters' ? 'repeat(5, 1fr)' : 'repeat(3, 1fr)',
           },
-          gap: 2,
-          p: 3,
+          gap: { xs: 1, sm: 2 },
+          p: { xs: 1, sm: 2, md: 3 },
         }}
       >
         {players.map((player, index) =>
@@ -369,144 +384,226 @@ export default function DFSBasketballCourt({
         setGameFilter(null);
         setSalaryFilter(null);
       }}>
-        <ModalDialog sx={{ minWidth: 500, maxWidth: 600, maxHeight: '80vh' }}>
+        <ModalDialog sx={{ 
+          width: { xs: '100vw', sm: 500 },
+          maxWidth: { xs: '100vw', sm: 600 },
+          height: { xs: '100vh', sm: 'auto' },
+          maxHeight: { xs: '100vh', sm: '85vh' },
+          p: { xs: 1.25, sm: 3 },
+          m: { xs: 0, sm: 2 },
+          borderRadius: { xs: 0, sm: 'md' },
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
           <ModalClose />
-          <Typography level="h4" sx={{ mb: 2 }}>
-            Select Player {selectedSlot && `for ${selectedSlot.position}`}
-          </Typography>
-
-          {/* Search */}
-          <Input
-            placeholder="Search players..."
-            startDecorator={<Search />}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            sx={{ mb: 2 }}
-          />
-
-          {/* Game/Matchup Filter */}
-          <Box sx={{ mb: 2 }}>
-            <Typography level="body-sm" sx={{ mb: 1, fontWeight: 'bold' }}>
-              Filter by Game
+          <Box sx={{ 
+            width: '100%', 
+            maxWidth: '100%', 
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0
+          }}>
+            <Typography level="h4" sx={{ mb: 1, fontSize: { xs: '1.1rem', sm: '1.5rem' }, pr: 4, flexShrink: 0 }}>
+              {selectedSlot ? `${selectedSlot.position}` : 'Select Player'}
             </Typography>
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-              <Chip
-                size="sm"
-                variant={gameFilter === null ? 'solid' : 'outlined'}
-                onClick={() => setGameFilter(null)}
-                sx={{ cursor: 'pointer' }}
-              >
-                All Games
-              </Chip>
-              {matchups.map((matchup) => (
+
+            {/* Search */}
+            <Input
+              placeholder="Search..."
+              startDecorator={<Search />}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              size="sm"
+              sx={{ mb: 1, width: '100%', maxWidth: '100%', flexShrink: 0 }}
+            />
+
+            {/* Game/Matchup Filter */}
+            <Box sx={{ mb: 1, width: '100%', maxWidth: '100%', overflow: 'hidden', flexShrink: 0 }}>
+              <Typography level="body-sm" sx={{ mb: 0.5, fontWeight: 'bold', fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
+                Game
+              </Typography>
+              <Box sx={{ 
+                display: 'flex', 
+                gap: 0.5, 
+                overflowX: 'auto',
+                pb: 0.5,
+                width: '100%',
+                maxWidth: '100%',
+                '&::-webkit-scrollbar': { height: 4 },
+                '&::-webkit-scrollbar-thumb': { bgcolor: 'neutral.300', borderRadius: 2 }
+              }}>
                 <Chip
-                  key={matchup.id}
                   size="sm"
-                  variant={gameFilter === matchup.id ? 'solid' : 'outlined'}
-                  onClick={() => setGameFilter(matchup.id)}
-                  sx={{ cursor: 'pointer' }}
+                  variant={gameFilter === null ? 'solid' : 'outlined'}
+                  onClick={() => setGameFilter(null)}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
                 >
-                  {matchup.label}
+                  All
                 </Chip>
-              ))}
+                {matchups.map((matchup) => (
+                  <Chip
+                    key={matchup.id}
+                    size="sm"
+                    variant={gameFilter === matchup.id ? 'solid' : 'outlined'}
+                    onClick={() => setGameFilter(matchup.id)}
+                    sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                  >
+                    {matchup.label}
+                  </Chip>
+                ))}
+              </Box>
             </Box>
-          </Box>
 
-          {/* Salary Filter */}
-          <Box sx={{ mb: 2 }}>
-            <Typography level="body-sm" sx={{ mb: 1, fontWeight: 'bold' }}>
-              Filter by Salary
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-              <Chip
-                size="sm"
-                variant={salaryFilter === null ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter(null)}
-                sx={{ cursor: 'pointer' }}
-              >
-                All
-              </Chip>
-              <Chip
-                size="sm"
-                variant={salaryFilter === '<10M' ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter('<10M')}
-                sx={{ cursor: 'pointer' }}
-              >
-                &lt; $10M
-              </Chip>
-              <Chip
-                size="sm"
-                variant={salaryFilter === '10-20M' ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter('10-20M')}
-                sx={{ cursor: 'pointer' }}
-              >
-                $10-20M
-              </Chip>
-              <Chip
-                size="sm"
-                variant={salaryFilter === '20-30M' ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter('20-30M')}
-                sx={{ cursor: 'pointer' }}
-              >
-                $20-30M
-              </Chip>
-              <Chip
-                size="sm"
-                variant={salaryFilter === '30-40M' ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter('30-40M')}
-                sx={{ cursor: 'pointer' }}
-              >
-                $30-40M
-              </Chip>
-              <Chip
-                size="sm"
-                variant={salaryFilter === '>40M' ? 'solid' : 'outlined'}
-                onClick={() => setSalaryFilter('>40M')}
-                sx={{ cursor: 'pointer' }}
-              >
-                &gt; $40M
-              </Chip>
+            {/* Salary Filter */}
+            <Box sx={{ mb: 1, width: '100%', maxWidth: '100%', overflow: 'hidden', flexShrink: 0 }}>
+              <Typography level="body-sm" sx={{ mb: 0.5, fontWeight: 'bold', fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
+                Salary
+              </Typography>
+              <Box sx={{ 
+                display: 'flex', 
+                gap: 0.5, 
+                overflowX: 'auto',
+                pb: 0.5,
+                width: '100%',
+                maxWidth: '100%',
+                '&::-webkit-scrollbar': { height: 4 },
+                '&::-webkit-scrollbar-thumb': { bgcolor: 'neutral.300', borderRadius: 2 }
+              }}>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === null ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter(null)}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  All
+                </Chip>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === '<10M' ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter('<10M')}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  &lt; 10M
+                </Chip>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === '10-20M' ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter('10-20M')}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  10-20M
+                </Chip>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === '20-30M' ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter('20-30M')}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  20-30M
+                </Chip>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === '30-40M' ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter('30-40M')}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  30-40M
+                </Chip>
+                <Chip
+                  size="sm"
+                  variant={salaryFilter === '>40M' ? 'solid' : 'outlined'}
+                  onClick={() => setSalaryFilter('>40M')}
+                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
+                >
+                  &gt; 40M
+                </Chip>
+              </Box>
             </Box>
-          </Box>
 
-          {/* Player List */}
-          <Sheet sx={{ flex: 1, overflow: 'auto', borderRadius: 'sm' }}>
-            <List size="sm">
-              {filteredAvailablePlayers.length === 0 ? (
-                <Box sx={{ p: 3, textAlign: 'center' }}>
-                  <Typography level="body-sm" color="neutral">
-                    No available players found
-                  </Typography>
-                </Box>
-              ) : (
-                filteredAvailablePlayers.map((player) => {
-                  const playerSalary = availablePlayersSalaries?.[player.id] || 0;
-                  return (
-                    <ListItem key={player.id}>
-                      <ListItemButton onClick={() => handlePlayerSelect(player)}>
-                        <ListItemDecorator>
-                          <Avatar src={player.avatar} size="sm">
-                            {player.name.charAt(0)}
-                          </Avatar>
-                        </ListItemDecorator>
-                        <ListItemContent>
-                          <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                            {player.name}
+            {/* Player List */}
+            <Sheet sx={{ 
+              flex: 1, 
+              overflow: 'auto', 
+              borderRadius: 'sm',
+              minHeight: 0,
+              width: '100%'
+            }}>
+              <List size="sm" sx={{ width: '100%', maxWidth: '100%' }}>
+                {filteredAvailablePlayers.length === 0 ? (
+                  <Box sx={{ p: 3, textAlign: 'center' }}>
+                    <Typography level="body-sm" color="neutral">
+                      No available players found
+                    </Typography>
+                  </Box>
+                ) : (
+                  filteredAvailablePlayers.map((player) => {
+                    const playerSalary = availablePlayersSalaries?.[player.id] || 0;
+                    const salaryFormatted = formatSalary(playerSalary);
+                    return (
+                      <ListItem key={player.id} sx={{ px: 0, width: '100%', maxWidth: '100%' }}>
+                        <ListItemButton 
+                          onClick={() => handlePlayerSelect(player)} 
+                          sx={{ 
+                            py: { xs: 0.75, sm: 1.5 },
+                            px: { xs: 1, sm: 2 },
+                            gap: { xs: 1, sm: 1.5 },
+                            width: '100%',
+                            maxWidth: '100%',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          <ListItemDecorator sx={{ minWidth: 'auto' }}>
+                            <Avatar 
+                              src={player.avatar} 
+                              size="sm" 
+                              sx={{ width: { xs: 30, sm: 40 }, height: { xs: 30, sm: 40 } }}
+                            >
+                              {player.name.charAt(0)}
+                            </Avatar>
+                          </ListItemDecorator>
+                          <ListItemContent sx={{ minWidth: 0, overflow: 'hidden' }}>
+                            <Typography 
+                              level="body-sm" 
+                              sx={{ 
+                                fontWeight: 'bold', 
+                                fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}
+                            >
+                              {player.name}
+                            </Typography>
+                            <Typography 
+                              level="body-xs" 
+                              color="neutral" 
+                              sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                            >
+                              {player.position} • {player.team}
+                            </Typography>
+                          </ListItemContent>
+                          <Typography 
+                            level="body-sm" 
+                            sx={{ 
+                              fontWeight: 'bold', 
+                              fontSize: { xs: '0.7rem', sm: '0.875rem' }, 
+                              flexShrink: 0,
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {salaryFormatted}
                           </Typography>
-                          <Typography level="body-xs" color="neutral">
-                            {player.position} • {player.team}
-                          </Typography>
-                        </ListItemContent>
-                        <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                          {formatSalary(playerSalary)}
-                        </Typography>
-                      </ListItemButton>
-                    </ListItem>
-                  );
-                })
-              )}
-            </List>
-          </Sheet>
+                        </ListItemButton>
+                      </ListItem>
+                    );
+                  })
+                )}
+              </List>
+            </Sheet>
+          </Box>
         </ModalDialog>
       </Modal>
     </>

@@ -31,7 +31,7 @@ interface PoolDetailsModalProps {
   poolId: string | null;
   open: boolean;
   onClose: () => void;
-  initialView?: 'details' | 'leaderboard' | 'entry';
+  initialView?: 'details' | 'leaderboard' | 'entry' | 'lineup-builder';
   entryId?: string | null;
 }
 
