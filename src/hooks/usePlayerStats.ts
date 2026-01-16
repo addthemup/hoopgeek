@@ -128,7 +128,7 @@ export function usePlayerStats(playerId: string) {
           .from('nba_players')
           .select('*')
           .eq('id', playerId)
-          .single();
+          .maybeSingle();
 
         if (playerError) {
           console.error('❌ Error fetching player data:', playerError);
@@ -144,7 +144,7 @@ export function usePlayerStats(playerId: string) {
           .from('player_career_totals_regular_season')
           .select('*')
           .eq('player_id', playerId)
-          .single();
+          .maybeSingle();
 
         // Fetch season breakdown (last 5 seasons)
         const { data: seasonBreakdownData, error: seasonError } = await supabase

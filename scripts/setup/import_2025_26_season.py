@@ -8,9 +8,21 @@ Designed to run as a nightly cron job at 3-4 AM EST to keep schedule updated
 
 import os
 import sys
+import argparse
 import requests
 from datetime import datetime
 from supabase import create_client, Client
+
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Try multiple common env file locations
+    load_dotenv('.env.local')
+    load_dotenv('.env')
+except ImportError:
+    pass  # dotenv not installed, skip
+except:
+    pass  # File not found, skip
 
 # Official NBA schedule JSON URL
 NBA_SCHEDULE_URL = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_9.json"
@@ -50,9 +62,19 @@ def fetch_nba_schedule():
         print(f"❌ Error parsing JSON: {e}")
         sys.exit(1)
 
-def parse_schedule_data(schedule_data):
+def parse_schedule_data(schedule_data, start_date=None, end_date=None):
     """Parse the NBA schedule JSON and convert to our database format"""
     print("📊 Parsing schedule data...")
+    
+    start_date_obj = None
+    end_date_obj = None
+    
+    if start_date:
+        start_date_obj = datetime.fromisoformat(start_date.split('T')[0])
+        print(f"  📅 Filtering games from {start_date} onwards")
+    if end_date:
+        end_date_obj = datetime.fromisoformat(end_date.split('T')[0])
+        print(f"  📅 Filtering games up to {end_date} (inclusive)")
     
     league_schedule = schedule_data.get('leagueSchedule', {})
     season_year = league_schedule.get('seasonYear', '2025-26')
@@ -101,9 +123,20 @@ def parse_schedule_data(schedule_data):
             if game_datetime_str:
                 # Already in ISO format
                 game_datetime = game_datetime_str
+                # Extract date portion for filtering
+                game_date_str = game_datetime_str.split('T')[0]
+                game_date_obj = datetime.fromisoformat(game_date_str)
             else:
                 # Fallback
                 game_datetime = datetime.now().isoformat()
+                game_date_obj = datetime.now()
+            
+            # Filter by date range if specified (compare dates only)
+            game_date_only = game_date_obj.date()
+            if start_date and game_date_only < start_date_obj.date():
+                continue
+            if end_date and game_date_only > end_date_obj.date():
+                continue
             
             # Determine week number
             week_number = game.get('weekNumber', 0)
@@ -191,9 +224,27 @@ def import_to_database(supabase, games, season_weeks):
         return False
 
 def main():
+    parser = argparse.ArgumentParser(
+        description='Import NBA games for the 2025-26 season from official NBA schedule JSON'
+    )
+    parser.add_argument(
+        '--start-date',
+        type=str,
+        help='Start date for filtering games (YYYY-MM-DD format, inclusive)'
+    )
+    parser.add_argument(
+        '--end-date',
+        type=str,
+        help='End date for filtering games (YYYY-MM-DD format, inclusive)'
+    )
+    
+    args = parser.parse_args()
+    
     print("=" * 80)
     print("🚀 NBA Schedule Import - 2025-26 Season")
     print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    if args.start_date or args.end_date:
+        print(f"📅 Date range: {args.start_date or 'beginning'} to {args.end_date or 'end'}")
     print("=" * 80)
     
     # Setup
@@ -204,7 +255,7 @@ def main():
     schedule_data = fetch_nba_schedule()
     
     # Parse the data
-    games, season_weeks = parse_schedule_data(schedule_data)
+    games, season_weeks = parse_schedule_data(schedule_data, args.start_date, args.end_date)
     
     if not games:
         print("❌ No games to import!")

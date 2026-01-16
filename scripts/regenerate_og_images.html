@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Regenerate OG Images</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+    }
+    button {
+      background: #007AFF;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #0056CC;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .log {
+      margin-top: 20px;
+      padding: 10px;
+      background: #f5f5f5;
+      border-radius: 4px;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .success { color: green; }
+    .error { color: red; }
+    .info { color: blue; }
+  </style>
+</head>
+<body>
+  <h1>Regenerate OG Images for Existing Posts</h1>
+  <p>This will generate OG images for all posts that don't have a <code>share_image_url</code>.</p>
+  
+  <button id="regenerateBtn" onclick="regenerateOGImages()">Regenerate OG Images</button>
+  <button onclick="checkPosts()">Check Posts</button>
+  
+  <div id="log" class="log"></div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+    
+    // Replace with your Supabase credentials
+    const SUPABASE_URL = 'https://qbznyaimnrpibmahisue.supabase.co'
+    const SUPABASE_ANON_KEY = prompt('Enter your Supabase anon key:')
+    
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    
+    window.supabase = supabase
+    
+    function log(message, type = 'info') {
+      const logEl = document.getElementById('log')
+      const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info'
+      logEl.innerHTML += `<div class="${className}">[${new Date().toLocaleTimeString()}] ${message}</div>`
+      logEl.scrollTop = logEl.scrollHeight
+    }
+    
+    window.checkPosts = async () => {
+      log('Checking posts...')
+      const { data: posts, error } = await supabase
+        .from('feed_posts')
+        .select('id, title, team_tricodes, player_ids, share_image_url')
+        .order('created_at', { ascending: false })
+        .limit(25)
+      
+      if (error) {
+        log(`Error: ${error.message}`, 'error')
+        return
+      }
+      
+      const withoutOG = posts.filter(p => !p.share_image_url)
+      const withTeamsOrPlayers = posts.filter(p => 
+        (p.team_tricodes && p.team_tricodes.length >= 2) || 
+        (p.player_ids && p.player_ids.length > 0)
+      )
+      
+      log(`Total posts: ${posts.length}`)
+      log(`Posts without OG image: ${withoutOG.length}`)
+      log(`Posts with teams/players: ${withTeamsOrPlayers.length}`)
+      
+      log('\nPosts that need OG images:')
+      withoutOG.forEach(p => {
+        const hasTeams = p.team_tricodes && p.team_tricodes.length >= 2
+        const hasPlayers = p.player_ids && p.player_ids.length > 0
+        if (hasTeams || hasPlayers) {
+          log(`- ${p.id.substring(0, 8)}... ${hasTeams ? 'teams' : ''} ${hasPlayers ? 'players' : ''}`)
+        }
+      })
+    }
+    
+    window.regenerateOGImages = async () => {
+      const btn = document.getElementById('regenerateBtn')
+      btn.disabled = true
+      log('Starting OG image regeneration...', 'info')
+      
+      // Get posts without OG images that have team/player data
+      const { data: posts, error } = await supabase
+        .from('feed_posts')
+        .select('id, title, team_tricodes, player_ids, metadata, game_date')
+        .is('share_image_url', null)
+        .or('team_tricodes.neq.{},player_ids.neq.{}')
+        .order('created_at', { ascending: false })
+        .limit(100)
+      
+      if (error) {
+        log(`Error fetching posts: ${error.message}`, 'error')
+        btn.disabled = false
+        return
+      }
+      
+      log(`Found ${posts.length} posts to process`)
+      
+      let success = 0
+      let failed = 0
+      
+      for (const post of posts) {
+        const hasTeams = post.team_tricodes && post.team_tricodes.length >= 2
+        const hasPlayers = post.player_ids && post.player_ids.length > 0
+        
+        if (!hasTeams && !hasPlayers) {
+          log(`⏭️ Skipping ${post.id.substring(0, 8)}... (no teams or players)`, 'info')
+          continue
+        }
+        
+        try {
+          log(`Generating OG image for ${post.id.substring(0, 8)}...`, 'info')
+          
+          const { data, error: funcError } = await supabase.functions.invoke('generate-og-image', {
+            body: {
+              post_id: post.id,
+              team_tricodes: post.team_tricodes || null,
+              player_ids: post.player_ids || null,
+              metadata: post.metadata || null,
+              game_date: post.game_date || null,
+              title: post.title || null
+            }
+          })
+          
+          if (funcError) {
+            log(`❌ Failed: ${funcError.message}`, 'error')
+            failed++
+          } else if (data?.og_image_url) {
+            log(`✅ Success: ${data.og_image_url}`, 'success')
+            success++
+          } else {
+            log(`⚠️ No URL returned`, 'error')
+            failed++
+          }
+          
+          // Rate limit - wait 500ms between requests
+          await new Promise(resolve => setTimeout(resolve, 500))
+        } catch (err) {
+          log(`❌ Error: ${err.message}`, 'error')
+          failed++
+        }
+      }
+      
+      log(`\n✅ Complete! Success: ${success}, Failed: ${failed}`, success > 0 ? 'success' : 'error')
+      btn.disabled = false
+    }
+  </script>
+</body>
+</html>
+

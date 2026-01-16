@@ -2,8 +2,6 @@ import { useState } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   Stack,
   Button,
   Input,
@@ -14,7 +12,6 @@ import {
   Chip,
   Table,
   Sheet,
-  Divider,
   Modal,
   ModalDialog,
   ModalClose,
@@ -27,7 +24,6 @@ import {
   Remove,
   TrendingUp,
   TrendingDown,
-  Verified,
   Warning,
   Info,
 } from '@mui/icons-material';
@@ -113,54 +109,21 @@ export default function WalletTab() {
     return new Date(dateString).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
     });
   };
 
-  const getTransactionTypeColor = (type: string) => {
-    switch (type) {
-      case 'deposit':
-        return 'success';
-      case 'withdrawal':
-        return 'warning';
-      case 'contest_entry':
-        return 'neutral';
-      case 'contest_win':
-        return 'success';
-      case 'bonus':
-        return 'primary';
-      default:
-        return 'neutral';
-    }
-  };
-
   const getTransactionTypeIcon = (type: string) => {
     switch (type) {
       case 'deposit':
-        return <TrendingUp />;
+        return <TrendingUp fontSize="small" />;
       case 'withdrawal':
-        return <TrendingDown />;
+        return <TrendingDown fontSize="small" />;
       case 'contest_win':
-        return <TrendingUp />;
+        return <TrendingUp fontSize="small" />;
       default:
-        return <Info />;
-    }
-  };
-
-  const getStatusColor = (status: string): 'success' | 'warning' | 'danger' | 'neutral' => {
-    switch (status) {
-      case 'completed':
-        return 'success';
-      case 'pending':
-      case 'processing':
-        return 'warning';
-      case 'failed':
-      case 'cancelled':
-        return 'danger';
-      default:
-        return 'neutral';
+        return <Info fontSize="small" />;
     }
   };
 
@@ -178,8 +141,10 @@ export default function WalletTab() {
 
   if (!user) {
     return (
-      <Box sx={{ p: 3, textAlign: 'center' }}>
-        <Typography>Please log in to view your wallet</Typography>
+      <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Typography sx={{ color: '#666' }}>
+          Please log in to view your wallet
+        </Typography>
       </Box>
     );
   }
@@ -187,43 +152,43 @@ export default function WalletTab() {
   if (walletLoading) {
     return (
       <Box sx={{ p: 3, display: 'flex', justifyContent: 'center' }}>
-        <CircularProgress />
+        <CircularProgress size="sm" />
       </Box>
     );
   }
 
   return (
-    <Box>
+    <Stack spacing={2}>
       {/* KYC Warning */}
       {!wallet?.kyc_verified && (
         <Alert
           color="warning"
           startDecorator={<Warning />}
+          variant="soft"
           sx={{
-            mb: 3,
-            border: '2px solid #000',
-            borderRadius: 0,
-            bgcolor: '#FFC72C',
-            color: '#000',
+            bgcolor: 'rgba(234, 179, 8, 0.2)',
+            color: '#FFC72C',
+            fontSize: '0.8rem',
           }}
         >
           <Box>
-            <Typography level="title-md" sx={{ fontWeight: 900, fontFamily: 'serif' }}>
+            <Typography level="title-sm" sx={{ fontWeight: 700, mb: 0.5 }}>
               Verify Your Identity
             </Typography>
-            <Typography level="body-sm" sx={{ fontWeight: 'bold', fontFamily: 'serif' }}>
-              Complete identity verification to enable withdrawals. This is required by law for real-money gaming.
+            <Typography level="body-xs">
+              Complete identity verification to enable withdrawals.
             </Typography>
             <Button
               size="sm"
               sx={{
                 mt: 1,
-                bgcolor: '#000',
-                color: '#fff',
-                borderRadius: 0,
-                border: '2px solid #000',
-                fontFamily: 'serif',
-                fontWeight: 900,
+                bgcolor: '#FFC72C',
+                color: '#000',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                '&:hover': {
+                  bgcolor: '#FFD700',
+                }
               }}
             >
               Verify Identity
@@ -232,137 +197,101 @@ export default function WalletTab() {
         </Alert>
       )}
 
-      {/* Balance Cards */}
-      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 3 }}>
-        {/* Total Balance */}
-        <Card
-          variant="outlined"
+      {/* Balance Cards - Compact */}
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+        <Box
           sx={{
             flex: 1,
-            border: '3px solid #000',
-            borderRadius: 0,
-            boxShadow: '4px 4px 0px #000',
-            bgcolor: '#fff',
+            bgcolor: 'rgba(255, 199, 44, 0.1)',
+            p: 1.5,
+            borderRadius: '8px',
+            border: '1px solid rgba(255, 199, 44, 0.3)',
           }}
         >
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-              <Box>
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+          <Typography level="body-xs" sx={{ color: '#FFC72C', fontWeight: 600, mb: 0.5 }}>
                   Total Balance
                 </Typography>
-                <Typography level="h2" sx={{ fontFamily: 'serif', fontWeight: 900, fontSize: '2.5rem' }}>
+          <Typography level="h3" sx={{ color: '#FFC72C', fontWeight: 700, fontSize: '1.5rem' }}>
                   ${wallet?.total_balance || '0.00'}
                 </Typography>
               </Box>
-              <AccountBalanceWallet sx={{ fontSize: 40, color: '#000' }} />
-            </Stack>
-          </CardContent>
-        </Card>
 
-        {/* Withdrawable Balance */}
-        <Card
-          variant="outlined"
+        <Box
           sx={{
             flex: 1,
-            border: '3px solid #000',
-            borderRadius: 0,
-            boxShadow: '4px 4px 0px #000',
-            bgcolor: '#16A34A',
-            color: '#fff',
+            bgcolor: 'rgba(34, 197, 94, 0.1)',
+            p: 1.5,
+            borderRadius: '8px',
+            border: '1px solid rgba(34, 197, 94, 0.3)',
           }}
         >
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-              <Box>
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', mb: 0.5, color: '#fff' }}>
+          <Typography level="body-xs" sx={{ color: '#22c55e', fontWeight: 600, mb: 0.5 }}>
                   Withdrawable
                 </Typography>
-                <Typography level="h2" sx={{ fontFamily: 'serif', fontWeight: 900, fontSize: '2.5rem', color: '#fff' }}>
+          <Typography level="h3" sx={{ color: '#22c55e', fontWeight: 700, fontSize: '1.5rem' }}>
                   ${wallet?.withdrawable_balance || '0.00'}
                 </Typography>
               </Box>
-              <TrendingUp sx={{ fontSize: 40, color: '#fff' }} />
-            </Stack>
-          </CardContent>
-        </Card>
 
-        {/* Bonus Balance */}
-        <Card
-          variant="outlined"
+        <Box
           sx={{
             flex: 1,
-            border: '3px solid #000',
-            borderRadius: 0,
-            boxShadow: '4px 4px 0px #000',
-            bgcolor: '#FFC72C',
-            color: '#000',
+            bgcolor: 'rgba(59, 130, 246, 0.1)',
+            p: 1.5,
+            borderRadius: '8px',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
           }}
         >
-          <CardContent>
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-              <Box>
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 700, textTransform: 'uppercase', mb: 0.5 }}>
+          <Typography level="body-xs" sx={{ color: '#3b82f6', fontWeight: 600, mb: 0.5 }}>
                   Bonus
                 </Typography>
-                <Typography level="h2" sx={{ fontFamily: 'serif', fontWeight: 900, fontSize: '2.5rem' }}>
+          <Typography level="h3" sx={{ color: '#3b82f6', fontWeight: 700, fontSize: '1.5rem' }}>
                   ${wallet?.bonus_balance || '0.00'}
                 </Typography>
               </Box>
-              <Info sx={{ fontSize: 40 }} />
-            </Stack>
-          </CardContent>
-        </Card>
       </Stack>
 
-      {/* Action Buttons */}
-      <Stack direction="row" spacing={2} sx={{ mb: 3 }}>
+      {/* Action Buttons - Compact */}
+      <Stack direction="row" spacing={1.5}>
         <Button
-          size="lg"
+          size="sm"
           startDecorator={<Add />}
           onClick={() => setDepositModalOpen(true)}
           sx={{
             flex: 1,
-            borderRadius: 0,
-            border: '3px solid #000',
-            bgcolor: '#16A34A',
+            bgcolor: '#22c55e',
             color: '#fff',
-            fontFamily: 'serif',
-            fontWeight: 900,
-            fontSize: '1.1rem',
-            py: 1.5,
+            fontWeight: 600,
+            borderRadius: '8px',
             '&:hover': {
-              bgcolor: '#15803d',
-              transform: 'translate(-2px, -2px)',
-              boxShadow: '4px 4px 0px #000',
+              bgcolor: '#16a34a',
+              transform: 'translateY(-1px)',
+              boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
             },
           }}
         >
           Deposit
         </Button>
         <Button
-          size="lg"
+          size="sm"
           startDecorator={<Remove />}
           onClick={() => setWithdrawModalOpen(true)}
           disabled={!wallet?.kyc_verified}
           sx={{
             flex: 1,
-            borderRadius: 0,
-            border: '3px solid #000',
-            bgcolor: '#000',
-            color: '#fff',
-            fontFamily: 'serif',
-            fontWeight: 900,
-            fontSize: '1.1rem',
-            py: 1.5,
+            bgcolor: '#ffffff',
+            color: '#333',
+            border: '1px solid #d0d0d0',
+            fontWeight: 600,
+            borderRadius: '8px',
             '&:hover': {
-              bgcolor: '#333',
-              transform: 'translate(-2px, -2px)',
-              boxShadow: '4px 4px 0px #000',
+              bgcolor: '#f5f5f5',
+              borderColor: '#b0b0b0',
             },
             '&:disabled': {
-              bgcolor: '#666',
+              bgcolor: '#f5f5f5',
               color: '#999',
+              borderColor: '#e0e0e0',
             },
           }}
         >
@@ -372,46 +301,42 @@ export default function WalletTab() {
 
       {/* Transaction History */}
       <Box>
-        <Typography level="h3" sx={{ fontFamily: 'serif', fontWeight: 900, mb: 2, textTransform: 'uppercase' }}>
-          Transaction History
+        <Typography level="title-sm" sx={{ color: '#000', fontWeight: 700, mb: 1.5 }}>
+          Recent Transactions
         </Typography>
         
         {transactionsLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
+          <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
+            <CircularProgress size="sm" />
           </Box>
         ) : transactions && transactions.length > 0 ? (
           <Sheet
-            variant="outlined"
+            variant="plain"
             sx={{
-              border: '3px solid #000',
-              borderRadius: 0,
-              boxShadow: '4px 4px 0px #000',
-              overflow: 'auto',
+              borderRadius: '8px',
+              overflow: 'hidden',
+              bgcolor: '#ffffff',
+              border: '1px solid #e0e0e0',
             }}
           >
             <Table
-              stickyHeader
+              size="sm"
               sx={{
                 '& thead th': {
-                  bgcolor: '#000',
-                  color: '#fff',
-                  fontFamily: 'serif',
-                  fontWeight: 900,
-                  textTransform: 'uppercase',
-                  borderBottom: '3px solid #000',
-                  fontSize: '0.75rem',
+                  bgcolor: '#f8f9fa',
+                  color: '#000',
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  py: 1.5,
+                  borderBottom: '1px solid #e0e0e0',
                 },
                 '& tbody td': {
-                  borderBottom: '2px solid #000',
-                  fontFamily: 'serif',
                   py: 1.5,
+                  fontSize: '0.875rem',
+                  color: '#000',
                 },
                 '& tbody tr:hover': {
-                  bgcolor: '#f0f0f0',
-                },
-                '& tbody tr:last-child td': {
-                  borderBottom: 'none',
+                  bgcolor: '#f8f9fa',
                 },
               }}
             >
@@ -428,45 +353,47 @@ export default function WalletTab() {
                 {transactions.map((transaction) => (
                   <tr key={transaction.id}>
                     <td>
-                      <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
+                      <Typography level="body-xs" sx={{ color: '#666' }}>
                         {formatDate(transaction.created_at)}
                       </Typography>
                     </td>
                     <td>
                       <Chip
                         size="sm"
-                        color={getTransactionTypeColor(transaction.type)}
+                        variant="soft"
                         startDecorator={getTransactionTypeIcon(transaction.type)}
                         sx={{
-                          borderRadius: 0,
-                          fontFamily: 'serif',
-                          fontWeight: 'bold',
-                          textTransform: 'uppercase',
-                          fontSize: '0.7rem',
+                          fontSize: '0.75rem',
+                          bgcolor: transaction.type === 'deposit' || transaction.type === 'contest_win'
+                            ? 'rgba(34, 197, 94, 0.15)'
+                            : 'rgba(255, 199, 44, 0.15)',
+                          color: transaction.type === 'deposit' || transaction.type === 'contest_win'
+                            ? '#16a34a'
+                            : '#d97706',
+                          fontWeight: 600,
                         }}
                       >
                         {transaction.type.replace('_', ' ')}
                       </Chip>
                     </td>
                     <td>
-                      <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
+                      <Typography level="body-sm" sx={{ color: '#000' }}>
                         {transaction.description}
                       </Typography>
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <Typography
-                        level="body-md"
+                        level="body-sm"
                         sx={{
-                          fontFamily: 'serif',
-                          fontWeight: 900,
-                          color: transaction.amount_cents > 0 ? '#16A34A' : '#ef4444',
+                          fontWeight: 600,
+                          color: transaction.amount_cents > 0 ? '#16a34a' : '#ef4444',
                         }}
                       >
                         {transaction.amount_cents > 0 ? '+' : ''}
                         {formatCurrency(transaction.amount_cents)}
                       </Typography>
                       {transaction.fee_cents > 0 && (
-                        <Typography level="body-xs" sx={{ color: '#666', fontFamily: 'serif' }}>
+                        <Typography level="body-xs" sx={{ color: '#666' }}>
                           Fee: {formatCurrency(transaction.fee_cents)}
                         </Typography>
                       )}
@@ -474,12 +401,20 @@ export default function WalletTab() {
                     <td>
                       <Chip
                         size="sm"
-                        color={getStatusColor(transaction.status)}
+                        variant="soft"
                         sx={{
-                          borderRadius: 0,
-                          fontFamily: 'serif',
-                          fontWeight: 'bold',
-                          fontSize: '0.7rem',
+                          fontSize: '0.75rem',
+                          bgcolor: transaction.status === 'completed'
+                            ? 'rgba(34, 197, 94, 0.15)'
+                            : transaction.status === 'pending'
+                            ? 'rgba(234, 179, 8, 0.15)'
+                            : 'rgba(239, 68, 68, 0.15)',
+                          color: transaction.status === 'completed'
+                            ? '#16a34a'
+                            : transaction.status === 'pending'
+                            ? '#d97706'
+                            : '#dc2626',
+                          fontWeight: 600,
                         }}
                       >
                         {transaction.status}
@@ -491,19 +426,11 @@ export default function WalletTab() {
             </Table>
           </Sheet>
         ) : (
-          <Card
-            variant="outlined"
-            sx={{
-              border: '2px solid #000',
-              borderRadius: 0,
-              p: 4,
-              textAlign: 'center',
-            }}
-          >
-            <Typography sx={{ fontFamily: 'serif', fontWeight: 'bold', color: '#666' }}>
+          <Box sx={{ textAlign: 'center', py: 3 }}>
+            <Typography level="body-sm" sx={{ color: '#666' }}>
               No transactions yet
             </Typography>
-          </Card>
+          </Box>
         )}
       </Box>
 
@@ -511,54 +438,78 @@ export default function WalletTab() {
       <Modal open={depositModalOpen} onClose={() => setDepositModalOpen(false)}>
         <ModalDialog
           sx={{
-            maxWidth: 500,
-            border: '3px solid #000',
-            borderRadius: 0,
-            boxShadow: '6px 6px 0px #000',
-            p: 0,
+            maxWidth: 400,
+            bgcolor: '#ffffff',
+            border: '1px solid #e0e0e0',
+            borderRadius: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
           }}
         >
-          <Box sx={{ bgcolor: '#000', color: '#fff', p: 2 }}>
-            <Typography level="h4" sx={{ fontFamily: 'serif', fontWeight: 900 }}>
+          <Typography level="title-md" sx={{ color: '#000', fontWeight: 700, mb: 2 }}>
               Deposit Funds
             </Typography>
-          </Box>
-          <ModalClose sx={{ top: 12, right: 12, bgcolor: '#fff', color: '#000', border: '2px solid #000', borderRadius: 0 }} />
+          <ModalClose sx={{ color: '#666' }} />
           
-          <Box sx={{ p: 3 }}>
-            <Stack spacing={3}>
-              <FormControl>
-                <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, color: '#000' }}>Amount</FormLabel>
+          <Stack spacing={2}>
+            <FormControl size="sm">
+              <FormLabel sx={{ color: '#000', fontSize: '0.875rem', fontWeight: 600 }}>
+                Amount
+              </FormLabel>
                 <Input
                   type="number"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   startDecorator="$"
                   placeholder="0.00"
+                size="sm"
                   sx={{
-                    fontFamily: 'serif',
-                    fontWeight: 'bold',
-                    fontSize: '1.5rem',
-                    border: '2px solid #000',
-                    borderRadius: 0,
-                    '&:focus-within': {
-                      outline: '2px solid #000',
-                      outlineOffset: '2px',
+                  bgcolor: '#ffffff !important',
+                  color: '#000000 !important',
+                  border: '1px solid #d0d0d0 !important',
+                  borderRadius: '8px',
+                  fontSize: '1.2rem',
+                  '& input': {
+                    color: '#000000 !important',
+                  },
+                  '& input::placeholder': {
+                    color: '#666666 !important',
+                  },
+                  '&:focus-within': {
+                    borderColor: '#6a59ff !important',
+                    outline: '2px solid rgba(106, 89, 255, 0.2)',
+                    bgcolor: '#ffffff !important',
+                    '& input': {
+                      color: '#000000 !important',
                     },
+                  },
                   }}
+                  className="force-light"
                 />
               </FormControl>
 
-              <FormControl>
-                <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, color: '#000' }}>Payment Method</FormLabel>
+            <FormControl size="sm">
+              <FormLabel sx={{ color: '#000', fontSize: '0.875rem', fontWeight: 600 }}>
+                Payment Method
+              </FormLabel>
                 <Select
                   value={selectedPaymentMethod}
                   onChange={(_, value) => setSelectedPaymentMethod(value as string)}
+                size="sm"
                   sx={{
-                    fontFamily: 'serif',
-                    border: '2px solid #000',
-                    borderRadius: 0,
+                  bgcolor: '#ffffff !important',
+                  color: '#000000 !important',
+                  border: '1px solid #d0d0d0 !important',
+                  borderRadius: '8px',
+                  '& select': {
+                    color: '#000000 !important',
+                  },
+                  '&:focus-within': {
+                    borderColor: '#6a59ff !important',
+                    outline: '2px solid rgba(106, 89, 255, 0.2)',
+                    bgcolor: '#ffffff !important',
+                  },
                   }}
+                  className="force-light"
                 >
                   <Option value="stripe_card">Credit/Debit Card</Option>
                   <Option value="stripe_ach">Bank Account (ACH)</Option>
@@ -568,36 +519,39 @@ export default function WalletTab() {
 
               <Alert
                 color="primary"
+              variant="soft"
                 startDecorator={<Info />}
-                sx={{ border: '2px solid #000', borderRadius: 0 }}
+              sx={{
+                bgcolor: 'rgba(59, 130, 246, 0.1)',
+                fontSize: '0.75rem',
+              }}
               >
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
                   Deposits are instant. A 2.9% + $0.30 processing fee applies.
-                </Typography>
               </Alert>
 
               <Button
-                size="lg"
+              size="sm"
                 onClick={handleDeposit}
                 disabled={!depositAmount || parseFloat(depositAmount) <= 0}
                 sx={{
-                  bgcolor: '#16A34A',
+                bgcolor: '#22c55e',
                   color: '#fff',
-                  border: '3px solid #000',
-                  borderRadius: 0,
-                  fontFamily: 'serif',
-                  fontWeight: 900,
-                  fontSize: '1.1rem',
-                  py: 1.5,
+                fontWeight: 600,
+                borderRadius: '8px',
                   '&:hover': {
-                    bgcolor: '#15803d',
+                  bgcolor: '#16a34a',
+                  transform: 'translateY(-1px)',
+                  boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3)',
+                  },
+                  '&:disabled': {
+                    bgcolor: '#f5f5f5',
+                    color: '#999',
                   },
                 }}
               >
                 Deposit ${depositAmount || '0.00'}
               </Button>
             </Stack>
-          </Box>
         </ModalDialog>
       </Modal>
 
@@ -605,84 +559,106 @@ export default function WalletTab() {
       <Modal open={withdrawModalOpen} onClose={() => setWithdrawModalOpen(false)}>
         <ModalDialog
           sx={{
-            maxWidth: 500,
-            border: '3px solid #000',
-            borderRadius: 0,
-            boxShadow: '6px 6px 0px #000',
-            p: 0,
+            maxWidth: 400,
+            bgcolor: '#ffffff',
+            border: '1px solid #e0e0e0',
+            borderRadius: '12px',
+            boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
           }}
         >
-          <Box sx={{ bgcolor: '#000', color: '#fff', p: 2 }}>
-            <Typography level="h4" sx={{ fontFamily: 'serif', fontWeight: 900 }}>
+          <Typography level="title-md" sx={{ color: '#000', fontWeight: 700, mb: 2 }}>
               Withdraw Funds
             </Typography>
-          </Box>
-          <ModalClose sx={{ top: 12, right: 12, bgcolor: '#fff', color: '#000', border: '2px solid #000', borderRadius: 0 }} />
+          <ModalClose sx={{ color: '#666' }} />
           
-          <Box sx={{ p: 3 }}>
-            <Stack spacing={3}>
-              <Box sx={{ p: 2, border: '2px solid #000', bgcolor: '#f0f0f0' }}>
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 700, mb: 0.5 }}>
+          <Stack spacing={2}>
+            <Box sx={{ 
+              p: 1.5, 
+              bgcolor: 'rgba(34, 197, 94, 0.1)', 
+              borderRadius: '8px',
+              border: '1px solid rgba(34, 197, 94, 0.3)',
+            }}>
+              <Typography level="body-xs" sx={{ color: '#16a34a', fontWeight: 600, mb: 0.5 }}>
                   Available to Withdraw
                 </Typography>
-                <Typography level="h3" sx={{ fontFamily: 'serif', fontWeight: 900 }}>
+              <Typography level="h3" sx={{ color: '#16a34a', fontWeight: 700 }}>
                   ${wallet?.withdrawable_balance || '0.00'}
                 </Typography>
               </Box>
 
-              <FormControl>
-                <FormLabel sx={{ fontFamily: 'serif', fontWeight: 700, color: '#000' }}>Amount</FormLabel>
+            <FormControl size="sm">
+              <FormLabel sx={{ color: '#000', fontSize: '0.875rem', fontWeight: 600 }}>
+                Amount
+              </FormLabel>
                 <Input
                   type="number"
                   value={withdrawAmount}
                   onChange={(e) => setWithdrawAmount(e.target.value)}
                   startDecorator="$"
                   placeholder="0.00"
+                size="sm"
                   sx={{
-                    fontFamily: 'serif',
-                    fontWeight: 'bold',
-                    fontSize: '1.5rem',
-                    border: '2px solid #000',
-                    borderRadius: 0,
+                  bgcolor: '#ffffff !important',
+                  color: '#000000 !important',
+                  border: '1px solid #d0d0d0 !important',
+                  borderRadius: '8px',
+                  fontSize: '1.2rem',
+                  '& input': {
+                    color: '#000000 !important',
+                  },
+                  '& input::placeholder': {
+                    color: '#666666 !important',
+                  },
+                  '&:focus-within': {
+                    borderColor: '#6a59ff !important',
+                    outline: '2px solid rgba(106, 89, 255, 0.2)',
+                    bgcolor: '#ffffff !important',
+                    '& input': {
+                      color: '#000000 !important',
+                    },
+                  },
                   }}
+                  className="force-light"
                 />
               </FormControl>
 
               <Alert
                 color="warning"
+              variant="soft"
                 startDecorator={<Warning />}
-                sx={{ border: '2px solid #000', borderRadius: 0 }}
+              sx={{
+                bgcolor: 'rgba(234, 179, 8, 0.1)',
+                fontSize: '0.75rem',
+              }}
               >
-                <Typography level="body-sm" sx={{ fontFamily: 'serif', fontWeight: 'bold' }}>
                   Withdrawals take 3-5 business days. Minimum withdrawal: $10.00
-                </Typography>
               </Alert>
 
               <Button
-                size="lg"
+              size="sm"
                 onClick={handleWithdraw}
                 disabled={!withdrawAmount || parseFloat(withdrawAmount) < 10}
                 sx={{
-                  bgcolor: '#000',
-                  color: '#fff',
-                  border: '3px solid #000',
-                  borderRadius: 0,
-                  fontFamily: 'serif',
-                  fontWeight: 900,
-                  fontSize: '1.1rem',
-                  py: 1.5,
+                bgcolor: '#FFC72C',
+                color: '#000',
+                fontWeight: 600,
+                borderRadius: '8px',
                   '&:hover': {
-                    bgcolor: '#333',
+                  bgcolor: '#FFD700',
+                  transform: 'translateY(-1px)',
+                  boxShadow: '0 4px 12px rgba(255, 199, 44, 0.3)',
+                  },
+                  '&:disabled': {
+                    bgcolor: '#f5f5f5',
+                    color: '#999',
                   },
                 }}
               >
                 Withdraw ${withdrawAmount || '0.00'}
               </Button>
             </Stack>
-          </Box>
         </ModalDialog>
       </Modal>
-    </Box>
+    </Stack>
   );
 }
-

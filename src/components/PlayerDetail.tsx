@@ -32,62 +32,110 @@ export default function PlayerDetail({ playerId, onBack }: PlayerDetailProps) {
 
   if (isLoading) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            variant="outlined"
-            startDecorator={<ArrowBack />}
-            onClick={onBack}
-            size="sm"
-            sx={{ mr: 2 }}
-          >
-            Back to Players
-          </Button>
-          <LinearProgress sx={{ flex: 1 }} />
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto', 
+          pt: { xs: 2, md: 3 },
+          pb: 2,
+          px: { xs: 0, sm: 2, md: 2 },
+          width: '100%',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Button
+              variant="outlined"
+              startDecorator={<ArrowBack />}
+              onClick={onBack}
+              size="sm"
+              sx={{ mr: 2 }}
+            >
+              Back to Players
+            </Button>
+            <LinearProgress sx={{ flex: 1 }} />
+          </Box>
+          <Typography>Loading player stats...</Typography>
         </Box>
-        <Typography>Loading player stats...</Typography>
       </Box>
     );
   }
 
   if (error) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            variant="outlined"
-            startDecorator={<ArrowBack />}
-            onClick={onBack}
-            size="sm"
-            sx={{ mr: 2 }}
-          >
-            Back to Players
-          </Button>
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto', 
+          pt: { xs: 2, md: 3 },
+          pb: 2,
+          px: { xs: 0, sm: 2, md: 2 },
+          width: '100%',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Button
+              variant="outlined"
+              startDecorator={<ArrowBack />}
+              onClick={onBack}
+              size="sm"
+              sx={{ mr: 2 }}
+            >
+              Back to Players
+            </Button>
+          </Box>
+          <Alert color="danger">
+            <Typography>Error loading player stats: {error.message}</Typography>
+          </Alert>
         </Box>
-        <Alert color="danger">
-          <Typography>Error loading player stats: {error.message}</Typography>
-        </Alert>
       </Box>
     );
   }
 
   if (!playerStats) {
     return (
-      <Box sx={{ p: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-          <Button
-            variant="outlined"
-            startDecorator={<ArrowBack />}
-            onClick={onBack}
-            size="sm"
-            sx={{ mr: 2 }}
-          >
-            Back to Players
-          </Button>
+      <Box sx={{ 
+        bgcolor: 'background.body',
+        minHeight: '100vh',
+        overflowX: 'hidden',
+        width: '100%',
+      }}>
+        <Box sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto', 
+          pt: { xs: 2, md: 3 },
+          pb: 2,
+          px: { xs: 0, sm: 2, md: 2 },
+          width: '100%',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+            <Button
+              variant="outlined"
+              startDecorator={<ArrowBack />}
+              onClick={onBack}
+              size="sm"
+              sx={{ mr: 2 }}
+            >
+              Back to Players
+            </Button>
+          </Box>
+          <Alert color="warning">
+            <Typography>No player data found</Typography>
+          </Alert>
         </Box>
-        <Alert color="warning">
-          <Typography>No player data found</Typography>
-        </Alert>
       </Box>
     );
   }
@@ -143,24 +191,48 @@ export default function PlayerDetail({ playerId, onBack }: PlayerDetailProps) {
   };
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <Button
-          variant="outlined"
-          startDecorator={<ArrowBack />}
-          onClick={onBack}
-          size="sm"
-          sx={{ mr: 2 }}
-        >
-          Back to Players
-        </Button>
-        <Typography level="h2" component="h1" sx={{ fontWeight: 'bold' }}>
-          {player.name}
-        </Typography>
-      </Box>
+    <Box sx={{ 
+      bgcolor: 'background.body',
+      minHeight: '100vh',
+      overflowX: 'hidden',
+      width: '100%',
+    }}>
+      {/* Main Container - matches Home/Dashboard formatting */}
+      <Box sx={{ 
+        maxWidth: { xs: '100%', sm: 805, md: 1035 },
+        mx: 'auto', 
+        pt: { xs: 2, md: 3 },
+        pb: 2,
+        px: { xs: 0, sm: 2, md: 2 },
+        width: '100%',
+        boxSizing: 'border-box',
+        overflowX: 'hidden',
+      }}>
+        {/* Header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <Button
+            variant="outlined"
+            startDecorator={<ArrowBack />}
+            onClick={onBack}
+            size="sm"
+            sx={{ mr: 2 }}
+          >
+            Back to Players
+          </Button>
+          <Typography level="h2" component="h1" sx={{ fontWeight: 'bold' }}>
+            {player.name}
+          </Typography>
+        </Box>
 
-      <Grid container spacing={3}>
+        <Grid 
+          container 
+          spacing={3}
+          sx={{
+            width: '100%',
+            maxWidth: '100%',
+            margin: 0,
+          }}
+        >
         {/* Player Info Card */}
         <Grid xs={12} md={4}>
           <Card variant="outlined" sx={{ height: 'fit-content' }}>
@@ -549,6 +621,7 @@ export default function PlayerDetail({ playerId, onBack }: PlayerDetailProps) {
           </Tabs>
         </Grid>
       </Grid>
+      </Box>
     </Box>
   );
 }

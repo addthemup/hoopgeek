@@ -40,6 +40,23 @@ CREATE POLICY "Users can update own viewed posts"
   ON user_viewed_posts FOR UPDATE
   USING (auth.uid() = user_id);
 
+-- Admins can delete user viewed posts (for cascade deletes)
+CREATE POLICY "Admins can delete user viewed posts"
+  ON user_viewed_posts FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1 FROM admin_users au
+      WHERE au.user_id = auth.uid()
+        AND au.role IN ('super_admin', 'content_admin')
+        AND au.is_active = TRUE
+    )
+  );
+
+-- Users can delete their own viewed posts
+CREATE POLICY "Users can delete own viewed posts"
+  ON user_viewed_posts FOR DELETE
+  USING (auth.uid() = user_id);
+
 -- ============================================================================
 -- HELPER FUNCTIONS
 -- ============================================================================

@@ -451,7 +451,10 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
   const { divisionStandings, unassignedTeams } = generateDivisionStandings();
 
   return (
-    <Box sx={{ maxWidth: '100%', mx: 'auto', p: { xs: 1, md: 2 } }}>
+    <Box sx={{ 
+      pb: 2,
+      px: { xs: 2, sm: 2, md: 2 },
+    }}>
       {/* League Header - Compact Newspaper Nav */}
       <Box 
         sx={{ 
@@ -1558,24 +1561,24 @@ export default function LeagueHome({ leagueId, onTeamClick, onNavigateToTransact
         </Grid>
       </Grid>
 
-      {/* Waiver Claim Modal */}
-      {selectedWaiverPlayer && userTeam && (
-        <WaiverClaimModal
-          open={waiverModalOpen}
-          onClose={() => {
-            setWaiverModalOpen(false);
-            setSelectedWaiverPlayer(null);
-          }}
-          player={selectedWaiverPlayer}
-          leagueId={leagueId}
-          seasonId={(league as any)?.season_id || (league as any)?.current_season_id || teams?.[0]?.season_id || ''}
-          fantasyTeamId={userTeam.id}
-          waiverType={(league as any)?.waiver_type || 'rolling'}
-          waiverBudgetAmount={(league as any)?.waiver_budget_amount || 100}
-          waiverMinBid={(league as any)?.waiver_min_bid || 0}
-          becomesFreAgent={selectedWaiverPlayer.waiver?.becomes_free_agent_at ? new Date(selectedWaiverPlayer.waiver.becomes_free_agent_at) : undefined}
-        />
-      )}
+        {/* Waiver Claim Modal */}
+        {selectedWaiverPlayer && userTeam && (
+          <WaiverClaimModal
+            open={waiverModalOpen}
+            onClose={() => {
+              setWaiverModalOpen(false);
+              setSelectedWaiverPlayer(null);
+            }}
+            player={selectedWaiverPlayer}
+            leagueId={leagueId}
+            seasonId={(league as any)?.season_id || (league as any)?.current_season_id || teams?.[0]?.season_id || ''}
+            fantasyTeamId={userTeam.id}
+            waiverType={(league as any)?.waiver_type || 'rolling'}
+            waiverBudgetAmount={(league as any)?.waiver_budget_amount || 100}
+            waiverMinBid={(league as any)?.waiver_min_bid || 0}
+            becomesFreAgent={selectedWaiverPlayer.waiver?.becomes_free_agent_at ? new Date(selectedWaiverPlayer.waiver.becomes_free_agent_at) : undefined}
+          />
+        )}
     </Box>
   );
 }

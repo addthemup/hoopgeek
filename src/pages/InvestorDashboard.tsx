@@ -90,7 +90,9 @@ export default function InvestorDashboard() {
         .order('metric_date', { ascending: false })
         .limit(daysBack)
       
-      if (dailyError) throw dailyError
+      if (dailyError) {
+        console.warn('Daily metrics view may not exist:', dailyError)
+      }
       setDailyMetrics(daily || [])
       
       // Load conversion funnel
@@ -100,20 +102,51 @@ export default function InvestorDashboard() {
         .order('cohort_week', { ascending: false })
         .limit(12) // Last 12 weeks
       
-      if (conversionError) throw conversionError
+      if (conversionError) {
+        console.warn('Conversion funnel view may not exist:', conversionError)
+      }
       setConversionMetrics(conversion || [])
       
-      // Calculate aggregated stats
-      if (daily && daily.length > 0) {
-        const totalSessions = daily.reduce((sum, d) => sum + (d.total_sessions || 0), 0)
-        const totalPostsViewed = daily.reduce((sum, d) => sum + (d.total_posts_viewed || 0), 0)
-        const totalVideos = daily.reduce((sum, d) => sum + (d.total_videos_watched || 0), 0)
-        const totalVideoSeconds = daily.reduce((sum, d) => sum + (d.total_video_watch_time_seconds || 0), 0)
-        const totalSessionSeconds = daily.reduce((sum, d) => sum + (d.total_session_time_seconds || 0), 0)
-        const uniqueUsers = Math.max(...daily.map(d => d.daily_active_users || 0))
+      // Load raw watch history data for time on site calculations
+      const { data: watchHistory, error: watchHistoryError } = await supabase
+        .from('user_watch_history')
+        .select('watched_at, user_id, watch_seconds, video_watch_seconds, post_id')
+        .gte('watched_at', new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000).toISOString())
+        .order('watched_at', { ascending: false })
+        .limit(10000) // Limit for performance
+      
+      if (watchHistoryError) {
+        console.warn('Watch history data error:', watchHistoryError)
+      }
+      
+      // Calculate aggregated stats from raw watch history if daily metrics unavailable
+      if (watchHistory && watchHistory.length > 0) {
+        // Group by user and date to count sessions (unique post views per day per user)
+        const sessionMap = new Map<string, Set<string>>() // user_id -> Set of (date + post_id)
+        watchHistory.forEach((entry) => {
+          const dateStr = new Date(entry.watched_at).toISOString().split('T')[0]
+          const sessionKey = `${entry.user_id}_${dateStr}`
+          if (!sessionMap.has(sessionKey)) {
+            sessionMap.set(sessionKey, new Set())
+          }
+          sessionMap.get(sessionKey)!.add(entry.post_id || '')
+        })
+        
+        const totalSessions = sessionMap.size
+        const totalWatchSeconds = watchHistory.reduce((sum, w) => sum + (w.watch_seconds || 0), 0)
+        const totalVideoSeconds = watchHistory.reduce((sum, w) => sum + (w.video_watch_seconds || 0), 0)
+        const uniquePosts = new Set(watchHistory.map(w => w.post_id).filter(Boolean)).size
+        const uniqueUsers = new Set(watchHistory.map(w => w.user_id)).size
+        
+        // Calculate time metrics
+        const avgSessionSeconds = totalSessions > 0 ? totalWatchSeconds / totalSessions : 0
+        const watchSecondsArray = watchHistory.map(w => w.watch_seconds || 0).sort((a, b) => a - b)
+        const medianSessionSeconds = watchSecondsArray.length > 0 
+          ? watchSecondsArray[Math.floor(watchSecondsArray.length / 2)] || 0
+          : 0
         
         // Get DFS stats
-        const { data: dfsStats, error: dfsError } = await supabase
+        const { data: dfsStats } = await supabase
           .from('dfs_user_statistics')
           .select('total_entry_fees_paid, net_profit_loss')
         
@@ -122,8 +155,58 @@ export default function InvestorDashboard() {
         
         // Get conversion rate
         const { count: totalViewers } = await supabase
-          .from('user_engagement_sessions')
+          .from('user_watch_history')
           .select('user_id', { count: 'exact', head: true })
+          .not('user_id', 'is', null)
+        
+        const { count: dfsPlayers } = await supabase
+          .from('dfs_entries')
+          .select('user_id', { count: 'exact', head: true })
+        
+        const conversionRate = totalViewers && dfsPlayers 
+          ? (dfsPlayers / totalViewers) * 100 
+          : 0
+        
+        // Calculate engagement score
+        const avgCompletionRate = uniquePosts > 0 
+          ? (uniquePosts / totalSessions) * 100 
+          : 0
+        const engagementScore = (avgSessionSeconds / 60) * 0.4 + (avgCompletionRate) * 0.3 + (totalVideoSeconds / totalSessions / 60) * 0.3
+        
+        setAggregatedStats({
+          totalUsers: uniqueUsers,
+          totalSessions,
+          avgSessionMinutes: avgSessionSeconds / 60,
+          totalPostsViewed: uniquePosts,
+          totalVideosWatched: Math.round(totalVideoSeconds / 60), // Approximate videos
+          totalVideoMinutes: totalVideoSeconds / 60,
+          avgEngagementScore: engagementScore,
+          dfsConversionRate: conversionRate,
+          avgRevenuePerUser: avgRevenue,
+          totalRevenue
+        })
+      } else if (daily && daily.length > 0) {
+        // Fallback to daily metrics if available
+        const totalSessions = daily.reduce((sum, d) => sum + (d.total_sessions || 0), 0)
+        const totalPostsViewed = daily.reduce((sum, d) => sum + (d.total_posts_viewed || 0), 0)
+        const totalVideos = daily.reduce((sum, d) => sum + (d.total_videos_watched || 0), 0)
+        const totalVideoSeconds = daily.reduce((sum, d) => sum + (d.total_video_watch_time_seconds || 0), 0)
+        const totalSessionSeconds = daily.reduce((sum, d) => sum + (d.total_session_time_seconds || 0), 0)
+        const uniqueUsers = Math.max(...daily.map(d => d.daily_active_users || 0))
+        
+        // Get DFS stats
+        const { data: dfsStats } = await supabase
+          .from('dfs_user_statistics')
+          .select('total_entry_fees_paid, net_profit_loss')
+        
+        const totalRevenue = dfsStats?.reduce((sum, s) => sum + parseFloat(s.total_entry_fees_paid || '0'), 0) || 0
+        const avgRevenue = dfsStats && dfsStats.length > 0 ? totalRevenue / dfsStats.length : 0
+        
+        // Get conversion rate
+        const { count: totalViewers } = await supabase
+          .from('user_watch_history')
+          .select('user_id', { count: 'exact', head: true })
+          .not('user_id', 'is', null)
         
         const { count: dfsPlayers } = await supabase
           .from('dfs_entries')
@@ -148,6 +231,10 @@ export default function InvestorDashboard() {
       }
     } catch (error) {
       console.error('Error loading metrics:', error)
+      // If views don't exist or have errors, show empty state
+      setDailyMetrics([])
+      setConversionMetrics([])
+      setAggregatedStats(null)
     } finally {
       setLoading(false)
     }
@@ -244,14 +331,14 @@ export default function InvestorDashboard() {
                   <Stack direction="row" alignItems="center" spacing={1}>
                     <TimerIcon sx={{ color: 'success.main' }} />
                     <Typography level="body-sm" sx={{ fontFamily: 'serif' }}>
-                      Avg Session
+                      Avg Time on Site
                     </Typography>
                   </Stack>
                   <Typography level="h2" sx={{ fontFamily: 'serif', fontWeight: 900 }}>
                     {aggregatedStats.avgSessionMinutes.toFixed(1)}m
                   </Typography>
                   <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                    {formatNumber(aggregatedStats.totalSessions)} total sessions
+                    {formatNumber(aggregatedStats.totalSessions)} sessions • {formatNumber(aggregatedStats.totalSessions * aggregatedStats.avgSessionMinutes)} total minutes
                   </Typography>
                 </Stack>
               </CardContent>
@@ -392,40 +479,61 @@ export default function InvestorDashboard() {
       {/* Daily Trends */}
       <Box sx={{ mb: 4 }}>
         <Typography level="h3" sx={{ mb: 2, fontFamily: 'serif', fontWeight: 900 }}>
-          📈 Daily Engagement Trends
+          📈 Daily Engagement Trends & Time on Site
         </Typography>
         <Card variant="outlined">
-          <Table
-            sx={{
-              '& thead th': { fontFamily: 'serif', fontWeight: 700 },
-              '& tbody td': { fontFamily: 'monospace', fontSize: 'sm' }
-            }}
-          >
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>DAU</th>
-                <th>Sessions</th>
-                <th>Avg Duration</th>
-                <th>Posts Viewed</th>
-                <th>Completion %</th>
-                <th>Videos</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dailyMetrics.slice(0, 14).map((metric) => (
-                <tr key={metric.metric_date}>
-                  <td>{new Date(metric.metric_date).toLocaleDateString()}</td>
-                  <td>{formatNumber(metric.daily_active_users)}</td>
-                  <td>{formatNumber(metric.total_sessions)}</td>
-                  <td>{formatDuration(metric.avg_session_duration_seconds)}</td>
-                  <td>{formatNumber(metric.total_posts_viewed)}</td>
-                  <td>{metric.avg_post_completion_rate?.toFixed(1)}%</td>
-                  <td>{formatNumber(metric.total_videos_watched)}</td>
+          {dailyMetrics.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography level="body-md" sx={{ color: 'text.secondary', fontFamily: 'serif', mb: 2 }}>
+                Loading engagement data from user sessions...
+              </Typography>
+              <Typography level="body-sm" sx={{ color: 'text.tertiary', fontFamily: 'serif' }}>
+                Analytics are calculated from user_watch_history table.
+                <br />
+                If materialized views exist, run: <code>REFRESH MATERIALIZED VIEW daily_engagement_metrics;</code>
+              </Typography>
+            </Box>
+          ) : (
+            <Table
+              sx={{
+                '& thead th': { fontFamily: 'serif', fontWeight: 700, bgcolor: '#f5f5f5' },
+                '& tbody td': { fontFamily: 'monospace', fontSize: 'sm' },
+                '& tbody tr:hover': { bgcolor: '#f9f9f9' }
+              }}
+            >
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>DAU</th>
+                  <th>Sessions</th>
+                  <th>Avg Time on Site</th>
+                  <th>Total Time</th>
+                  <th>Posts Viewed</th>
+                  <th>Completion %</th>
+                  <th>Videos</th>
+                  <th>Watch Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {dailyMetrics.slice(0, 30).map((metric) => {
+                  const totalTimeMinutes = (metric.avg_session_duration_seconds || 0) * (metric.total_sessions || 0) / 60
+                  return (
+                  <tr key={metric.metric_date}>
+                    <td>{new Date(metric.metric_date).toLocaleDateString()}</td>
+                    <td>{formatNumber(metric.daily_active_users)}</td>
+                    <td>{formatNumber(metric.total_sessions)}</td>
+                      <td><strong>{formatDuration(metric.avg_session_duration_seconds || 0)}</strong></td>
+                      <td>{formatNumber(totalTimeMinutes)}m</td>
+                    <td>{formatNumber(metric.total_posts_viewed)}</td>
+                      <td>{metric.avg_post_completion_rate?.toFixed(1) || '0.0'}%</td>
+                    <td>{formatNumber(metric.total_videos_watched)}</td>
+                      <td>{formatNumber((metric.total_video_watch_time_seconds || 0) / 60)}m</td>
+                  </tr>
+                  )
+                })}
+              </tbody>
+            </Table>
+          )}
         </Card>
       </Box>
 
@@ -435,44 +543,57 @@ export default function InvestorDashboard() {
           💰 DFS Conversion Funnel
         </Typography>
         <Card variant="outlined">
-          <Table
-            sx={{
-              '& thead th': { fontFamily: 'serif', fontWeight: 700 },
-              '& tbody td': { fontFamily: 'monospace', fontSize: 'sm' }
-            }}
-          >
-            <thead>
-              <tr>
-                <th>Week</th>
-                <th>Total Users</th>
-                <th>Converted</th>
-                <th>Rate</th>
-                <th>Avg Pools</th>
-                <th>Avg Revenue</th>
-                <th>Days to Convert</th>
-              </tr>
-            </thead>
-            <tbody>
-              {conversionMetrics.map((metric) => (
-                <tr key={metric.cohort_week}>
-                  <td>{new Date(metric.cohort_week).toLocaleDateString()}</td>
-                  <td>{formatNumber(metric.total_users)}</td>
-                  <td>{formatNumber(metric.converted_to_dfs)}</td>
-                  <td>
-                    <Chip 
-                      color={metric.conversion_rate >= 10 ? 'success' : 'warning'}
-                      size="sm"
-                    >
-                      {metric.conversion_rate?.toFixed(1)}%
-                    </Chip>
-                  </td>
-                  <td>{metric.avg_pools_per_converter?.toFixed(1)}</td>
-                  <td>{formatCurrency(metric.avg_revenue_per_converter || 0)}</td>
-                  <td>{metric.avg_days_to_convert?.toFixed(0)} days</td>
+          {conversionMetrics.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography level="body-md" sx={{ color: 'text.secondary', fontFamily: 'serif', mb: 2 }}>
+                No conversion data available yet.
+              </Typography>
+              <Typography level="body-sm" sx={{ color: 'text.tertiary', fontFamily: 'serif' }}>
+                Conversion tracking requires user engagement data and DFS entry data.
+                <br />
+                Run: <code>REFRESH MATERIALIZED VIEW dfs_conversion_funnel;</code>
+              </Typography>
+            </Box>
+          ) : (
+            <Table
+              sx={{
+                '& thead th': { fontFamily: 'serif', fontWeight: 700 },
+                '& tbody td': { fontFamily: 'monospace', fontSize: 'sm' }
+              }}
+            >
+              <thead>
+                <tr>
+                  <th>Week</th>
+                  <th>Total Users</th>
+                  <th>Converted</th>
+                  <th>Rate</th>
+                  <th>Avg Pools</th>
+                  <th>Avg Revenue</th>
+                  <th>Days to Convert</th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
+              </thead>
+              <tbody>
+                {conversionMetrics.map((metric) => (
+                  <tr key={metric.cohort_week}>
+                    <td>{new Date(metric.cohort_week).toLocaleDateString()}</td>
+                    <td>{formatNumber(metric.total_users)}</td>
+                    <td>{formatNumber(metric.converted_to_dfs)}</td>
+                    <td>
+                      <Chip 
+                        color={metric.conversion_rate >= 10 ? 'success' : 'warning'}
+                        size="sm"
+                      >
+                        {metric.conversion_rate?.toFixed(1)}%
+                      </Chip>
+                    </td>
+                    <td>{metric.avg_pools_per_converter?.toFixed(1)}</td>
+                    <td>{formatCurrency(metric.avg_revenue_per_converter || 0)}</td>
+                    <td>{metric.avg_days_to_convert?.toFixed(0)} days</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
         </Card>
       </Box>
 

@@ -21,6 +21,11 @@ interface Comment {
   comment_text: string
   parent_comment_id: string | null
   created_at: string
+  slide_index?: number | null
+  timestamp_seconds?: number | null
+  position_x?: number | null
+  position_y?: number | null
+  avatar_url?: string | null
   replies?: Comment[]
 }
 
@@ -30,6 +35,9 @@ interface CommentsDrawerProps {
   contentId: string
   userId: string
   username: string
+  currentSlideIndex?: number
+  currentVideoTime?: number
+  onSeekToTime?: (time: number) => void
 }
 
 export default function CommentsDrawer({
@@ -37,13 +45,17 @@ export default function CommentsDrawer({
   onClose,
   contentId,
   userId,
-  username
+  username,
+  currentSlideIndex = 0,
+  currentVideoTime = 0,
+  onSeekToTime
 }: CommentsDrawerProps) {
   const [comments, setComments] = useState<Comment[]>([])
   const [loading, setLoading] = useState(false)
   const [newComment, setNewComment] = useState('')
   const [replyingTo, setReplyingTo] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [commentAtCurrentTime, setCommentAtCurrentTime] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -55,25 +67,56 @@ export default function CommentsDrawer({
   const loadComments = async () => {
     setLoading(true)
     try {
-      const { data, error } = await supabase
+      // First, get the comments
+      const { data: commentsData, error: commentsError } = await supabase
         .from('feed_comments')
         .select('*')
         .eq('content_id', contentId)
+        .order('timestamp_seconds', { ascending: true, nullsFirst: true })
         .order('created_at', { ascending: true })
 
-      if (error) throw error
+      if (commentsError) throw commentsError
+
+      if (!commentsData || commentsData.length === 0) {
+        setComments([])
+        setLoading(false)
+        return
+      }
+
+      // Get unique user IDs
+      const userIds = [...new Set(commentsData.map(c => c.user_id))]
+      
+      // Fetch avatar URLs from user_profiles
+      const { data: profilesData } = await supabase
+        .from('user_profiles')
+        .select('id, avatar_url')
+        .in('id', userIds)
+      
+      // Create a map of user_id -> avatar_url
+      const avatarMap = new Map<string, string | null>()
+      if (profilesData) {
+        profilesData.forEach(profile => {
+          avatarMap.set(profile.id, profile.avatar_url || null)
+        })
+      }
+
+      // Transform data to include avatar_url
+      const commentsWithAvatars = commentsData.map((comment: any) => ({
+        ...comment,
+        avatar_url: avatarMap.get(comment.user_id) || null
+      }))
 
       // Organize comments into threads
       const commentMap = new Map<string, Comment>()
       const topLevelComments: Comment[] = []
 
       // First pass: create map
-      data?.forEach((comment: Comment) => {
+      commentsWithAvatars.forEach((comment: Comment) => {
         commentMap.set(comment.id, { ...comment, replies: [] })
       })
 
       // Second pass: organize into threads
-      data?.forEach((comment: Comment) => {
+      commentsWithAvatars.forEach((comment: Comment) => {
         const commentWithReplies = commentMap.get(comment.id)!
         
         if (comment.parent_comment_id) {
@@ -100,17 +143,23 @@ export default function CommentsDrawer({
 
     setSubmitting(true)
     try {
+      const commentData: any = {
+        content_id: contentId,
+        user_id: userId,
+        username: username,
+        comment_text: newComment.trim(),
+        parent_comment_id: replyingTo || null
+      }
+
+      // Add timestamp if "Comment at current time" is enabled
+      if (commentAtCurrentTime && currentVideoTime >= 0) {
+        commentData.slide_index = currentSlideIndex
+        commentData.timestamp_seconds = Math.round(currentVideoTime * 100) / 100 // Round to 2 decimals
+      }
+
       const { error } = await supabase
         .from('feed_comments')
-        .insert([
-          {
-            content_id: contentId,
-            user_id: userId,
-            username: username,
-            comment_text: newComment.trim(),
-            parent_comment_id: replyingTo
-          }
-        ])
+        .insert([commentData])
 
       if (error) throw error
 
@@ -118,6 +167,7 @@ export default function CommentsDrawer({
       await loadComments()
       setNewComment('')
       setReplyingTo(null)
+      setCommentAtCurrentTime(false)
       
       // Scroll to bottom
       setTimeout(() => {
@@ -133,14 +183,24 @@ export default function CommentsDrawer({
     }
   }
 
+  // Format timestamp as MM:SS
+  const formatTimestamp = (seconds: number | null | undefined): string => {
+    if (seconds == null) return ''
+    const mins = Math.floor(seconds / 60)
+    const secs = Math.floor(seconds % 60)
+    return `${mins}:${secs.toString().padStart(2, '0')}`
+  }
+
   const CommentItem = ({ comment, depth = 0 }: { comment: Comment; depth?: number }) => {
     const timeAgo = getTimeAgo(comment.created_at)
+    const hasTimestamp = comment.timestamp_seconds != null
 
     return (
       <Box sx={{ ml: depth * 2 }}>
         <Stack direction="row" spacing={1} sx={{ mb: 1.5 }}>
           <Avatar
             size="sm"
+            src={comment.avatar_url || undefined}
             sx={{
               width: 32,
               height: 32,
@@ -152,10 +212,25 @@ export default function CommentsDrawer({
           </Avatar>
           
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Stack direction="row" spacing={0.5} alignItems="baseline">
+            <Stack direction="row" spacing={0.5} alignItems="baseline" sx={{ flexWrap: 'wrap' }}>
               <Typography level="title-sm" sx={{ fontWeight: 700, fontSize: '0.85rem' }}>
                 {comment.username}
               </Typography>
+              {hasTimestamp && (
+                <Typography
+                  level="body-xs"
+                  onClick={() => onSeekToTime?.(comment.timestamp_seconds!)}
+                  sx={{ 
+                    color: 'primary.500',
+                    fontSize: '0.7rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    '&:hover': { textDecoration: 'underline' }
+                  }}
+                >
+                  @ {formatTimestamp(comment.timestamp_seconds)}
+                </Typography>
+              )}
               <Typography level="body-xs" sx={{ color: 'text.tertiary', fontSize: '0.7rem' }}>
                 {timeAgo}
               </Typography>
@@ -309,12 +384,53 @@ export default function CommentsDrawer({
           </Box>
         )}
         
+        {/* Comment at current time button */}
+        {currentVideoTime > 0 && (
+          <Box sx={{ mb: 1 }}>
+            <Box
+              onClick={() => setCommentAtCurrentTime(!commentAtCurrentTime)}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 0.5,
+                px: 1.5,
+                py: 0.5,
+                borderRadius: '6px',
+                backgroundColor: commentAtCurrentTime 
+                  ? 'rgba(255, 105, 180, 0.2)' 
+                  : 'rgba(255,255,255,0.1)',
+                border: `1px solid ${commentAtCurrentTime ? '#FF69B4' : 'rgba(255,255,255,0.2)'}`,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                '&:hover': {
+                  backgroundColor: commentAtCurrentTime 
+                    ? 'rgba(255, 105, 180, 0.3)' 
+                    : 'rgba(255,255,255,0.15)'
+                }
+              }}
+            >
+              <Box
+                sx={{
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  backgroundColor: commentAtCurrentTime ? '#FF69B4' : 'rgba(255,255,255,0.3)',
+                  border: `2px solid ${commentAtCurrentTime ? '#FF69B4' : 'rgba(255,255,255,0.5)'}`
+                }}
+              />
+              <Typography level="body-xs" sx={{ color: '#fff', fontWeight: 600 }}>
+                Comment at {formatTimestamp(currentVideoTime)}
+              </Typography>
+            </Box>
+          </Box>
+        )}
+        
         <Stack direction="row" spacing={1} alignItems="flex-end">
           <Avatar size="sm" sx={{ mb: 0.5 }}>
             {username.charAt(0).toUpperCase()}
           </Avatar>
           <Textarea
-            placeholder="Add a comment..."
+            placeholder={commentAtCurrentTime ? `Comment at ${formatTimestamp(currentVideoTime)}...` : "Add a comment..."}
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
             minRows={1}
@@ -323,9 +439,13 @@ export default function CommentsDrawer({
               flex: 1,
               backgroundColor: 'rgba(255,255,255,0.1)',
               color: '#fff',
-              border: '1px solid rgba(255,255,255,0.2)',
+              border: commentAtCurrentTime 
+                ? '1px solid rgba(255, 105, 180, 0.4)' 
+                : '1px solid rgba(255,255,255,0.2)',
               '&:focus-within': {
-                border: '1px solid rgba(255,255,255,0.4)'
+                border: commentAtCurrentTime 
+                  ? '1px solid #FF69B4' 
+                  : '1px solid rgba(255,255,255,0.4)'
               },
               '& textarea::placeholder': {
                 color: 'rgba(255,255,255,0.5)'

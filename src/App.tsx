@@ -1,10 +1,14 @@
-import { Routes, Route, useParams } from 'react-router-dom'
+import { Routes, Route, useParams, Navigate } from 'react-router-dom'
 import { Box } from '@mui/joy'
 import Layout from './components/Layout'
-import Home from './pages/Home'
+import ScrollToTop from './components/ScrollToTop'
+import Today from './pages/Today'
+import PropPredictions from './pages/PropPredictions'
+import DFS from './pages/DFS'
 import DFSLineup from './pages/DFSLineup'
-import DFSPoolLeaderboard from './pages/DFSPoolLeaderboard'
+import DFSPoolDetails from './pages/DFSPoolDetails'
 import JoinDFSPool from './pages/JoinDFSPool'
+import JoinDFSGroup from './pages/JoinDFSGroup'
 import GamePage from './pages/GamePage'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -23,6 +27,15 @@ import EditRosterSettings from './pages/EditRosterSettings'
 import CommissionerTools from './pages/CommissionerTools'
 import UserSettings from './pages/UserSettings'
 import PlayerPage from './pages/PlayerPage'
+import TeamPage from './pages/TeamPage'
+import AdminContent from './pages/AdminContent'
+import AdminContentGame from './pages/AdminContentGame'
+import AdminBlog from './pages/AdminBlog'
+import AdminDFS from './pages/AdminDFS'
+import AdminDFSPoolDetails from './pages/AdminDFSPoolDetails'
+import AdminAnalytics from './pages/AdminAnalytics'
+import AdminToday from './pages/AdminToday'
+import AdminFeed from './pages/AdminFeed'
 
 // Import Highlights and Post pages
 import Highlights from './pages/Highlights'
@@ -126,42 +139,37 @@ function App() {
         )
       `,
       fontFamily: 'var(--joy-fontFamily-body)',
-      '&::before': {
-        content: '""',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '3px',
-        background: (theme) => theme.palette.mode === 'dark'
-          ? 'linear-gradient(90deg, #e8e6e0 0%, #e8e6e0 33%, #d32f2f 33%, #d32f2f 34%, #e8e6e0 34%, #e8e6e0 100%)'
-          : 'linear-gradient(90deg, #000 0%, #000 33%, #8B0000 33%, #8B0000 34%, #000 34%, #000 100%)',
-        zIndex: 10000,
-      }
     }}>
+      <ScrollToTop />
       <Routes>
         {/* Public routes without layout */}
         <Route path="/join/:inviteCode" element={<JoinLeague />} />
         
         <Route path="/" element={<Layout />}>
-          <Route index element={<Highlights />} />
+          <Route index element={<Navigate to="/today" replace />} />
+          <Route path="feed" element={<Highlights />} />
           <Route path="login" element={<Login />} />
           
-          {/* DFS Routes - now combined with Today */}
-          <Route path="dfs" element={<Home />} />
+          {/* DFS Routes */}
+          <Route path="dfs" element={<DFS />} />
           <Route path="dfs/join/:poolId" element={<JoinDFSPool />} />
+          <Route path="dfs/group/:slug" element={<JoinDFSGroup />} />
           <Route path="dfs/lineup/:poolId" element={<DFSLineup />} />
-          <Route path="dfs/pool/:poolId" element={<DFSPoolLeaderboard />} />
+          <Route path="dfs/pool/:poolId" element={<DFSPoolDetails />} />
           
           {/* Game Highlights Routes */}
           <Route path="game/:id" element={<GamePage />} />
-          <Route path="post/:postId" element={<Post />} />
+          
+          {/* Today Route */}
+          <Route path="today" element={<Today />} />
+          <Route path="prop-predictions/:date" element={<PropPredictions />} />
           
           {/* Fantasy Routes */}
           <Route path="fantasy" element={<Dashboard />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="players" element={<Players leagueId="" />} />
           <Route path="player/:id" element={<GlobalPlayerPageWrapper />} />
+          <Route path="team/:id" element={<TeamPage />} />
           <Route path="league/:id" element={<League />} />
           <Route path="league/:id/matchup/:matchupId" element={<MatchupDetails />} />
           <Route path="league/:id/delete" element={<DeleteLeagueWrapper />} />
@@ -172,15 +180,28 @@ function App() {
           <Route path="league/:id/roster-settings" element={<EditRosterSettingsWrapper />} />
           <Route path="league/:id/commissioner-tools" element={<CommissionerToolsWrapper />} />
           <Route path="draft/:id" element={<Draft />} />
-          
-          {/* New Feature Routes */}
-          <Route path="today" element={<Home />} />
           <Route path="analysis" element={<Analysis />} />
           <Route path="betting" element={<Betting />} />
           <Route path="community" element={<Community />} />
           
           {/* User Settings */}
           <Route path="settings" element={<UserSettings />} />
+          
+          {/* Admin Routes */}
+          <Route path="admin/content" element={<AdminContent />} />
+          <Route path="admin/content/game/:gameId" element={<AdminContentGame />} />
+          <Route path="admin/blog" element={<AdminBlog />} />
+          <Route path="admin/dfs" element={<AdminDFS />} />
+          <Route path="admin/dfs/pool/:poolId" element={<AdminDFSPoolDetails />} />
+          <Route path="admin/analytics" element={<AdminAnalytics />} />
+          <Route path="admin/today" element={<AdminToday />} />
+          <Route path="admin/feed" element={<AdminFeed />} />
+          
+          {/* OG Image generation route - handled by Cloudflare Worker, exclude from React Router */}
+          <Route path="og-image/*" element={<></>} />
+          
+          {/* UUID route for shared posts - must come LAST to avoid conflicts with other routes */}
+          <Route path=":uuid" element={<Post />} />
         </Route>
       </Routes>
     </Box>

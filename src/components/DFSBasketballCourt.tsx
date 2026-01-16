@@ -1,18 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Box,
   Card,
   CardContent,
-  Tabs,
-  TabList,
-  Tab,
   Typography,
   Avatar,
   Chip,
   IconButton,
-  Modal,
-  ModalDialog,
-  ModalClose,
   Input,
   List,
   ListItem,
@@ -20,9 +14,18 @@ import {
   ListItemContent,
   ListItemDecorator,
   Sheet,
+  Button,
+  Table,
+  Stack,
+  Select,
+  Option,
+  Divider,
 } from '@mui/joy';
-import { Close, Search } from '@mui/icons-material';
+import { Close, Search, ArrowBack, ChevronLeft, ChevronRight, Add as AddIcon } from '@mui/icons-material';
 import { formatSalary } from '../hooks/useDFSLineupSalary';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '../utils/supabase';
+import { FANDUEL_SCORING } from '../utils/fantasyScoring';
 
 interface Player {
   id: string;
@@ -32,6 +35,8 @@ interface Player {
   jerseyNumber?: number | string;
   nbaPlayerId?: number;
   avatar: string;
+  injuryStatus?: string;
+  injuryType?: string;
 }
 
 interface PoolGame {
@@ -57,6 +62,8 @@ interface DFSBasketballCourtProps {
   };
   poolSalaryCap?: number; // Pool's salary cap limit
   currentLineupTotal?: number; // Current total salary of all players in lineup
+  poolId?: string; // Pool ID for fetching live stats
+  poolStatus?: 'scheduled' | 'live' | 'completed'; // Pool status for live scoring
 }
 
 export default function DFSBasketballCourt({
@@ -72,23 +79,190 @@ export default function DFSBasketballCourt({
   salaryData,
   poolSalaryCap,
   currentLineupTotal,
+  poolId,
+  poolStatus,
 }: DFSBasketballCourtProps) {
-  const [activeTab, setActiveTab] = useState<'starters' | 'rotation' | 'bench'>('starters');
-  const [modalOpen, setModalOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ unit: 'starters' | 'rotation' | 'bench'; index: number; position: string } | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [gameFilter, setGameFilter] = useState<string | null>(null);
   const [salaryFilter, setSalaryFilter] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 10;
+  
+  // Track previous points for animations
+  const [previousPoints, setPreviousPoints] = useState<Record<string, number>>({});
+  const [pointAnimations, setPointAnimations] = useState<Record<string, { value: number; key: number }>>({});
+  
+  // Get all players in lineup for live stats
+  const allLineupPlayers = useMemo(() => {
+    const players: Player[] = [];
+    [...startersPlayers, ...rotationPlayers, ...benchPlayers].forEach(p => {
+      if (p && p.nbaPlayerId) players.push(p);
+    });
+    return players;
+  }, [startersPlayers, rotationPlayers, benchPlayers]);
+  
+  // Fetch live stats for players in lineup (only if pool is live)
+  const { data: liveStats } = useQuery({
+    queryKey: ['dfs-lineup-live-stats', poolId, allLineupPlayers.map(p => p.nbaPlayerId)],
+    queryFn: async () => {
+      if (!poolId || !poolGames || poolGames.length === 0 || poolStatus !== 'live') return {};
+      
+      const gameIds = poolGames.map(g => g.game_id);
+      const nbaPlayerIds = allLineupPlayers.map(p => p.nbaPlayerId).filter((id): id is number => id !== undefined);
+      
+      if (nbaPlayerIds.length === 0) return {};
+      
+      const { data, error } = await supabase
+        .from('live_player_stats')
+        .select('nba_player_id, stats')
+        .in('game_id', gameIds)
+        .in('nba_player_id', nbaPlayerIds);
+      
+      if (error) {
+        console.error('Error fetching live stats:', error);
+        return {};
+      }
+      
+      // Calculate fantasy points for each player
+      const statsMap: Record<number, number> = {};
+      (data || []).forEach((player: any) => {
+        const stats = player.stats || {};
+        const fantasyPoints = FANDUEL_SCORING.calculatePoints({
+          pts: stats.pts || 0,
+          reb: stats.reb || 0,
+          ast: stats.ast || 0,
+          stl: stats.stl || 0,
+          blk: stats.blk || 0,
+          tov: stats.tov || 0,
+        } as any);
+        statsMap[player.nba_player_id] = fantasyPoints;
+      });
+      
+      return statsMap;
+    },
+    enabled: !!poolId && poolStatus === 'live' && allLineupPlayers.length > 0,
+    refetchInterval: poolStatus === 'live' ? 30000 : false, // Refetch every 30 seconds if live
+  });
+  
+  // Track point changes and trigger animations
+  useEffect(() => {
+    if (!liveStats || Object.keys(liveStats).length === 0) return;
+    
+    const newAnimations: Record<string, { value: number; key: number }> = {};
+    
+    Object.entries(liveStats).forEach(([playerId, currentPoints]) => {
+      const key = `player-${playerId}`;
+      const prevPoints = previousPoints[key] || 0;
+      
+      if (currentPoints > prevPoints && prevPoints > 0) {
+        const diff = currentPoints - prevPoints;
+        newAnimations[key] = { value: diff, key: Date.now() };
+        
+        // Auto-remove animation after 2 seconds
+        setTimeout(() => {
+          setPointAnimations(prev => {
+            const updated = { ...prev };
+            delete updated[key];
+            return updated;
+          });
+        }, 2000);
+      }
+    });
+    
+    if (Object.keys(newAnimations).length > 0) {
+      setPointAnimations(prev => ({ ...prev, ...newAnimations }));
+    }
+    
+    // Update previous points
+    const newPrevious: Record<string, number> = {};
+    Object.entries(liveStats).forEach(([playerId, points]) => {
+      newPrevious[`player-${playerId}`] = points;
+    });
+    setPreviousPoints(prev => ({ ...prev, ...newPrevious }));
+  }, [liveStats]);
+
+  // Fetch average fantasy points per game for all available players
+  const { data: playerFantasyPoints } = useQuery<Record<number, number>>({
+    queryKey: ['player-fantasy-points-avg', availablePlayers.map(p => p.nbaPlayerId)],
+    queryFn: async () => {
+      if (!availablePlayers || availablePlayers.length === 0) return {};
+
+      const nbaPlayerIds = availablePlayers
+        .map(p => p.nbaPlayerId)
+        .filter((id): id is number => id !== undefined);
+
+      if (nbaPlayerIds.length === 0) return {};
+
+      // Get current season year (NBA season runs Oct-June, e.g., 2025-26 season starts Oct 2025)
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth(); // 0-11, where 0 is January
+      // If we're in Oct-Dec, it's the start of the season (e.g., Oct 2025 = 2025-26 season)
+      // If we're in Jan-June, it's the same season year (e.g., Jan 2026 = 2025-26 season)
+      const seasonYear = currentMonth >= 9 ? currentYear : currentYear - 1;
+
+      // Fetch box scores for this season
+      const { data: boxscores, error } = await supabase
+        .from('nba_boxscores')
+        .select('nba_player_id, pts, reb, ast, stl, blk, tov')
+        .in('nba_player_id', nbaPlayerIds)
+        .gte('game_date', `${seasonYear}-10-01`)
+        .lte('game_date', `${seasonYear + 1}-06-30`)
+        .gt('min', 0); // Only games where player played
+
+      if (error) {
+        console.error('Error fetching fantasy points:', error);
+        return {};
+      }
+
+      // Calculate average fantasy points per game for each player
+      const fantasyPointsMap: Record<number, { total: number; games: number }> = {};
+
+      boxscores?.forEach((boxscore) => {
+        const fp = FANDUEL_SCORING.calculatePoints({
+          pts: boxscore.pts || 0,
+          reb: boxscore.reb || 0,
+          ast: boxscore.ast || 0,
+          stl: boxscore.stl || 0,
+          blk: boxscore.blk || 0,
+          tov: boxscore.tov || 0,
+        } as any);
+
+        if (!fantasyPointsMap[boxscore.nba_player_id]) {
+          fantasyPointsMap[boxscore.nba_player_id] = { total: 0, games: 0 };
+        }
+        fantasyPointsMap[boxscore.nba_player_id].total += fp;
+        fantasyPointsMap[boxscore.nba_player_id].games += 1;
+      });
+
+      // Calculate averages
+      const avgMap: Record<number, number> = {};
+      Object.entries(fantasyPointsMap).forEach(([playerId, data]) => {
+        avgMap[parseInt(playerId)] = data.games > 0 ? data.total / data.games : 0;
+      });
+
+      return avgMap;
+    },
+    enabled: availablePlayers.length > 0,
+  });
 
   const handleSlotClick = (unit: 'starters' | 'rotation' | 'bench', index: number, position: string, player: Player | null) => {
     if (player) {
-      // If slot has a player, navigate to player page
-      onPlayerClick?.(player);
+      // If slot has a player, do nothing (removed navigation to player page)
+      return;
     } else {
-      // If slot is empty, open modal to select a player
+      // If slot is empty, show player selector in the same card
       setSelectedSlot({ unit, index, position });
-      setModalOpen(true);
     }
+  };
+
+  const handleBack = () => {
+    setSelectedSlot(null);
+    setSearchQuery('');
+    setGameFilter(null);
+    setSalaryFilter(null);
+    setCurrentPage(1);
   };
 
   const handlePlayerSelect = (player: Player) => {
@@ -114,7 +288,6 @@ export default function DFSBasketballCourt({
       }
       
       onAddPlayer(player, selectedSlot.unit, selectedSlot.index);
-      setModalOpen(false);
       setSearchQuery('');
       setGameFilter(null);
       setSalaryFilter(null);
@@ -181,6 +354,32 @@ export default function DFSBasketballCourt({
     return true;
   });
 
+  // Sort by fantasy points per game (descending)
+  const sortedFilteredPlayers = useMemo(() => {
+    return [...filteredAvailablePlayers].sort((a, b) => {
+      const aFp = playerFantasyPoints?.[a.nbaPlayerId || 0] || 0;
+      const bFp = playerFantasyPoints?.[b.nbaPlayerId || 0] || 0;
+      return bFp - aFp; // Descending order
+    });
+  }, [filteredAvailablePlayers, playerFantasyPoints]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(sortedFilteredPlayers.length / rowsPerPage);
+  const paginatedPlayers = useMemo(() => {
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    return sortedFilteredPlayers.slice(startIndex, endIndex);
+  }, [sortedFilteredPlayers, currentPage]);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, gameFilter, salaryFilter, playerFantasyPoints]);
+
+  const handlePageChange = (newPage: number) => {
+    setCurrentPage(newPage);
+  };
+
   const renderPlayerSlot = (
     player: Player | null,
     position: string,
@@ -200,26 +399,31 @@ export default function DFSBasketballCourt({
           gap: { xs: 0.5, sm: 1 },
           p: { xs: 1, sm: 2 },
           borderRadius: 'md',
-          bgcolor: isEmpty ? 'background.level1' : 'background.surface',
+          bgcolor: isEmpty ? '#1a1a1a' : '#000000',
           border: '2px dashed',
-          borderColor: isEmpty ? 'divider' : 'primary.outlinedBorder',
+          borderColor: isEmpty ? '#333333' : '#555555',
+          width: { xs: 80, sm: 120 },
           minWidth: { xs: 80, sm: 120 },
-          cursor: 'pointer',
-          transition: 'all 0.2s',
+          maxWidth: { xs: 80, sm: 120 },
+          minHeight: { xs: 140, sm: 180 },
+          maxHeight: { xs: 140, sm: 180 },
+          cursor: isEmpty ? 'pointer' : 'default',
+          transition: 'border-color 0.2s, transform 0.2s',
+          overflow: 'hidden',
           '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: 'md',
-            borderColor: 'primary.solidBg',
+            transform: isEmpty ? 'translateY(-4px)' : 'none',
+            boxShadow: isEmpty ? 'md' : 'none',
+            borderColor: isEmpty ? 'primary.solidBg' : '#555555',
           },
         }}
-        onClick={() => handleSlotClick(unit, index, position, player)}
+        onClick={() => isEmpty && handleSlotClick(unit, index, position, player)}
       >
         {/* Position Label */}
         <Chip
           size="sm"
           variant="soft"
           color={
-            unit === 'starters' ? 'success' : unit === 'rotation' ? 'warning' : 'neutral'
+            unit === 'starters' ? 'success' : unit === 'rotation' ? 'warning' : 'primary'
           }
         >
           {position}
@@ -230,13 +434,13 @@ export default function DFSBasketballCourt({
             <Avatar
               sx={{
                 '--Avatar-size': { xs: '48px', sm: '64px' },
-                bgcolor: 'background.level2',
-                color: 'text.tertiary',
+                bgcolor: '#333333',
+                color: '#FFFFFF',
               }}
             >
               ?
             </Avatar>
-            <Typography level="body-sm" color="neutral" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
+            <Typography level="body-sm" sx={{ fontSize: { xs: '0.7rem', sm: '0.875rem' }, color: '#FFFFFF' }}>
               Empty
             </Typography>
           </>
@@ -282,15 +486,15 @@ export default function DFSBasketballCourt({
                   fontSize: { xs: '0.7rem', sm: '0.875rem' },
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
+                  whiteSpace: 'nowrap',
+                  color: '#FFFFFF',
                 }}
               >
                 {player.name.split(' ').pop()}
               </Typography>
               <Typography 
                 level="body-xs" 
-                color="neutral"
-                sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
+                sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, color: '#FFFFFF' }}
               >
                 {player.team}
               </Typography>
@@ -298,7 +502,16 @@ export default function DFSBasketballCourt({
 
             {/* Salary */}
             {salary !== undefined && (
-              <Chip size="sm" variant="outlined" sx={{ fontSize: { xs: '0.6rem', sm: '0.75rem' } }}>
+              <Chip 
+                size="sm" 
+                variant="solid" 
+                sx={{ 
+                  fontSize: { xs: '0.6rem', sm: '0.75rem' },
+                  bgcolor: '#FFFFFF',
+                  color: '#000000',
+                  fontWeight: 'bold',
+                }}
+              >
                 {formatSalary(salary)}
               </Chip>
             )}
@@ -340,22 +553,346 @@ export default function DFSBasketballCourt({
           p: { xs: 1, sm: 2, md: 3 },
         }}
       >
-        {players.map((player, index) =>
-          renderPlayerSlot(player, positions[index], unit, index, salaries[index])
-        )}
+        {players.map((player, index) => (
+          <React.Fragment key={`${unit}-${index}`}>
+            {renderPlayerSlot(player, positions[index], unit, index, salaries[index])}
+          </React.Fragment>
+        ))}
       </Box>
     );
   };
 
   return (
-    <>
-      <Card>
-        <CardContent>
-          <Typography level="title-lg" sx={{ mb: 2 }}>
-            Your Lineup
-          </Typography>
+    <Card sx={{ bgcolor: '#000000', borderColor: '#333333' }}>
+      <CardContent sx={{ bgcolor: '#000000' }}>
+        {selectedSlot ? (
+          // Player Selection View with Table
+          <Box sx={{ 
+            width: '100%', 
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0
+          }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography level="title-lg" sx={{ color: '#FFFFFF' }}>
+                Select {selectedSlot.position}
+              </Typography>
+              <Button
+                variant="plain"
+                size="sm"
+                startDecorator={<ArrowBack />}
+                onClick={handleBack}
+                sx={{
+                  color: '#FFFFFF',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  },
+                }}
+              >
+                Back
+              </Button>
+            </Box>
 
-          <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as any)}>
+            {/* Filter Header - Seamlessly integrated */}
+            <Box sx={{ 
+              mb: 1, 
+              p: 1.5, 
+              bgcolor: '#1a1a1a', 
+              borderRadius: 'sm',
+              border: '1px solid #333333'
+            }}>
+              <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                {/* Search Bar */}
+                <Input
+                  placeholder="Search players..."
+                  startDecorator={<Search />}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  size="sm"
+                  sx={{ 
+                    flex: 1,
+                    minWidth: 200,
+                    bgcolor: '#000000',
+                    border: '1px solid #333333',
+                    '& input': {
+                      color: '#FFFFFF',
+                    },
+                    '&::placeholder': {
+                      color: '#999',
+                    },
+                  }}
+                />
+
+                {/* Game Filter */}
+                <Select
+                  size="sm"
+                  value={gameFilter || 'all'}
+                  onChange={(_, value) => setGameFilter(value === 'all' ? null : value as string)}
+                  sx={{ 
+                    minWidth: 150,
+                    bgcolor: '#000000',
+                    border: '1px solid #333333',
+                    '& .MuiSelect-select': {
+                      color: '#FFFFFF',
+                    },
+                  }}
+                >
+                  <Option value="all">All Games</Option>
+                  {matchups.map((matchup) => (
+                    <Option key={matchup.id} value={matchup.id}>
+                      {matchup.label}
+                    </Option>
+                  ))}
+                </Select>
+
+                {/* Salary Filter */}
+                <Select
+                  size="sm"
+                  value={salaryFilter || 'all'}
+                  onChange={(_, value) => setSalaryFilter(value === 'all' ? null : value as string)}
+                  sx={{ 
+                    minWidth: 120,
+                    bgcolor: '#000000',
+                    border: '1px solid #333333',
+                    '& .MuiSelect-select': {
+                      color: '#FFFFFF',
+                    },
+                  }}
+                >
+                  <Option value="all">All Salaries</Option>
+                  <Option value="<10M">&lt; 10M</Option>
+                  <Option value="10-20M">10-20M</Option>
+                  <Option value="20-30M">20-30M</Option>
+                  <Option value="30-40M">30-40M</Option>
+                  <Option value=">40M">&gt; 40M</Option>
+                </Select>
+              </Stack>
+            </Box>
+
+            {/* Player Table */}
+            <Sheet sx={{ 
+              flex: 1, 
+              overflow: 'hidden', 
+              borderRadius: 'sm',
+              bgcolor: '#1a1a1a',
+              border: '1px solid #333333'
+            }}>
+              <Table 
+                stickyHeader
+                sx={{
+                  '& thead th': {
+                    bgcolor: '#000000',
+                    color: '#FFFFFF',
+                    borderBottom: '2px solid #333333',
+                    fontWeight: 'bold',
+                    fontSize: '0.75rem',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    py: 1,
+                    px: 1.5,
+                  },
+                  '& tbody td': {
+                    borderBottom: '1px solid #333333',
+                    py: 1.5,
+                    px: 1.5,
+                  },
+                  '& tbody tr': {
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: '#333333',
+                    },
+                  },
+                }}
+              >
+                <thead>
+                  <tr>
+                    <th style={{ width: '50px' }}>Avatar</th>
+                    <th>Player</th>
+                    <th style={{ width: '100px' }}>Team</th>
+                    <th style={{ width: '100px' }}>Status</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>FP/G</th>
+                    <th style={{ width: '120px', textAlign: 'right' }}>Salary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedPlayers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '3rem' }}>
+                        <Typography level="body-sm" sx={{ color: '#FFFFFF' }}>
+                          No available players found
+                        </Typography>
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedPlayers.map((player) => {
+                      const playerSalary = availablePlayersSalaries?.[player.id] || 0;
+                      const salaryFormatted = formatSalary(playerSalary);
+                      const avgFp = playerFantasyPoints?.[player.nbaPlayerId || 0] || 0;
+                      const hasInjury = player.injuryStatus && ['Out', 'Questionable', 'Day-to-Day'].includes(player.injuryStatus);
+                      return (
+                        <tr 
+                          key={player.id} 
+                          onClick={() => handlePlayerSelect(player)}
+                        >
+                          <td>
+                            <Avatar 
+                              src={player.avatar} 
+                              size="sm" 
+                              sx={{ width: 36, height: 36 }}
+                            >
+                              {player.name.charAt(0)}
+                            </Avatar>
+                          </td>
+                          <td>
+                            <Typography 
+                              level="body-sm" 
+                              sx={{ 
+                                fontWeight: 'bold',
+                                color: '#FFFFFF',
+                              }}
+                            >
+                              {player.name}
+                            </Typography>
+                          </td>
+                          <td>
+                            <Typography level="body-sm" sx={{ color: '#FFFFFF' }}>
+                              {player.team}
+                            </Typography>
+                          </td>
+                          <td>
+                            {hasInjury ? (
+                              <Chip
+                                size="sm"
+                                variant="solid"
+                                color={
+                                  player.injuryStatus === 'Out' ? 'danger' :
+                                  player.injuryStatus === 'Questionable' ? 'warning' :
+                                  'warning'
+                                }
+                                sx={{
+                                  fontSize: '0.7rem',
+                                  fontWeight: 'bold',
+                                }}
+                              >
+                                {player.injuryStatus}
+                              </Chip>
+                            ) : (
+                              <Typography level="body-xs" sx={{ color: '#666', fontSize: '0.7rem' }}>
+                                Healthy
+                              </Typography>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <Typography 
+                              level="body-sm" 
+                              sx={{ 
+                                fontWeight: 'bold',
+                                color: '#FFC72C',
+                              }}
+                            >
+                              {avgFp > 0 ? avgFp.toFixed(1) : '-'}
+                            </Typography>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <Typography 
+                              level="body-sm" 
+                              sx={{ 
+                                fontWeight: 'bold',
+                                color: '#FFFFFF',
+                              }}
+                            >
+                              {salaryFormatted}
+                            </Typography>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </Table>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  p: 1.5,
+                  borderTop: '1px solid #333333',
+                  bgcolor: '#000000'
+                }}>
+                  <Typography level="body-sm" sx={{ color: '#FFFFFF' }}>
+                    Showing {((currentPage - 1) * rowsPerPage) + 1} - {Math.min(currentPage * rowsPerPage, sortedFilteredPlayers.length)} of {sortedFilteredPlayers.length} players
+                  </Typography>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      sx={{
+                        borderColor: '#333333',
+                        color: '#FFFFFF',
+                        '&:disabled': {
+                          opacity: 0.5,
+                        },
+                        '&:hover:not(:disabled)': {
+                          bgcolor: '#333333',
+                        },
+                      }}
+                    >
+                      <ChevronLeft />
+                    </IconButton>
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', minWidth: '60px', textAlign: 'center' }}>
+                      Page {currentPage} / {totalPages}
+                    </Typography>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      sx={{
+                        borderColor: '#333333',
+                        color: '#FFFFFF',
+                        '&:disabled': {
+                          opacity: 0.5,
+                        },
+                        '&:hover:not(:disabled)': {
+                          bgcolor: '#333333',
+                        },
+                      }}
+                    >
+                      <ChevronRight />
+                    </IconButton>
+                  </Stack>
+                </Box>
+              )}
+            </Sheet>
+          </Box>
+        ) : (
+          // Lineup Tabs View
+          <Tabs 
+            value={activeTab} 
+            onChange={(_, value) => setActiveTab(value as any)}
+            sx={{
+              bgcolor: '#000000',
+              '& .MuiTabList-root': {
+                bgcolor: '#000000',
+                borderBottom: '2px solid #333333',
+              },
+              '& .MuiTab-root': {
+                color: '#FFFFFF',
+                '&:hover': {
+                  bgcolor: '#1a1a1a',
+                },
+                '&.Mui-selected': {
+                  color: '#FFC72C',
+                  bgcolor: '#000000',
+                },
+              },
+            }}
+          >
             <TabList>
               <Tab value="starters" color="success">
                 Starters (5) • 1.0×
@@ -363,7 +900,7 @@ export default function DFSBasketballCourt({
               <Tab value="rotation" color="warning">
                 Rotation (3) • 0.75×
               </Tab>
-              <Tab value="bench" color="neutral">
+              <Tab value="bench" color="primary">
                 Bench (2) • 0.5×
               </Tab>
             </TabList>
@@ -374,239 +911,9 @@ export default function DFSBasketballCourt({
               {activeTab === 'bench' && renderLineupTab('bench')}
             </Box>
           </Tabs>
-        </CardContent>
-      </Card>
-
-      {/* Player Selection Modal */}
-      <Modal open={modalOpen} onClose={() => {
-        setModalOpen(false);
-        setSearchQuery('');
-        setGameFilter(null);
-        setSalaryFilter(null);
-      }}>
-        <ModalDialog sx={{ 
-          width: { xs: '100vw', sm: 500 },
-          maxWidth: { xs: '100vw', sm: 600 },
-          height: { xs: '100vh', sm: 'auto' },
-          maxHeight: { xs: '100vh', sm: '85vh' },
-          p: { xs: 1.25, sm: 3 },
-          m: { xs: 0, sm: 2 },
-          borderRadius: { xs: 0, sm: 'md' },
-          overflow: 'hidden',
-          display: 'flex',
-          flexDirection: 'column'
-        }}>
-          <ModalClose />
-          <Box sx={{ 
-            width: '100%', 
-            maxWidth: '100%', 
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            flex: 1,
-            minHeight: 0
-          }}>
-            <Typography level="h4" sx={{ mb: 1, fontSize: { xs: '1.1rem', sm: '1.5rem' }, pr: 4, flexShrink: 0 }}>
-              {selectedSlot ? `${selectedSlot.position}` : 'Select Player'}
-            </Typography>
-
-            {/* Search */}
-            <Input
-              placeholder="Search..."
-              startDecorator={<Search />}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              size="sm"
-              sx={{ mb: 1, width: '100%', maxWidth: '100%', flexShrink: 0 }}
-            />
-
-            {/* Game/Matchup Filter */}
-            <Box sx={{ mb: 1, width: '100%', maxWidth: '100%', overflow: 'hidden', flexShrink: 0 }}>
-              <Typography level="body-sm" sx={{ mb: 0.5, fontWeight: 'bold', fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
-                Game
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                gap: 0.5, 
-                overflowX: 'auto',
-                pb: 0.5,
-                width: '100%',
-                maxWidth: '100%',
-                '&::-webkit-scrollbar': { height: 4 },
-                '&::-webkit-scrollbar-thumb': { bgcolor: 'neutral.300', borderRadius: 2 }
-              }}>
-                <Chip
-                  size="sm"
-                  variant={gameFilter === null ? 'solid' : 'outlined'}
-                  onClick={() => setGameFilter(null)}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  All
-                </Chip>
-                {matchups.map((matchup) => (
-                  <Chip
-                    key={matchup.id}
-                    size="sm"
-                    variant={gameFilter === matchup.id ? 'solid' : 'outlined'}
-                    onClick={() => setGameFilter(matchup.id)}
-                    sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                  >
-                    {matchup.label}
-                  </Chip>
-                ))}
-              </Box>
-            </Box>
-
-            {/* Salary Filter */}
-            <Box sx={{ mb: 1, width: '100%', maxWidth: '100%', overflow: 'hidden', flexShrink: 0 }}>
-              <Typography level="body-sm" sx={{ mb: 0.5, fontWeight: 'bold', fontSize: { xs: '0.7rem', sm: '0.875rem' } }}>
-                Salary
-              </Typography>
-              <Box sx={{ 
-                display: 'flex', 
-                gap: 0.5, 
-                overflowX: 'auto',
-                pb: 0.5,
-                width: '100%',
-                maxWidth: '100%',
-                '&::-webkit-scrollbar': { height: 4 },
-                '&::-webkit-scrollbar-thumb': { bgcolor: 'neutral.300', borderRadius: 2 }
-              }}>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === null ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter(null)}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  All
-                </Chip>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === '<10M' ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter('<10M')}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  &lt; 10M
-                </Chip>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === '10-20M' ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter('10-20M')}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  10-20M
-                </Chip>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === '20-30M' ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter('20-30M')}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  20-30M
-                </Chip>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === '30-40M' ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter('30-40M')}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  30-40M
-                </Chip>
-                <Chip
-                  size="sm"
-                  variant={salaryFilter === '>40M' ? 'solid' : 'outlined'}
-                  onClick={() => setSalaryFilter('>40M')}
-                  sx={{ cursor: 'pointer', fontSize: { xs: '0.65rem', sm: '0.75rem' }, flexShrink: 0 }}
-                >
-                  &gt; 40M
-                </Chip>
-              </Box>
-            </Box>
-
-            {/* Player List */}
-            <Sheet sx={{ 
-              flex: 1, 
-              overflow: 'auto', 
-              borderRadius: 'sm',
-              minHeight: 0,
-              width: '100%'
-            }}>
-              <List size="sm" sx={{ width: '100%', maxWidth: '100%' }}>
-                {filteredAvailablePlayers.length === 0 ? (
-                  <Box sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography level="body-sm" color="neutral">
-                      No available players found
-                    </Typography>
-                  </Box>
-                ) : (
-                  filteredAvailablePlayers.map((player) => {
-                    const playerSalary = availablePlayersSalaries?.[player.id] || 0;
-                    const salaryFormatted = formatSalary(playerSalary);
-                    return (
-                      <ListItem key={player.id} sx={{ px: 0, width: '100%', maxWidth: '100%' }}>
-                        <ListItemButton 
-                          onClick={() => handlePlayerSelect(player)} 
-                          sx={{ 
-                            py: { xs: 0.75, sm: 1.5 },
-                            px: { xs: 1, sm: 2 },
-                            gap: { xs: 1, sm: 1.5 },
-                            width: '100%',
-                            maxWidth: '100%',
-                            overflow: 'hidden'
-                          }}
-                        >
-                          <ListItemDecorator sx={{ minWidth: 'auto' }}>
-                            <Avatar 
-                              src={player.avatar} 
-                              size="sm" 
-                              sx={{ width: { xs: 30, sm: 40 }, height: { xs: 30, sm: 40 } }}
-                            >
-                              {player.name.charAt(0)}
-                            </Avatar>
-                          </ListItemDecorator>
-                          <ListItemContent sx={{ minWidth: 0, overflow: 'hidden' }}>
-                            <Typography 
-                              level="body-sm" 
-                              sx={{ 
-                                fontWeight: 'bold', 
-                                fontSize: { xs: '0.75rem', sm: '0.875rem' },
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap'
-                              }}
-                            >
-                              {player.name}
-                            </Typography>
-                            <Typography 
-                              level="body-xs" 
-                              color="neutral" 
-                              sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' } }}
-                            >
-                              {player.position} • {player.team}
-                            </Typography>
-                          </ListItemContent>
-                          <Typography 
-                            level="body-sm" 
-                            sx={{ 
-                              fontWeight: 'bold', 
-                              fontSize: { xs: '0.7rem', sm: '0.875rem' }, 
-                              flexShrink: 0,
-                              whiteSpace: 'nowrap'
-                            }}
-                          >
-                            {salaryFormatted}
-                          </Typography>
-                        </ListItemButton>
-                      </ListItem>
-                    );
-                  })
-                )}
-              </List>
-            </Sheet>
-          </Box>
-        </ModalDialog>
-      </Modal>
-    </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

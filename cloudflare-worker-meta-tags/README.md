@@ -1,17 +1,20 @@
 # HoopGeek Meta Tag Injector
 
-This Cloudflare Worker intercepts social media bot requests (iMessage, WhatsApp, Facebook, Twitter, etc.) and dynamically injects Open Graph meta tags for DFS pool share links, creating rich previews when shared.
+This Cloudflare Worker intercepts social media bot requests (iMessage, WhatsApp, Facebook, Twitter, etc.) and dynamically injects Open Graph meta tags for DFS pool share links and feed post shares, creating rich previews when shared.
 
 ## Features
 
 - 🤖 Detects social media bots (iMessage, WhatsApp, Facebook, Twitter, LinkedIn, etc.)
 - 🏀 Dynamically generates meta tags for DFS pool links
-- 💰 Shows entry fee, prize pool, current entries, and lock time
+- 📱 Dynamically generates meta tags for feed post shares (parallels avatar bar display)
+- 💰 Shows entry fee, prize pool, current entries, and lock time (DFS)
+- 🏀 Shows teams, scores, dates, and fun scores (Feed Posts)
 - ⚡ Caches responses for 5 minutes for performance
-- 🔒 Secure - uses Supabase API to fetch pool data
+- 🔒 Secure - uses Supabase API to fetch data
 
 ## How It Works
 
+### DFS Pool Shares
 1. When someone shares a DFS pool link like `https://hoopgeek.app/dfs/join/abc-123`
 2. Social media platforms send a bot to preview the link
 3. This worker detects the bot, fetches pool data from Supabase
@@ -19,12 +22,32 @@ This Cloudflare Worker intercepts social media bot requests (iMessage, WhatsApp,
 5. Returns the modified HTML to the bot
 6. The bot creates a rich preview with contest info
 
-## Preview Example
+### Feed Post Shares
+1. When someone shares a feed post link like `https://hoopgeek.app/4a5f412a-457b-4c82-aa47-a1f030a03274`
+2. Social media platforms send a bot to preview the link
+3. This worker detects the bot, fetches feed post data from Supabase
+4. Injects custom Open Graph meta tags that parallel the avatar bar:
+   - Team matchups (e.g., "Lakers vs Celtics")
+   - Game scores
+   - Game dates
+   - Fun scores
+   - Post descriptions
+5. Returns the modified HTML to the bot
+6. The bot creates a rich preview with game/post info
 
-When shared, the link will show:
+## Preview Examples
+
+### DFS Pool Share
+When shared, a DFS pool link will show:
 - **Title**: "High Roller - $100 Contest - HoopGeek"
 - **Description**: "Join this $10 DFS basketball contest! 💰 Prize Pool: $100 | 👥 8/10 entries | 5 NBA games | Locks Jan 15 at 7:00 PM"
 - **Image**: Your DFS contest image
+
+### Feed Post Share
+When shared, a feed post link will show:
+- **Title**: "[Post Title] - HoopGeek" (or uses share_title if set)
+- **Description**: "Lakers vs Celtics | 120-115 | 11/15 | Fun Score: 95 | [Post Description]"
+- **Image**: Post thumbnail or share_image_url if set
 
 ## Deployment Instructions
 
@@ -51,12 +74,15 @@ npx wrangler secret put SUPABASE_ANON_KEY
 
 ### Step 3: Update wrangler.toml
 
-Update the `routes` section in `wrangler.toml` with your actual domain:
+Update the `routes` section in `wrangler.toml` with your actual domain. The catch-all pattern is needed to handle UUID-based feed post routes:
 
 ```toml
 [env.production]
 routes = [
-  { pattern = "your-domain.com/dfs/join/*", zone_name = "your-domain.com" }
+  { pattern = "your-domain.com/dfs/join/*", zone_name = "your-domain.com" },
+  # Feed post routes - matches UUID pattern for shared posts
+  # Note: The worker code will validate UUID format, this just catches potential matches
+  { pattern = "your-domain.com/*", zone_name = "your-domain.com" }
 ]
 ```
 
@@ -68,7 +94,7 @@ npm run deploy
 
 ### Step 5: Test the Worker
 
-#### Test with a bot user agent:
+#### Test DFS Pool Shares with a bot user agent:
 
 ```bash
 curl -A "facebookexternalhit/1.0" https://hoopgeek.app/dfs/join/YOUR_POOL_ID
@@ -76,13 +102,28 @@ curl -A "facebookexternalhit/1.0" https://hoopgeek.app/dfs/join/YOUR_POOL_ID
 
 You should see the HTML with custom meta tags injected.
 
+#### Test Feed Post Shares with a bot user agent:
+
+```bash
+curl -A "AppleBot" https://hoopgeek.app/YOUR_FEED_POST_UUID
+```
+
+You should see the HTML with custom meta tags that include team info, scores, and post description.
+
 #### Test in iMessage:
 
+**DFS Pool:**
 1. Create a DFS pool or use an existing one
 2. Click "Share" in the pool details
 3. Copy the link
 4. Send it in iMessage to yourself or a friend
 5. You should see a rich preview with contest details!
+
+**Feed Post:**
+1. Find a feed post (or create one in admin)
+2. Copy the post URL (format: `https://hoopgeek.app/{post-uuid}`)
+3. Send it in iMessage to yourself or a friend
+4. You should see a rich preview with team matchups, scores, dates, and post description!
 
 ## Monitoring
 

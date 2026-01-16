@@ -4,10 +4,6 @@ import {
   Card,
   CardContent,
   Typography,
-  Tabs,
-  TabList,
-  Tab,
-  TabPanel,
   Grid,
   Stack,
   Chip,
@@ -19,26 +15,8 @@ import { useNavigate } from 'react-router-dom';
 import { useDFSUserStats } from '../../hooks/useDFSUserStats';
 import { useDFSUserEntries } from '../../hooks/useDFSUserEntries';
 import { formatSalary } from '../../hooks/useDFSLineupSalary';
-import PoolDetailsModal from './PoolDetailsModal';
 import { supabase } from '../../utils/supabase';
 
-// FanDuel Scoring
-const FANDUEL_SCORING = {
-  pts: 1,
-  fg3m: 1,
-  reb: 1.2,
-  ast: 1.5,
-  stl: 3,
-  blk: 3,
-  tov: -1,
-};
-
-function calculateFantasyPoints(stats: any, scoring: typeof FANDUEL_SCORING): number {
-  return Object.entries(scoring).reduce((total, [stat, multiplier]) => {
-    const value = parseFloat(stats[stat]) || 0;
-    return total + (value * multiplier);
-  }, 0);
-}
 
 // Component to handle player avatar with NBA headshots
 function PlayerAvatar({ player }: { player: { nba_player_id: number; player_name: string } }) {
@@ -72,9 +50,6 @@ interface UserStatsAndEntriesProps {
 }
 
 export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps) {
-  const [activeTab, setActiveTab] = useState<number>(0);
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [liveScores, setLiveScores] = useState<Map<string, { score: number; rank: number }>>(new Map());
   const navigate = useNavigate();
   
@@ -138,7 +113,7 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
 
         const allScores: Array<{ entryId: string; score: number }> = [];
 
-        // Calculate scores for all entries
+        // Calculate scores for all entries using server-side calculated points
         for (const entry of allPoolEntries || []) {
           const { data: lineup } = await supabase
             .from('dfs_lineups')
@@ -149,28 +124,18 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                 nba_player_id,
                 player_name,
                 unit,
-                unit_multiplier
+                unit_multiplier,
+                weighted_points
               )
             `)
             .eq('entry_id', entry.id)
             .maybeSingle();
 
           const positions = lineup?.dfs_lineup_positions || [];
-          let totalScore = 0;
-
-          for (const player of positions) {
-            const { data: liveStats } = await supabase
-              .from('live_player_stats')
-              .select('stats')
-              .eq('nba_player_id', player.nba_player_id)
-              .in('game_id', gameIds)
-              .maybeSingle();
-
-            if (liveStats?.stats) {
-              const rawFantasyPoints = calculateFantasyPoints(liveStats.stats, FANDUEL_SCORING);
-              totalScore += rawFantasyPoints * (player.unit_multiplier || 1);
-            }
-          }
+          // Use server-side calculated weighted_points from database
+          const totalScore = (positions || []).reduce((sum: number, p: any) => {
+            return sum + (p.weighted_points || 0);
+          }, 0);
 
           allScores.push({ entryId: entry.id, score: totalScore });
         }
@@ -223,18 +188,71 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
   };
 
   return (
-    <Card>
-      <CardContent>
-        <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as number)}>
-          <TabList>
-            <Tab>🎯 Upcoming</Tab>
-            <Tab>🔴 Live</Tab>
-            <Tab>📜 Past</Tab>
-            <Tab>📊 Stats</Tab>
-          </TabList>
+    <Stack spacing={4}>
+      {/* Section Header */}
+      <Box
+        sx={{
+          borderLeft: '4px solid #FFC72C',
+          pl: 2,
+          py: 0.5,
+        }}
+      >
+        <Typography
+          level="h2"
+          sx={{
+            fontFamily: 'serif',
+            fontWeight: 900,
+            fontSize: { xs: '1.5rem', md: '2rem' },
+            textTransform: 'uppercase',
+            color: 'text.primary',
+            letterSpacing: '0.05em',
+          }}
+        >
+          YOUR ACTIVE ENTRIES
+        </Typography>
+      </Box>
 
-          {/* Upcoming Entries Tab */}
-          <TabPanel value={0} sx={{ p: 0 }}>
+      {/* Upcoming & Live Entries Grid */}
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+          gap: 3,
+        }}
+      >
+        {/* Upcoming Entries */}
+        <Card
+          sx={{
+            bgcolor: 'rgba(0, 0, 0, 0.4)',
+            border: '3px solid',
+            borderColor: 'text.primary',
+            borderRadius: 0,
+          }}
+        >
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: '#FFC72C',
+                }}
+              />
+              <Typography
+                level="h4"
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '1rem', md: '1.1rem' },
+                  textTransform: 'uppercase',
+                  color: 'text.primary',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                UPCOMING ENTRIES
+              </Typography>
+            </Box>
             {entriesLoading ? (
               <Box sx={{ p: 2 }}>
                 <Typography level="body-sm" color="neutral">Loading entries...</Typography>
@@ -252,8 +270,7 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                       cursor: 'pointer',
                     }}
                     onClick={() => {
-                      setSelectedPoolId(entry.pool_id);
-                      setSelectedEntryId(entry.id);
+                      navigate(`/dfs/pool/${entry.pool_id}?view=entry&entryId=${entry.id}`);
                     }}
                   >
                     {/* Pool Info Header */}
@@ -411,10 +428,47 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                 </Button>
               </Box>
             )}
-          </TabPanel>
+          </CardContent>
+        </Card>
 
-          {/* Live Entries Tab */}
-          <TabPanel value={1} sx={{ p: 0 }}>
+        {/* Live Entries */}
+        <Card
+          sx={{
+            bgcolor: 'rgba(0, 0, 0, 0.4)',
+            border: '3px solid',
+            borderColor: 'text.primary',
+            borderRadius: 0,
+          }}
+        >
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  bgcolor: '#ef4444',
+                  animation: 'pulse-dot 2s ease-in-out infinite',
+                  '@keyframes pulse-dot': {
+                    '0%, 100%': { opacity: 1 },
+                    '50%': { opacity: 0.5 },
+                  },
+                }}
+              />
+              <Typography
+                level="h4"
+                sx={{
+                  fontFamily: 'serif',
+                  fontWeight: 900,
+                  fontSize: { xs: '1rem', md: '1.1rem' },
+                  textTransform: 'uppercase',
+                  color: 'text.primary',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                LIVE ENTRIES
+              </Typography>
+            </Box>
             {entriesLoading ? (
               <Box sx={{ p: 2 }}>
                 <Typography level="body-sm" color="neutral">Loading entries...</Typography>
@@ -435,8 +489,7 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                       position: 'relative',
                     }}
                     onClick={() => {
-                      setSelectedPoolId(entry.pool_id);
-                      setSelectedEntryId(entry.id);
+                      navigate(`/dfs/pool/${entry.pool_id}?view=entry&entryId=${entry.id}`);
                     }}
                   >
                     {/* LIVE Badge */}
@@ -585,10 +638,43 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                 </Typography>
               </Box>
             )}
-          </TabPanel>
+          </CardContent>
+        </Card>
+      </Box>
 
-          {/* Past Entries Tab */}
-          <TabPanel value={2} sx={{ p: 0 }}>
+      {/* Past Entries - Full Width */}
+      <Card
+        sx={{
+          bgcolor: 'rgba(0, 0, 0, 0.4)',
+          border: '3px solid',
+          borderColor: 'text.primary',
+          borderRadius: 0,
+        }}
+      >
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: 'text.secondary',
+              }}
+            />
+            <Typography
+              level="h4"
+              sx={{
+                fontFamily: 'serif',
+                fontWeight: 900,
+                fontSize: { xs: '1rem', md: '1.1rem' },
+                textTransform: 'uppercase',
+                color: 'text.primary',
+                letterSpacing: '0.05em',
+              }}
+            >
+              PAST ENTRIES
+            </Typography>
+          </Box>
             {entriesLoading ? (
               <Box sx={{ p: 2 }}>
                 <Typography level="body-sm" color="neutral">Loading entries...</Typography>
@@ -606,8 +692,7 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                       cursor: 'pointer',
                     }}
                     onClick={() => {
-                      setSelectedPoolId(entry.pool_id);
-                      setSelectedEntryId(entry.id);
+                      navigate(`/dfs/pool/${entry.pool_id}?view=entry&entryId=${entry.id}`);
                     }}
                   >
                     {/* Pool Info Header */}
@@ -760,59 +845,126 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
                 </Typography>
               </Box>
             )}
-          </TabPanel>
+          </CardContent>
+        </Card>
 
-          {/* Stats Tab */}
-          <TabPanel value={3} sx={{ p: 2 }}>
+      {/* User Stats - Full Width */}
+      <Card
+        sx={{
+          bgcolor: 'rgba(0, 0, 0, 0.4)',
+          border: '3px solid',
+          borderColor: 'text.primary',
+          borderRadius: 0,
+        }}
+      >
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                bgcolor: '#10b981',
+              }}
+            />
+            <Typography
+              level="h4"
+              sx={{
+                fontFamily: 'serif',
+                fontWeight: 900,
+                fontSize: { xs: '1rem', md: '1.1rem' },
+                textTransform: 'uppercase',
+                color: 'text.primary',
+                letterSpacing: '0.05em',
+              }}
+            >
+              YOUR STATS
+            </Typography>
+          </Box>
             {statsLoading ? (
               <Typography level="body-sm" color="neutral">Loading stats...</Typography>
             ) : stats ? (
               <Stack spacing={2}>
-                <Box sx={{ p: 2, bgcolor: 'primary.50', borderRadius: 'sm' }}>
-                  <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>
+                <Box 
+                  sx={{ 
+                    p: 2, 
+                    bgcolor: 'rgba(255, 199, 44, 0.1)',
+                    border: '2px solid rgba(255, 199, 44, 0.3)',
+                    borderRadius: 0,
+                  }}
+                >
+                  <Typography level="body-xs" sx={{ mb: 0.5, color: 'text.secondary', textTransform: 'uppercase', fontFamily: 'serif', fontWeight: 700 }}>
                     Total Winnings
                   </Typography>
-                  <Typography level="h2" sx={{ fontWeight: 'bold', color: 'primary.600' }}>
+                  <Typography level="h2" sx={{ fontWeight: 900, color: '#FFC72C', fontFamily: 'serif' }}>
                     ${stats.totalWinnings.toFixed(2)}
                   </Typography>
                 </Box>
                 <Grid container spacing={2}>
                   <Grid xs={6}>
-                    <Box sx={{ p: 1.5, bgcolor: 'success.50', borderRadius: 'sm' }}>
-                      <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>
+                    <Box 
+                      sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(16, 185, 129, 0.1)',
+                        border: '2px solid rgba(16, 185, 129, 0.3)',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <Typography level="body-xs" sx={{ mb: 0.5, color: 'text.secondary', textTransform: 'uppercase', fontFamily: 'serif', fontWeight: 700 }}>
                         Contests Won
                       </Typography>
-                      <Typography level="h4" sx={{ fontWeight: 'bold', color: 'success.600' }}>
+                      <Typography level="h4" sx={{ fontWeight: 900, color: '#10b981', fontFamily: 'serif' }}>
                         {stats.contestsWon}
                       </Typography>
                     </Box>
                   </Grid>
                   <Grid xs={6}>
-                    <Box sx={{ p: 1.5, bgcolor: 'warning.50', borderRadius: 'sm' }}>
-                      <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>
+                    <Box 
+                      sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(239, 68, 68, 0.1)',
+                        border: '2px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <Typography level="body-xs" sx={{ mb: 0.5, color: 'text.secondary', textTransform: 'uppercase', fontFamily: 'serif', fontWeight: 700 }}>
                         Active Lineups
                       </Typography>
-                      <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.600' }}>
+                      <Typography level="h4" sx={{ fontWeight: 900, color: '#ef4444', fontFamily: 'serif' }}>
                         {stats.activeLineups}
                       </Typography>
                     </Box>
                   </Grid>
                   <Grid xs={6}>
-                    <Box sx={{ p: 1.5, bgcolor: 'background.level1', borderRadius: 'sm' }}>
-                      <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>
+                    <Box 
+                      sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(255, 255, 255, 0.05)',
+                        border: '2px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <Typography level="body-xs" sx={{ mb: 0.5, color: 'text.secondary', textTransform: 'uppercase', fontFamily: 'serif', fontWeight: 700 }}>
                         Total Contests
                       </Typography>
-                      <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                      <Typography level="h4" sx={{ fontWeight: 900, color: 'text.primary', fontFamily: 'serif' }}>
                         {stats.contestsEntered}
                       </Typography>
                     </Box>
                   </Grid>
                   <Grid xs={6}>
-                    <Box sx={{ p: 1.5, bgcolor: 'background.level1', borderRadius: 'sm' }}>
-                      <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>
+                    <Box 
+                      sx={{ 
+                        p: 1.5, 
+                        bgcolor: 'rgba(255, 255, 255, 0.05)',
+                        border: '2px solid rgba(255, 255, 255, 0.2)',
+                        borderRadius: 0,
+                      }}
+                    >
+                      <Typography level="body-xs" sx={{ mb: 0.5, color: 'text.secondary', textTransform: 'uppercase', fontFamily: 'serif', fontWeight: 700 }}>
                         Win Rate
                       </Typography>
-                      <Typography level="h4" sx={{ fontWeight: 'bold' }}>
+                      <Typography level="h4" sx={{ fontWeight: 900, color: 'text.primary', fontFamily: 'serif' }}>
                         {stats.winRate.toFixed(1)}%
                       </Typography>
                     </Box>
@@ -822,24 +974,10 @@ export default function UserStatsAndEntries({ userId }: UserStatsAndEntriesProps
             ) : (
               <Typography level="body-sm" color="neutral">No stats available</Typography>
             )}
-          </TabPanel>
-        </Tabs>
-      </CardContent>
+        </CardContent>
+      </Card>
 
-      {/* Pool Details Modal */}
-      {selectedPoolId && (
-        <PoolDetailsModal
-          poolId={selectedPoolId}
-          open={!!selectedPoolId}
-          onClose={() => {
-            setSelectedPoolId(null);
-            setSelectedEntryId(null);
-          }}
-          initialView="entry"
-          entryId={selectedEntryId}
-        />
-      )}
-    </Card>
+    </Stack>
   );
 }
 

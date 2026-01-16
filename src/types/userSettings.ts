@@ -59,8 +59,6 @@ export interface FavoriteTeam {
   team_name: string;
   team_abbreviation: string;
   team_city: string;
-  team_conference: string;
-  team_division: string;
   notes: string | null;
   notify_on_games: boolean;
   notify_on_trades: boolean;

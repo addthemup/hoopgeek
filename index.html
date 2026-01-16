@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/favicon.ico" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
     <title>HoopGeek - Fantasy Basketball</title>
     
@@ -35,6 +35,45 @@
       } catch (e) {
         console.log('Could not access localStorage');
       }
+      
+      // Hide mobile browser URL bar
+      (function() {
+        // Check if mobile device
+        const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        if (isMobile) {
+          // Function to hide URL bar
+          function hideURLBar() {
+            // Small delay to ensure page is rendered
+            setTimeout(function() {
+              // Scroll down 1px to hide address bar
+              window.scrollTo(0, 1);
+              // Then scroll back to top (address bar stays hidden)
+              setTimeout(function() {
+                window.scrollTo(0, 0);
+              }, 10);
+            }, 100);
+          }
+          
+          // Hide URL bar on load
+          if (document.readyState === 'complete') {
+            hideURLBar();
+          } else {
+            window.addEventListener('load', hideURLBar);
+          }
+          
+          // Hide URL bar on orientation change
+          window.addEventListener('orientationchange', function() {
+            setTimeout(hideURLBar, 200);
+          });
+          
+          // Hide URL bar when page becomes visible (from background)
+          document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+              hideURLBar();
+            }
+          });
+        }
+      })();
     </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

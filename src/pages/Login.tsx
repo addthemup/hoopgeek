@@ -28,7 +28,7 @@ export default function Login() {
   const { signIn, signUp, user } = useAuth()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const redirectUrl = searchParams.get('redirect') || '/'
+  const redirectUrl = searchParams.get('redirect') || '/today'
 
   // If user is already logged in, redirect them
   useEffect(() => {

@@ -205,7 +205,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Drop existing trigger if exists
 DROP TRIGGER IF EXISTS trigger_dfs_entry_stats_update ON dfs_entries;
@@ -235,7 +235,7 @@ BEGIN
   
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
 DROP TRIGGER IF EXISTS trigger_lineup_created ON dfs_lineups;
 

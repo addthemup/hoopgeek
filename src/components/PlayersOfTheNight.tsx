@@ -50,11 +50,11 @@ export default function PlayersOfTheNight() {
   const [selectedPlayer, setSelectedPlayer] = useState<NightPlayer | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Fetch players of the night
+  // Fetch optimal lineup of the night (12 players under salary cap)
   const { data: nightPlayers, isLoading } = useQuery<NightPlayer[]>({
-    queryKey: ['players-of-the-night'],
+    queryKey: ['optimal-lineup-of-the-night'],
     queryFn: async () => {
-      const { data, error } = await supabase.rpc('get_players_of_the_night');
+      const { data, error } = await supabase.rpc('get_optimal_lineup_of_the_night');
 
       if (error) {
         console.error('Error fetching players of night:', error);
@@ -138,20 +138,6 @@ export default function PlayersOfTheNight() {
     year: 'numeric'
   });
 
-  // Sort players by position
-  const guards = nightPlayers.filter(p => 
-    p.player_position.toLowerCase().includes('guard') || 
-    ['pg', 'sg', 'g'].includes(p.player_position.toLowerCase())
-  );
-  const forwards = nightPlayers.filter(p => 
-    p.player_position.toLowerCase().includes('forward') || 
-    ['sf', 'pf', 'f'].includes(p.player_position.toLowerCase())
-  );
-  const centers = nightPlayers.filter(p => 
-    p.player_position.toLowerCase().includes('center') || 
-    p.player_position.toLowerCase() === 'c'
-  );
-
   const renderPlayer = (player: NightPlayer) => (
     <Box
       key={player.player_id}
@@ -170,54 +156,61 @@ export default function PlayersOfTheNight() {
         jerseyNumber={player.jersey_number}
         nbaTeam={player.team}
         position={player.player_position}
-        size="medium"
+        size="small"
       />
-      <Typography level="body-xs" sx={{ mt: 0.5, fontWeight: 'bold' }}>
+      <Typography level="body-xs" sx={{ mt: 0.25, fontWeight: 'bold', color: '#FFFFFF', fontSize: '0.7rem' }}>
         {player.player_name.split(' ').pop()}
       </Typography>
-      <Chip size="sm" variant="soft" color="primary" sx={{ mt: 0.25 }}>
+      <Chip 
+        size="sm" 
+        variant="soft" 
+        sx={{ 
+          mt: 0.25, 
+          bgcolor: '#1a1a1a',
+          color: '#FFD700',
+          border: '1px solid #333333',
+          fontSize: '0.65rem',
+          height: '18px',
+        }}
+      >
         {player.fantasy_points.toFixed(1)} FP
       </Chip>
     </Box>
   );
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        {/* Header */}
-        <Box sx={{ mb: 2, textAlign: 'center' }}>
-          <Typography level="h3" sx={{ mb: 0.5 }}>
-            🔥 Players of the Night
+    <Card variant="outlined" sx={{ bgcolor: '#000000', borderColor: '#333333' }}>
+      <CardContent sx={{ bgcolor: '#000000', p: 1.5 }}>
+        {/* Header - Condensed */}
+        <Box sx={{ mb: 1.5, textAlign: 'center' }}>
+          <Typography level="title-sm" sx={{ mb: 0.25, color: '#FFFFFF', fontWeight: 'bold' }}>
+            ⭐ Optimal Lineup of the Night
           </Typography>
-          <Typography level="body-xs" color="neutral">
+          <Typography level="body-xs" sx={{ color: '#CCCCCC', mb: 0.5 }}>
+            {nightPlayers && nightPlayers.length > 0 && (
+              <>
+                {nightPlayers.length} players • ${(nightPlayers.reduce((sum, p) => sum + (p.salary || 0), 0) / 1000000).toFixed(1)}M salary • {nightPlayers.reduce((sum, p) => sum + (p.fantasy_points || 0), 0).toFixed(1)} FP
+              </>
+            )}
+          </Typography>
+          <Typography level="body-xs" sx={{ color: '#CCCCCC' }}>
             {yesterdayFormatted}
           </Typography>
         </Box>
 
-        {/* Players in Formation */}
+        {/* Optimal Lineup - 12 Players in Grid */}
         <Box>
-          <Stack spacing={2} sx={{ alignItems: 'center' }}>
-            {/* Top Row: Forward - Center - Forward */}
-            <Stack 
-              direction="row" 
-              spacing={2} 
-              sx={{ justifyContent: 'center', alignItems: 'center' }}
-            >
-              {forwards[0] && renderPlayer(forwards[0])}
-              {centers[0] && renderPlayer(centers[0])}
-              {forwards[1] && renderPlayer(forwards[1])}
-            </Stack>
-
-            {/* Bottom Row: Guard - Guard */}
-            <Stack 
-              direction="row" 
-              spacing={4} 
-              sx={{ justifyContent: 'center', alignItems: 'center' }}
-            >
-              {guards[0] && renderPlayer(guards[0])}
-              {guards[1] && renderPlayer(guards[1])}
-            </Stack>
-          </Stack>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: 'repeat(3, 1fr)', sm: 'repeat(4, 1fr)', md: 'repeat(6, 1fr)' },
+              gap: 1.5,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            {nightPlayers.slice(0, 12).map((player) => renderPlayer(player))}
+          </Box>
         </Box>
       </CardContent>
 
@@ -228,63 +221,81 @@ export default function PlayersOfTheNight() {
             maxWidth: '90vw',
             maxHeight: '90vh',
             overflow: 'auto',
+            bgcolor: '#000000',
+            borderColor: '#333333',
           }}
         >
-          <ModalClose />
+          <ModalClose sx={{ color: '#FFFFFF' }} />
           {selectedPlayer && (
             <>
-              <Typography level="h4" sx={{ mb: 2 }}>
+              <Typography level="h4" sx={{ mb: 2, color: '#FFFFFF' }}>
                 {selectedPlayer.player_name} - Last Night
               </Typography>
               
               <Stack spacing={2}>
                 <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                  <Chip size="sm" variant="soft" color="primary">
+                  <Chip 
+                    size="sm" 
+                    variant="soft" 
+                    sx={{ 
+                      bgcolor: '#1a1a1a',
+                      color: '#FFD700',
+                      border: '1px solid #333333',
+                    }}
+                  >
                     {selectedPlayer.fantasy_points.toFixed(1)} FP
                   </Chip>
-                  <Chip size="sm" variant="soft" color="neutral">
+                  <Chip 
+                    size="sm" 
+                    variant="soft" 
+                    sx={{ 
+                      bgcolor: '#1a1a1a',
+                      color: '#FFFFFF',
+                      border: '1px solid #333333',
+                    }}
+                  >
                     {selectedPlayer.team} - #{selectedPlayer.jersey_number}
                   </Chip>
                 </Box>
 
                 {boxScoresLoading ? (
-                  <Typography>Loading stats...</Typography>
+                  <Typography sx={{ color: '#FFFFFF' }}>Loading stats...</Typography>
                 ) : !boxScores || boxScores.length === 0 ? (
-                  <Typography>No game found</Typography>
+                  <Typography sx={{ color: '#FFFFFF' }}>No game found</Typography>
                 ) : (
                   <Box sx={{ overflowX: 'auto' }}>
-                    <Table size="sm">
+                    <Table size="sm" sx={{ bgcolor: '#000000' }}>
                       <thead>
                         <tr>
-                          <th>OPP</th>
-                          <th>MIN</th>
-                          <th>PTS</th>
-                          <th>REB</th>
-                          <th>AST</th>
-                          <th>STL</th>
-                          <th>BLK</th>
-                          <th>TO</th>
-                          <th>FG</th>
-                          <th>3PT</th>
-                          <th>FT</th>
-                          <th>FP</th>
+                          <th style={{ color: '#FFFFFF' }}>OPP</th>
+                          <th style={{ color: '#FFFFFF' }}>MIN</th>
+                          <th style={{ color: '#FFFFFF' }}>PTS</th>
+                          <th style={{ color: '#FFFFFF' }}>REB</th>
+                          <th style={{ color: '#FFFFFF' }}>AST</th>
+                          <th style={{ color: '#FFFFFF' }}>STL</th>
+                          <th style={{ color: '#FFFFFF' }}>BLK</th>
+                          <th style={{ color: '#FFFFFF' }}>TO</th>
+                          <th style={{ color: '#FFFFFF' }}>FG</th>
+                          <th style={{ color: '#FFFFFF' }}>3PT</th>
+                          <th style={{ color: '#FFFFFF' }}>FT</th>
+                          <th style={{ color: '#FFFFFF' }}>FP</th>
                         </tr>
                       </thead>
                       <tbody>
                         {boxScores.map((game, idx) => (
                           <tr key={idx}>
-                            <td>{game.matchup}</td>
-                            <td>{game.min.toFixed(0)}</td>
-                            <td><strong>{game.pts}</strong></td>
-                            <td>{game.reb}</td>
-                            <td>{game.ast}</td>
-                            <td>{game.stl}</td>
-                            <td>{game.blk}</td>
-                            <td>{game.tov}</td>
-                            <td>{game.fg}</td>
-                            <td>{game.fg3}</td>
-                            <td>{game.ft}</td>
-                            <td style={{ fontWeight: 'bold', color: 'var(--joy-palette-primary-500)' }}>
+                            <td style={{ color: '#CCCCCC' }}>{game.matchup}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.min.toFixed(0)}</td>
+                            <td style={{ color: '#FFFFFF', fontWeight: 'bold' }}>{game.pts}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.reb}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.ast}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.stl}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.blk}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.tov}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.fg}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.fg3}</td>
+                            <td style={{ color: '#CCCCCC' }}>{game.ft}</td>
+                            <td style={{ fontWeight: 'bold', color: '#FFD700' }}>
                               {game.fantasy_points.toFixed(1)}
                             </td>
                           </tr>

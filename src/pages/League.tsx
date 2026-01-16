@@ -6,18 +6,14 @@ import LeagueNavigation from '../components/LeagueNavigation'
 import LeagueSettingsManager from '../components/LeagueSettings'
 import LeagueHome from './LeagueHome'
 import TeamRoster from './TeamRoster'
-import LeagueScoreboard from './LeagueScoreboard'
-import Lineups from './Lineups'
-import Trades from './Trades'
-import Standings from './Standings'
 import Players from './Players'
 import CommissionerTools from './CommissionerTools'
 import DraftComponent from '../components/Draft/DraftComponent'
-import Transactions from './Transactions'
 import { useAuth } from '../hooks/useAuth'
 import { useLeague } from '../hooks/useLeagues'
 import { useUpdateLeagueSettings } from '../hooks/useUpdateLeagueSettings'
 import { useTeams } from '../hooks/useTeams'
+import { useCurrentWeekMatchups } from '../hooks/useMatchups'
 
 export default function League() {
   const { id } = useParams<{ id: string }>()
@@ -26,6 +22,7 @@ export default function League() {
   const { user } = useAuth()
   const { data: league, isLoading, error } = useLeague(id || '')
   const { data: teams } = useTeams(id || '')
+  const { data: matchups, isLoading: matchupsLoading } = useCurrentWeekMatchups(id || '')
   const updateLeagueSettings = useUpdateLeagueSettings()
   
   // State for showing team details within the league tab
@@ -148,9 +145,9 @@ export default function League() {
             leagueId={leagueData?.id || id || ''} 
             onTeamClick={setSelectedTeamId}
             onNavigateToTransactions={() => {
-              // Dispatch custom event to change tab
+              // Dispatch custom event to change tab to My Team (where transactions are now)
               const event = new CustomEvent('changeLeagueTab', { 
-                detail: { tabId: 'transactions' } 
+                detail: { tabId: 'my-team' } 
               });
               window.dispatchEvent(event);
             }}
@@ -170,30 +167,15 @@ export default function League() {
             </Alert>
           )
         }
-      case 'lineups':
-        console.log('League: Rendering Lineups component with leagueId:', id);
-        return <Lineups leagueId={id || ''} />
-      case 'trades':
-        console.log('League: Rendering Trades component with leagueId:', id);
-        return <Trades leagueId={id || ''} />
-      case 'standings':
-        console.log('League: Rendering Standings component with leagueId:', id);
-        return <Standings leagueId={id || ''} />
       case 'players':
         console.log('League: Rendering Players component with leagueId:', id);
         return <Players leagueId={id || ''} />
       case 'commissioner':
         console.log('League: Rendering CommissionerTools component with leagueId:', id);
         return <CommissionerTools leagueId={id || ''} />
-      case 'scoreboard':
-        console.log('League: Rendering LeagueScoreboard component with leagueId:', id);
-        return <LeagueScoreboard leagueId={id || ''} />
       case 'draft':
         console.log('League: Rendering DraftComponent with leagueId:', id);
         return <DraftComponent />
-      case 'transactions':
-        console.log('League: Rendering Transactions component with leagueId:', id);
-        return <Transactions leagueId={id || ''} />
       case 'settings':
         console.log('League: Rendering settings');
         return renderSettings()
@@ -219,14 +201,18 @@ export default function League() {
 
   return (
     <Box sx={{ 
-      maxWidth: 1400, 
-      mx: 'auto', 
-      px: { xs: 0, sm: 2 } // No padding on mobile, 2 on small screens and up
+      width: '100%',
+      overflowX: 'hidden',
+      bgcolor: 'background.body',
+      minHeight: '100vh',
     }}>
       <LeagueNavigation 
         leagueId={leagueData?.id || id} 
         isCommissioner={isCommissioner}
         userHasTeam={!!userTeam}
+        showMatchups={true}
+        matchups={matchups}
+        matchupsLoading={matchupsLoading}
       >
         {(activeTab) => renderTabContent(activeTab)}
       </LeagueNavigation>

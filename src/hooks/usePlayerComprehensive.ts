@@ -264,21 +264,44 @@ export interface PlayerComprehensiveData {
     totalPages: number;
   };
   
-  // ESPN Projections data
-  espnProjections?: {
-    proj_2026_gp?: number;
-    proj_2026_min?: number;
-    proj_2026_pts?: number;
-    proj_2026_reb?: number;
-    proj_2026_ast?: number;
-    proj_2026_stl?: number;
-    proj_2026_blk?: number;
-    proj_2026_to?: number;
-    proj_2026_3pm?: number;
-    proj_2026_fg_pct?: number;
-    proj_2026_ft_pct?: number;
-    outlook_2026?: string;
-  };
+    // ESPN Projections data
+    espnProjections?: {
+      proj_2026_gp?: number;
+      proj_2026_min?: number;
+      proj_2026_pts?: number;
+      proj_2026_reb?: number;
+      proj_2026_ast?: number;
+      proj_2026_stl?: number;
+      proj_2026_blk?: number;
+      proj_2026_to?: number;
+      proj_2026_3pm?: number;
+      proj_2026_fg_pct?: number;
+      proj_2026_ft_pct?: number;
+      outlook_2026?: string;
+    };
+  
+  // Latest injury data
+  latestInjury?: {
+    id: string;
+    nba_player_id: number;
+    injury_type?: string;
+    injury_description?: string;
+    injury_status: string;
+    date_updated: string;
+    is_current?: boolean;
+  } | null;
+  
+  // Full injury history
+  injuryHistory?: Array<{
+    id: string;
+    nba_player_id: number;
+    injury_type?: string;
+    injury_description?: string;
+    injury_status: string;
+    date_updated: string;
+    is_current?: boolean;
+    report_timestamp?: string;
+  }>;
 }
 
 export function usePlayerComprehensive(
@@ -292,44 +315,108 @@ export function usePlayerComprehensive(
       console.log(`🏀 Fetching comprehensive data for player ${playerId}...`);
       
       try {
-        // Fetch player basic info with related data
-        const { data: playerData, error: playerError } = await supabase
-          .from('nba_players')
-          .select(`
-            *,
-            nba_hoopshype_salaries (
-              salary_2025_26,
-              salary_2026_27,
-              salary_2027_28,
-              salary_2028_29,
-              contract_years_remaining
-            ),
-            nba_espn_projections (
-              proj_2026_gp,
-              proj_2026_min,
-              proj_2026_pts,
-              proj_2026_reb,
-              proj_2026_ast,
-              proj_2026_stl,
-              proj_2026_blk,
-              proj_2026_to,
-              proj_2026_3pm,
-              proj_2026_fg_pct,
-              proj_2026_ft_pct,
-              outlook_2026
-            )
-          `)
-          .eq('id', playerId)
-          .single();
+        // Check if playerId is a UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(playerId);
+        
+        let playerData = null;
+        let playerError = null;
 
+        if (isUUID) {
+          // Try to fetch by UUID (id field)
+          const result = await supabase
+            .from('nba_players')
+            .select('*')
+            .eq('id', playerId)
+            .maybeSingle();
+          playerData = result.data;
+          playerError = result.error;
+        } else {
+          // Try to fetch by nba_player_id (integer)
+          const nbaPlayerId = parseInt(playerId, 10);
+          if (!isNaN(nbaPlayerId)) {
+            const result = await supabase
+              .from('nba_players')
+              .select('*')
+              .eq('nba_player_id', nbaPlayerId)
+              .maybeSingle();
+            playerData = result.data;
+            playerError = result.error;
+          }
+        }
+
+        // Log the query result for debugging
+        console.log(`🔍 Player query result for ${playerId} (isUUID: ${isUUID}):`, {
+          hasData: !!playerData,
+          hasError: !!playerError,
+          errorCode: playerError?.code,
+          errorMessage: playerError?.message,
+        });
+
+        // Handle error or no data - PGRST116 means 0 rows, which is fine with maybeSingle
         if (playerError) {
+          // PGRST116 is "no rows returned" which is expected with maybeSingle when player doesn't exist
+          if (playerError.code === 'PGRST116') {
+            console.log(`⚠️ Player ${playerId} not found in database (PGRST116)`);
+            return null;
+          }
+          // Other errors should be thrown
           console.error('❌ Error fetching player data:', playerError);
           throw new Error(`Failed to fetch player data: ${playerError.message}`);
         }
 
         if (!playerData) {
-          throw new Error('Player not found');
+          // Player doesn't exist - return null instead of throwing
+          console.log(`⚠️ Player ${playerId} not found (no data returned)`);
+          return null;
         }
+
+        // Fetch injury data for this player
+        let latestInjury = null;
+        let injuryHistory: any[] = [];
+        if (playerData.nba_player_id) {
+          // Fetch latest CURRENT injury (if any)
+          const { data: currentInjuryData, error: currentInjuryError } = await supabase
+            .from('nba_injuries')
+            .select('*')
+            .eq('nba_player_id', playerData.nba_player_id)
+            .eq('is_current', true)  // Only show current injuries
+            .in('injury_status', ['Out', 'Questionable', 'Day-to-Day'])
+            .order('date_updated', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          if (!currentInjuryError && currentInjuryData) {
+            latestInjury = currentInjuryData;
+          }
+          
+          // Fetch full injury history (all injuries, not just current)
+          const { data: allInjuryData, error: allInjuryError } = await supabase
+            .from('nba_injuries')
+            .select('*')
+            .eq('nba_player_id', playerData.nba_player_id)
+            .in('injury_status', ['Out', 'Questionable', 'Day-to-Day', 'Probable', 'Healthy'])
+            .order('date_updated', { ascending: false })
+            .limit(50); // Get last 50 injury records
+          
+          if (!allInjuryError && allInjuryData) {
+            injuryHistory = allInjuryData;
+          }
+        }
+
+        // Fetch related data separately to avoid coercion issues with multiple rows
+        const { data: salaryData } = await supabase
+          .from('nba_hoopshype_salaries')
+          .select('salary_2025_26, salary_2026_27, salary_2027_28, salary_2028_29, contract_years_remaining')
+          .eq('nba_player_id', playerData.nba_player_id)
+          .limit(1)
+          .maybeSingle();
+
+        const { data: projectionData } = await supabase
+          .from('nba_espn_projections')
+          .select('proj_2026_gp, proj_2026_min, proj_2026_pts, proj_2026_reb, proj_2026_ast, proj_2026_stl, proj_2026_blk, proj_2026_to, proj_2026_3pm, proj_2026_fg_pct, proj_2026_ft_pct, outlook_2026')
+          .eq('nba_player_id', playerData.nba_player_id)
+          .limit(1)
+          .maybeSingle();
 
         // Note: Career stats and season breakdown tables are not available in the new schema
         // These would need to be calculated from nba_boxscores if needed
@@ -353,7 +440,11 @@ export function usePlayerComprehensive(
         const totalPages = Math.ceil(totalGameLogs / gameLogsPageSize);
 
         const playerComprehensiveData: PlayerComprehensiveData = {
-          player: playerData,
+          player: {
+            ...playerData,
+            nba_hoopshype_salaries: salaryData ? [salaryData] : undefined,
+            nba_espn_projections: projectionData ? [projectionData] : undefined,
+          },
           careerStats: careerData || undefined,
           careerStatsPostSeason: careerPostData || undefined,
           careerStatsAllStar: careerAllStarData || undefined,
@@ -366,7 +457,9 @@ export function usePlayerComprehensive(
             pageSize: gameLogsPageSize,
             totalPages: totalPages,
           },
-          espnProjections: playerData.nba_espn_projections?.[0] || undefined,
+          espnProjections: projectionData || undefined,
+          latestInjury: latestInjury || undefined,
+          injuryHistory: injuryHistory.length > 0 ? injuryHistory : undefined,
         };
 
         console.log('✅ Successfully fetched comprehensive player data for:', playerData.name);

@@ -267,8 +267,16 @@ export function useSetDFSLineupPosition() {
       return data;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['dfs-lineup', variables.poolId, variables.userId] });
-      queryClient.invalidateQueries({ queryKey: ['dfs-lineup-salary', variables.poolId, variables.userId] });
+      // Invalidate all lineup queries for this pool/user (with or without entryId)
+      queryClient.invalidateQueries({ 
+        queryKey: ['dfs-lineup', variables.poolId, variables.userId],
+        exact: false 
+      });
+      // Invalidate all salary queries for this pool/user (with or without entryId)
+      queryClient.invalidateQueries({ 
+        queryKey: ['dfs-lineup-salary', variables.poolId, variables.userId],
+        exact: false 
+      });
     },
   });
 }
@@ -316,8 +324,16 @@ export function useRemoveDFSLineupPosition() {
       if (error) throw error;
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['dfs-lineup', variables.poolId, variables.userId] });
-      queryClient.invalidateQueries({ queryKey: ['dfs-lineup-salary', variables.poolId, variables.userId] });
+      // Invalidate all lineup queries for this pool/user (with or without entryId)
+      queryClient.invalidateQueries({ 
+        queryKey: ['dfs-lineup', variables.poolId, variables.userId],
+        exact: false 
+      });
+      // Invalidate all salary queries for this pool/user (with or without entryId)
+      queryClient.invalidateQueries({ 
+        queryKey: ['dfs-lineup-salary', variables.poolId, variables.userId],
+        exact: false 
+      });
     },
   });
 }

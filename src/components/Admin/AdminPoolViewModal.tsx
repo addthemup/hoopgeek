@@ -73,22 +73,57 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
 
       console.log('🔍 Fetching entries for pool:', poolId);
 
-      // Use RPC function to get entries with user emails (requires admin)
-      const { data: entriesData, error: entriesError } = await supabase.rpc(
-        'get_admin_pool_entries',
-        { p_pool_id: poolId }
-      );
+      // First, get the pool's current_entries count for comparison
+      const { data: poolData } = await supabase
+        .from('dfs_pools')
+        .select('current_entries')
+        .eq('id', poolId)
+        .single();
+      
+      console.log('📊 Pool current_entries count from table:', poolData?.current_entries);
 
-      if (entriesError) {
-        console.error('❌ Error fetching entries via RPC:', entriesError);
+      // Also get a direct count of all entries (this might be filtered by RLS)
+      const { count: directCount, data: directEntries } = await supabase
+        .from('dfs_entries')
+        .select('id, user_id', { count: 'exact' })
+        .eq('pool_id', poolId);
+      
+      console.log('📊 Direct count of entries in dfs_entries table:', directCount);
+      console.log('📊 Direct entries data (first 5):', directEntries?.slice(0, 5));
+
+      // Try RPC function first (if it exists)
+      let entriesData: any[] | null = null;
+      let entriesError: any = null;
+      
+      try {
+        const rpcResult = await supabase.rpc(
+          'get_admin_pool_entries',
+          { p_pool_id: poolId }
+        );
+        entriesData = rpcResult.data;
+        entriesError = rpcResult.error;
         
-        // Fallback: Try direct query if RPC fails
+        console.log('📊 RPC function returned:', entriesData?.length, 'entries');
+        if (entriesData && entriesData.length > 0) {
+          console.log('📊 Sample entry user_ids:', entriesData.slice(0, 5).map((e: any) => e.user_id));
+        }
+      } catch (err) {
+        console.warn('⚠️ RPC function not available or error:', err);
+        entriesError = err;
+      }
+
+      // If RPC fails or returns 404, use direct query with admin policy
+      if (entriesError || !entriesData || entriesData.length === 0) {
+        console.log('📊 Using direct query fallback (admin policy should allow all entries)');
+        
+        // Direct query - admin policy should allow viewing all entries
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('dfs_entries')
           .select(`
             id,
             user_id,
             final_points,
+            final_score,
             final_rank,
             prize_amount,
             is_submitted,
@@ -106,40 +141,150 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
 
         console.log('📊 Fetched entries (fallback):', fallbackData?.length);
 
-        // Map fallback data to expected format
-        const mappedEntries = (fallbackData || []).map((entry) => ({
-          entry_id: entry.id,
-          user_id: entry.user_id,
-          user_email: `User ${entry.user_id.substring(0, 8)}`,
-          user_avatar_url: null,
-          final_points: entry.final_points,
-          rank: entry.final_rank,
-          prize_amount: entry.prize_amount,
-          is_submitted: entry.is_submitted || entry.lineup_locked,
-          created_at: entry.created_at,
-          total_salary: entry.total_salary,
-        }));
+        // Fetch user information for all unique user IDs
+        const uniqueUserIds = [...new Set((fallbackData || []).map(e => e.user_id))];
+        const userInfoMap = new Map<string, { email: string; avatar_url: string | null }>();
+        
+        // Try to get user emails from profiles table (if accessible)
+        for (const userId of uniqueUserIds) {
+          try {
+            // Try to get from profiles first
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('id, display_name, avatar_url')
+              .eq('id', userId)
+              .maybeSingle();
+            
+            if (profile) {
+              // Try to get email from auth.users via a service role call
+              // Since we can't directly query auth.users, we'll use the profile display_name
+              userInfoMap.set(userId, {
+                email: profile.display_name || `user-${userId.substring(0, 8)}`,
+                avatar_url: profile.avatar_url
+              });
+            } else {
+              userInfoMap.set(userId, {
+                email: `user-${userId.substring(0, 8)}`,
+                avatar_url: null
+              });
+            }
+          } catch (err) {
+            console.warn(`Could not fetch user info for ${userId}:`, err);
+            userInfoMap.set(userId, {
+              email: `user-${userId.substring(0, 8)}`,
+              avatar_url: null
+            });
+          }
+        }
 
-        return mappedEntries as PoolEntry[];
+        // Calculate scores for entries that don't have final_points
+        const entriesWithScores = await Promise.all(
+          (fallbackData || []).map(async (entry) => {
+            let calculatedScore = entry.final_points || entry.final_score || null;
+
+            // If score is null, calculate from lineup positions
+            if (!calculatedScore) {
+              const { data: lineup } = await supabase
+                .from('dfs_lineups')
+                .select('id')
+                .eq('entry_id', entry.id)
+                .maybeSingle();
+
+              if (lineup) {
+                const { data: positions } = await supabase
+                  .from('dfs_lineup_positions')
+                  .select('weighted_points, raw_fantasy_points')
+                  .eq('lineup_id', lineup.id);
+
+                if (positions && positions.length > 0) {
+                  // Sum weighted_points for the total score
+                  calculatedScore = positions.reduce((sum, p) => {
+                    return sum + (p.weighted_points || 0);
+                  }, 0);
+                  
+                  // If no weighted_points, try raw_fantasy_points
+                  if (calculatedScore === 0) {
+                    calculatedScore = positions.reduce((sum, p) => {
+                      return sum + (p.raw_fantasy_points || 0);
+                    }, 0);
+                  }
+                }
+              }
+            }
+
+            const userInfo = userInfoMap.get(entry.user_id) || { email: `user-${entry.user_id.substring(0, 8)}`, avatar_url: null };
+            return {
+              entry_id: entry.id,
+              user_id: entry.user_id,
+              user_email: userInfo.email,
+              user_avatar_url: userInfo.avatar_url,
+              final_points: calculatedScore,
+              rank: entry.final_rank,
+              prize_amount: entry.prize_amount,
+              is_submitted: entry.is_submitted || entry.lineup_locked,
+              created_at: entry.created_at,
+              total_salary: entry.total_salary,
+            };
+          })
+        );
+
+        return entriesWithScores as PoolEntry[];
       }
 
       console.log('✅ Fetched entries via RPC:', entriesData?.length);
+      console.log('📊 Comparison: Table shows', poolData?.current_entries, 'entries, RPC returned', entriesData?.length, 'entries');
 
-      // Map RPC data to expected format
-      const mappedEntries = (entriesData || []).map((entry: any) => ({
-        entry_id: entry.entry_id,
-        user_id: entry.user_id,
-        user_email: entry.user_email || entry.user_display_name || 'Unknown',
-        user_avatar_url: entry.user_avatar_url,
-        final_points: entry.final_points,
-        rank: entry.final_rank,
-        prize_amount: entry.prize_amount,
-        is_submitted: entry.is_submitted || entry.lineup_locked,
-        created_at: entry.created_at,
-        total_salary: entry.total_salary,
-      }));
+      // Calculate scores for RPC entries that don't have final_points
+      const entriesWithScores = await Promise.all(
+        (entriesData || []).map(async (entry: any) => {
+          let calculatedScore = entry.final_points || entry.final_score || null;
 
-      return mappedEntries as PoolEntry[];
+          // If score is null, calculate from lineup positions
+          if (!calculatedScore) {
+            const { data: lineup } = await supabase
+              .from('dfs_lineups')
+              .select('id')
+              .eq('entry_id', entry.entry_id)
+              .maybeSingle();
+
+            if (lineup) {
+              const { data: positions } = await supabase
+                .from('dfs_lineup_positions')
+                .select('weighted_points, raw_fantasy_points')
+                .eq('lineup_id', lineup.id);
+
+              if (positions && positions.length > 0) {
+                // Sum weighted_points for the total score
+                calculatedScore = positions.reduce((sum, p) => {
+                  return sum + (p.weighted_points || 0);
+                }, 0);
+                
+                // If no weighted_points, try raw_fantasy_points
+                if (calculatedScore === 0) {
+                  calculatedScore = positions.reduce((sum, p) => {
+                    return sum + (p.raw_fantasy_points || 0);
+                  }, 0);
+                }
+              }
+            }
+          }
+
+          return {
+            entry_id: entry.entry_id,
+            user_id: entry.user_id,
+            user_email: entry.user_email || entry.user_display_name || 'Unknown',
+            user_avatar_url: entry.user_avatar_url,
+            final_points: calculatedScore,
+            rank: entry.final_rank,
+            prize_amount: entry.prize_amount,
+            is_submitted: entry.is_submitted || entry.lineup_locked,
+            created_at: entry.created_at,
+            total_salary: entry.total_salary,
+          };
+        })
+      );
+
+      return entriesWithScores as PoolEntry[];
     },
     enabled: open && !!poolId,
   });
@@ -184,14 +329,17 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
           minWidth: { xs: '95vw', sm: '90vw', md: '80vw' }, 
           maxWidth: 1200, 
           maxHeight: '90vh', 
-          overflow: 'auto' 
+          overflow: 'auto',
+          bgcolor: '#fff',
+          border: '2px solid #000',
+          boxShadow: '4px 4px 0px #000'
         }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ color: '#000' }}>
           <Stack direction="row" spacing={2} alignItems="center">
             <EmojiEvents color="warning" />
             <Box>
-              <Typography level="h4">{pool?.name || 'Pool Details'}</Typography>
+              <Typography level="h4" sx={{ color: '#000' }}>{pool?.name || 'Pool Details'}</Typography>
               <Typography level="body-sm" sx={{ color: '#000', fontWeight: 'bold' }}>
                 Administrative Pool Overview
               </Typography>
@@ -207,9 +355,9 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
           ) : (
             <Stack spacing={3}>
               {/* Pool Summary */}
-              <Card variant="outlined">
+              <Card variant="outlined" sx={{ bgcolor: '#fff', border: '2px solid #000', boxShadow: '4px 4px 0px #000' }}>
                 <CardContent>
-                  <Typography level="title-md" sx={{ mb: 2 }}>Pool Summary</Typography>
+                  <Typography level="title-md" sx={{ mb: 2, color: '#000' }}>Pool Summary</Typography>
                   <Stack 
                     direction={{ xs: 'column', sm: 'row' }} 
                     spacing={2} 
@@ -217,7 +365,7 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                   >
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Slate Date</Typography>
-                      <Typography level="title-sm">
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         {pool?.slate_date ? format(new Date(pool.slate_date), 'MMM dd, yyyy') : 'N/A'}
                       </Typography>
                     </Box>
@@ -229,17 +377,17 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Entries</Typography>
-                      <Typography level="title-sm">
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         {pool?.current_entries} / {pool?.max_entries}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Entry Fee</Typography>
-                      <Typography level="title-sm">${pool?.entry_fee}</Typography>
+                      <Typography level="title-sm" sx={{ color: '#000' }}>${pool?.entry_fee}</Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Prize Pool</Typography>
-                      <Typography level="title-sm" sx={{ fontWeight: 'bold', color: 'success.500' }}>
+                      <Typography level="title-sm" sx={{ fontWeight: 'bold', color: '#000' }}>
                         ${pool?.prize_pool?.toLocaleString()}
                       </Typography>
                     </Box>
@@ -248,9 +396,9 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
               </Card>
 
               {/* Financial Summary */}
-              <Card variant="outlined">
+              <Card variant="outlined" sx={{ bgcolor: '#fff', border: '2px solid #000', boxShadow: '4px 4px 0px #000' }}>
                 <CardContent>
-                  <Typography level="title-md" sx={{ mb: 2 }}>Financial Summary</Typography>
+                  <Typography level="title-md" sx={{ mb: 2, color: '#000' }}>Financial Summary</Typography>
                   <Stack 
                     direction={{ xs: 'column', sm: 'row' }} 
                     spacing={2} 
@@ -258,25 +406,25 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                   >
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Total Revenue</Typography>
-                      <Typography level="title-sm" sx={{ color: 'success.600' }}>
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         ${payoutSummary.totalRevenue.toLocaleString()}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Prize Pool</Typography>
-                      <Typography level="title-sm">
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         ${payoutSummary.totalPrizePool.toLocaleString()}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Paid Out</Typography>
-                      <Typography level="title-sm">
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         ${payoutSummary.totalPaidOut.toLocaleString()}
                       </Typography>
                     </Box>
                     <Box sx={{ flex: 1 }}>
                       <Typography level="body-xs" sx={{ color: '#000', fontWeight: 'bold' }}>Rake (10%)</Typography>
-                      <Typography level="title-sm" sx={{ color: 'primary.600' }}>
+                      <Typography level="title-sm" sx={{ color: '#000' }}>
                         ${payoutSummary.rake.toLocaleString()}
                       </Typography>
                     </Box>
@@ -289,7 +437,12 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                 <TabList>
                   <Tab>
                     <Person sx={{ mr: 1 }} />
-                    Entries ({entries?.length || 0})
+                    Entries ({entries?.length || 0}
+                    {pool?.current_entries !== undefined && entries?.length !== pool.current_entries && (
+                      <span style={{ color: '#ff6b6b', marginLeft: '4px' }}>
+                        (Table: {pool.current_entries})
+                      </span>
+                    )})
                   </Tab>
                   <Tab>
                     <AttachMoney sx={{ mr: 1 }} />
@@ -307,7 +460,9 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                     sx={{ 
                       borderRadius: 'sm', 
                       overflow: 'auto',
-                      maxHeight: { xs: '50vh', md: '60vh' }
+                      maxHeight: { xs: '50vh', md: '60vh' },
+                      bgcolor: '#fff',
+                      border: '2px solid #000'
                     }}
                   >
                     <Table stickyHeader sx={{
@@ -317,16 +472,18 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                         fontFamily: 'serif',
                         fontWeight: 900,
                         textTransform: 'uppercase',
-                        borderBottom: '3px solid #000',
+                        borderBottom: '2px solid #000',
                         fontSize: '0.85rem',
                         letterSpacing: '0.05em'
                       },
                       '& tbody td': {
-                        borderBottom: '2px solid #000',
-                        fontFamily: 'serif'
+                        borderBottom: '1px solid #000',
+                        fontFamily: 'serif',
+                        color: '#000',
+                        bgcolor: '#fff'
                       },
                       '& tbody tr:hover': {
-                        bgcolor: '#f0f0f0'
+                        bgcolor: '#f5f5f5'
                       }
                     }}>
                       <thead>
@@ -365,18 +522,18 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                                   >
                                     {getAvatarContent(entry.user_email)}
                                   </Avatar>
-                                  <Typography level="body-sm">
+                                  <Typography level="body-sm" sx={{ color: '#000' }}>
                                     {entry.user_email.split('@')[0]}
                                   </Typography>
                                 </Stack>
                               </td>
                               <td>
-                                <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
+                                <Typography level="title-sm" sx={{ fontWeight: 'bold', color: '#000' }}>
                                   {entry.final_points?.toFixed(2) || '-'}
                                 </Typography>
                               </td>
                               <td>
-                                <Typography level="body-sm">
+                                <Typography level="body-sm" sx={{ color: '#000' }}>
                                   ${(entry.total_salary / 1000000).toFixed(1)}M
                                 </Typography>
                               </td>
@@ -419,7 +576,9 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                     sx={{ 
                       borderRadius: 'sm', 
                       overflow: 'auto',
-                      maxHeight: { xs: '50vh', md: '60vh' }
+                      maxHeight: { xs: '50vh', md: '60vh' },
+                      bgcolor: '#fff',
+                      border: '2px solid #000'
                     }}
                   >
                     <Table stickyHeader sx={{
@@ -429,16 +588,18 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                         fontFamily: 'serif',
                         fontWeight: 900,
                         textTransform: 'uppercase',
-                        borderBottom: '3px solid #000',
+                        borderBottom: '2px solid #000',
                         fontSize: '0.85rem',
                         letterSpacing: '0.05em'
                       },
                       '& tbody td': {
-                        borderBottom: '2px solid #000',
-                        fontFamily: 'serif'
+                        borderBottom: '1px solid #000',
+                        fontFamily: 'serif',
+                        color: '#000',
+                        bgcolor: '#fff'
                       },
                       '& tbody tr:hover': {
-                        bgcolor: '#f0f0f0'
+                        bgcolor: '#f5f5f5'
                       }
                     }}>
                       <thead>
@@ -477,20 +638,20 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                                     >
                                       {getAvatarContent(entry.user_email)}
                                     </Avatar>
-                                    <Typography level="body-sm">
+                                    <Typography level="body-sm" sx={{ color: '#000' }}>
                                       {entry.user_email.split('@')[0]}
                                     </Typography>
                                   </Stack>
                                 </td>
                                 <td>
-                                  <Typography level="title-sm">
+                                  <Typography level="title-sm" sx={{ color: '#000' }}>
                                     {entry.final_points?.toFixed(2)}
                                   </Typography>
                                 </td>
                                 <td>
                                   <Typography 
                                     level="title-sm" 
-                                    sx={{ fontWeight: 'bold', color: 'success.600' }}
+                                    sx={{ fontWeight: 'bold', color: '#000' }}
                                   >
                                     ${entry.prize_amount?.toLocaleString()}
                                   </Typography>
@@ -520,7 +681,9 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                     sx={{ 
                       borderRadius: 'sm', 
                       overflow: 'auto',
-                      maxHeight: { xs: '50vh', md: '60vh' }
+                      maxHeight: { xs: '50vh', md: '60vh' },
+                      bgcolor: '#fff',
+                      border: '2px solid #000'
                     }}
                   >
                     <Table sx={{
@@ -530,16 +693,18 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                         fontFamily: 'serif',
                         fontWeight: 900,
                         textTransform: 'uppercase',
-                        borderBottom: '3px solid #000',
+                        borderBottom: '2px solid #000',
                         fontSize: '0.85rem',
                         letterSpacing: '0.05em'
                       },
                       '& tbody td': {
-                        borderBottom: '2px solid #000',
-                        fontFamily: 'serif'
+                        borderBottom: '1px solid #000',
+                        fontFamily: 'serif',
+                        color: '#000',
+                        bgcolor: '#fff'
                       },
                       '& tbody tr:hover': {
-                        bgcolor: '#f0f0f0'
+                        bgcolor: '#f5f5f5'
                       }
                     }}>
                       <thead>
@@ -554,12 +719,12 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
                           games.map((game: any) => (
                             <tr key={game.id}>
                               <td>
-                                <Typography level="title-sm">
+                                <Typography level="title-sm" sx={{ color: '#000' }}>
                                   {game.away_team} @ {game.home_team}
                                 </Typography>
                               </td>
                               <td>
-                                <Typography level="body-sm">
+                                <Typography level="body-sm" sx={{ color: '#000' }}>
                                   {format(new Date(game.game_date), 'MMM dd, yyyy h:mm a')}
                                 </Typography>
                               </td>

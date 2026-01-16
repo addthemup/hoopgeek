@@ -1,81 +1,58 @@
 import { 
   Box, 
   Typography, 
-  Button, 
+  Button,
   Stack, 
   Card, 
   CardContent, 
-  Grid, 
-  Chip, 
   CircularProgress, 
-  Alert,
-  IconButton,
-  Modal,
-  ModalDialog,
-  ModalClose,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Divider,
-  Input,
-  FormControl,
-  FormLabel
+  Alert
 } from '@mui/joy'
-import { Delete, Warning } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { useUserLeagues, useRefreshLeagues } from '../hooks/useUserLeagues'
-import { useDeleteLeague } from '../hooks/useDeleteLeague'
-import { useNBAScoreboard } from '../hooks/useNBAScoreboard'
-import { format } from 'date-fns'
+import { useUserLeagues } from '../hooks/useUserLeagues'
 import { useState } from 'react'
 import LeagueCreationForm from '../components/LeagueCreationForm'
-import GamesAvatarBar from '../components/GamesAvatarBar'
+import { Add } from '@mui/icons-material'
 
 export default function Dashboard() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { data: leagues, isLoading, isError, error } = useUserLeagues()
-  const { data: nbaScoreboard, isLoading: scoreboardLoading } = useNBAScoreboard()
-  const refreshLeagues = useRefreshLeagues()
-  const deleteLeagueMutation = useDeleteLeague()
   const [showCreateLeague, setShowCreateLeague] = useState(false)
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
-  const [leagueToDelete, setLeagueToDelete] = useState<{ id: string; name: string } | null>(null)
-  const [confirmationText, setConfirmationText] = useState('')
-  const [isDeleting, setIsDeleting] = useState(false)
 
-  const handleDeleteClick = (e: React.MouseEvent, leagueId: string, leagueName: string) => {
-    e.stopPropagation() // Prevent card click
-    setLeagueToDelete({ id: leagueId, name: leagueName })
-    setDeleteModalOpen(true)
+  const handleLeagueClick = (leagueId: string) => {
+    navigate(`/league/${leagueId}`)
   }
 
-  const handleDeleteConfirm = async () => {
-    if (!leagueToDelete || confirmationText !== leagueToDelete.name) {
-      return
+  const handleCreateClick = () => {
+    setShowCreateLeague(true)
+  }
+
+  // Get initials from league name
+  const getLeagueInitials = (name: string) => {
+    const words = name.trim().split(/\s+/);
+    if (words.length === 1) {
+      return words[0].substring(0, 2).toUpperCase();
     }
+    return (words[0][0] + words[1][0]).toUpperCase();
+  };
 
-    setIsDeleting(true)
-    try {
-      await deleteLeagueMutation.mutateAsync(leagueToDelete.id)
-      setDeleteModalOpen(false)
-      setLeagueToDelete(null)
-      setConfirmationText('')
-      refreshLeagues.mutate() // Refresh the leagues list
-    } catch (error) {
-      console.error('Error deleting league:', error)
-    } finally {
-      setIsDeleting(false)
-    }
-  }
-
-  const handleModalClose = () => {
-    setDeleteModalOpen(false)
-    setLeagueToDelete(null)
-    setConfirmationText('')
-    setIsDeleting(false)
-  }
+  // Generate a color based on league name
+  const getLeagueColor = (name: string) => {
+    const colors = [
+      '#1D4ED8', // Blue
+      '#7C3AED', // Purple
+      '#DC2626', // Red
+      '#059669', // Green
+      '#D97706', // Orange
+      '#DB2777', // Pink
+      '#0891B2', // Cyan
+      '#4F46E5', // Indigo
+    ];
+    const hash = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return colors[hash % colors.length];
+  };
   
   // Show user-specific content when available
   if (!user) {
@@ -86,15 +63,11 @@ export default function Dashboard() {
         overflowX: 'hidden',
         width: '100%',
       }}>
-        <GamesAvatarBar 
-          games={nbaScoreboard?.games || []} 
-          isLoading={scoreboardLoading}
-        />
         <Box sx={{ 
           maxWidth: { xs: '100%', sm: 805, md: 1035 },
           minWidth: { xs: '100%', sm: 805, md: 1035 },
           mx: 'auto',
-          pt: { xs: '117px', md: '126px' },
+          pt: { xs: '12px', md: '90px' },
           pb: 2,
           px: { xs: 2, sm: 2, md: 2 },
           textAlign: 'center'
@@ -116,15 +89,11 @@ export default function Dashboard() {
         overflowX: 'hidden',
         width: '100%',
       }}>
-        <GamesAvatarBar 
-          games={nbaScoreboard?.games || []} 
-          isLoading={scoreboardLoading}
-        />
         <Box sx={{ 
           maxWidth: { xs: '100%', sm: 805, md: 1035 },
           minWidth: { xs: '100%', sm: 805, md: 1035 },
           mx: 'auto',
-          pt: { xs: '117px', md: '126px' },
+          pt: { xs: '12px', md: '90px' },
           pb: 2,
           px: { xs: 2, sm: 2, md: 2 },
           display: 'flex',
@@ -146,15 +115,11 @@ export default function Dashboard() {
         overflowX: 'hidden',
         width: '100%',
       }}>
-        <GamesAvatarBar 
-          games={nbaScoreboard?.games || []} 
-          isLoading={scoreboardLoading}
-        />
         <Box sx={{ 
           maxWidth: { xs: '100%', sm: 805, md: 1035 },
           minWidth: { xs: '100%', sm: 805, md: 1035 },
           mx: 'auto',
-          pt: { xs: '117px', md: '126px' },
+          pt: { xs: '12px', md: '90px' },
           pb: 2,
           px: { xs: 2, sm: 2, md: 2 },
         }}>
@@ -176,197 +141,237 @@ export default function Dashboard() {
       overflowX: 'hidden',
       width: '100%',
     }}>
-      {/* Games Avatar Bar */}
-      <GamesAvatarBar 
-        games={nbaScoreboard?.games || []} 
-        isLoading={scoreboardLoading}
-      />
-
       {/* Main Content Container - Fixed width */}
       <Box sx={{ 
         maxWidth: { xs: '100%', sm: 805, md: 1035 },
         minWidth: { xs: '100%', sm: 805, md: 1035 },
         mx: 'auto',
-        pt: { xs: '117px', md: '126px' },
+        pt: { xs: '80px', md: '90px' },
         pb: 2,
         px: { xs: 2, sm: 2, md: 2 },
         overflowX: 'hidden',
         width: '100%',
         boxSizing: 'border-box',
       }}>
-      <Typography level="h2" sx={{ mb: 3 }}>
-        Dashboard
-      </Typography>
-      
-      <Stack spacing={3}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography level="h3">
-            Your Leagues
-          </Typography>
-          <Stack direction="row" spacing={2}>
-            <Button 
-              variant="outlined"
-              onClick={() => refreshLeagues.mutate()}
-              loading={refreshLeagues.isPending}
+        {/* League Selector */}
+        <Box sx={{ mb: 3 }}>
+          <Box
+            sx={{
+              display: 'flex',
+              gap: '12px',
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              pb: 1,
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              '&::-webkit-scrollbar': {
+                display: 'none',
+              },
+            }}
+          >
+            {/* Create League Button */}
+            <Box
+              onClick={handleCreateClick}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 0.5,
+                minWidth: 'fit-content',
+                cursor: 'pointer',
+              }}
             >
-              Refresh
-            </Button>
-            <Button 
-              size="lg" 
-              onClick={() => setShowCreateLeague(true)}
-            >
-              Create League
-            </Button>
-          </Stack>
+              <Box
+                sx={{
+                  width: { xs: 60, md: 70 },
+                  height: { xs: 60, md: 70 },
+                  border: '3px dashed',
+                  borderColor: '#FFC72C',
+                  borderRadius: '50%',
+                  bgcolor: 'rgba(255, 199, 44, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  transition: 'all 0.2s',
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 199, 44, 0.2)',
+                    borderColor: '#FFD700',
+                  },
+                }}
+              >
+                <Add sx={{ fontSize: { xs: 28, md: 32 }, color: '#FFC72C' }} />
+              </Box>
+            </Box>
+
+            {/* League Items */}
+            {leagues && leagues.length > 0 ? (
+              leagues.map((league) => {
+                const leagueColor = getLeagueColor(league.name);
+                const initials = getLeagueInitials(league.name);
+                
+                return (
+                  <Box
+                    key={league.id}
+                    onClick={() => handleLeagueClick(league.id)}
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      minWidth: 'fit-content',
+                      cursor: 'pointer',
+                      position: 'relative',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: { xs: 60, md: 70 },
+                        height: { xs: 60, md: 70 },
+                        border: '3px solid',
+                        borderColor: 'text.primary',
+                        borderRadius: '50%',
+                        bgcolor: leagueColor,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 0.2s',
+                        position: 'relative',
+                        '&:hover': {
+                          boxShadow: '0 0 8px rgba(255,199,44,0.4)',
+                        },
+                      }}
+                    >
+                      <Typography
+                        sx={{
+                          color: '#fff',
+                          fontSize: { xs: '1.2rem', md: '1.4rem' },
+                          fontWeight: 900,
+                          fontFamily: 'serif',
+                          textShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                        }}
+                      >
+                        {initials}
+                      </Typography>
+
+                      {/* Commissioner Badge */}
+                      {league.is_commissioner && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            bottom: '5%',
+                            right: '5%',
+                            bgcolor: '#FFD700',
+                            color: '#000',
+                            width: { xs: 16, md: 18 },
+                            height: { xs: 16, md: 18 },
+                            borderRadius: '50%',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: { xs: '0.6rem', md: '0.7rem' },
+                            border: '2px solid',
+                            borderColor: 'background.body',
+                            zIndex: 2,
+                          }}
+                        >
+                          🛡️
+                        </Box>
+                      )}
+                    </Box>
+                    <Typography
+                      level="body-xs"
+                      sx={{
+                        color: 'text.primary',
+                        fontSize: '0.65rem',
+                        maxWidth: { xs: 60, md: 70 },
+                        textAlign: 'center',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {league.name}
+                    </Typography>
+                  </Box>
+                );
+              })
+            ) : (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  ml: 2,
+                }}
+              >
+                <Typography
+                  level="body-sm"
+                  sx={{
+                    color: 'text.secondary',
+                    fontFamily: 'serif',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  No leagues yet. Create your first one! →
+                </Typography>
+              </Box>
+            )}
+          </Box>
         </Box>
 
-        <Grid container spacing={2}>
-          {leagues?.map((league) => (
-            <Grid xs={12} md={6} key={league.id}>
-              <Card 
-                variant="outlined" 
-                sx={{ 
-                  cursor: 'pointer',
-                  '&:hover': { 
-                    boxShadow: 'md',
-                    transform: 'translateY(-2px)',
-                    transition: 'all 0.2s ease-in-out'
-                  }
-                }}
-                onClick={() => navigate(`/league/${league.id}`)}
-              >
-                <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Typography level="h4" sx={{ mb: 1 }}>
-                      {league.name || 'Unnamed League'}
-                    </Typography>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      {league.is_commissioner && (
-                        <>
-                          <Chip size="sm" color="primary" variant="soft">
-                            Commissioner
-                          </Chip>
-                          <IconButton
-                            size="sm"
-                            color="danger"
-                            variant="plain"
-                            onClick={(e) => handleDeleteClick(e, league.id, league.name)}
-                            sx={{ 
-                              '&:hover': { 
-                                bgcolor: 'danger.100' 
-                              }
-                            }}
-                          >
-                            <Delete />
-                          </IconButton>
-                        </>
-                      )}
-                    </Stack>
-                  </Box>
-                  
-                  {league.description && (
-                    <Typography level="body-sm" color="neutral" sx={{ mb: 2 }}>
-                      {league.description}
-                    </Typography>
-                  )}
+        {/* Fantasy News & Data Section */}
+        <Box>
+          <Typography 
+            level="h2" 
+            sx={{ 
+              mb: 3, 
+              color: '#fff',
+              fontWeight: 700 
+            }}
+          >
+            Fantasy News
+          </Typography>
+          
+          <Stack spacing={2}>
+            {/* Placeholder for Fantasy News/Data */}
+            <Card 
+              variant="outlined"
+              sx={{
+                bgcolor: 'background.level1',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+              }}
+            >
+              <CardContent sx={{ textAlign: 'center', py: 6 }}>
+                <Typography 
+                  level="h4" 
+                  sx={{ 
+                    mb: 2, 
+                    color: 'text.secondary' 
+                  }}
+                >
+                  Fantasy News & Data Coming Soon
+                </Typography>
+                <Typography 
+                  level="body-md" 
+                  sx={{ 
+                    color: 'text.tertiary',
+                    maxWidth: 500,
+                    mx: 'auto'
+                  }}
+                >
+                  Stay tuned for the latest fantasy basketball news, player updates, injury reports, and expert analysis.
+                </Typography>
+              </CardContent>
+            </Card>
 
-                  <Stack spacing={1}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography level="body-sm" color="neutral">
-                        Teams:
-                      </Typography>
-                      <Typography level="body-sm">
-                        {league.max_teams}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography level="body-sm" color="neutral">
-                        Scoring:
-                      </Typography>
-                      <Typography level="body-sm">
-                        {league.scoring_type?.replace('_', ' ') || 'H2H Points'}
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography level="body-sm" color="neutral">
-                        Lineup:
-                      </Typography>
-                      <Typography level="body-sm">
-                        {league.lineup_frequency || 'Weekly'}
-                      </Typography>
-                    </Box>
-
-                    {league.salary_cap_enabled && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography level="body-sm" color="neutral">
-                          Salary Cap:
-                        </Typography>
-                        <Typography level="body-sm">
-                          ${((league.salary_cap_amount || 200000000) / 1000000).toFixed(0)}M
-                        </Typography>
-                      </Box>
-                    )}
-
-                    {league.draft_date && (
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography level="body-sm" color="neutral">
-                          Draft:
-                        </Typography>
-                        <Typography level="body-sm">
-                          {format(new Date(league.draft_date), 'MMM dd, yyyy')}
-                        </Typography>
-                      </Box>
-                    )}
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography level="body-sm" color="neutral">
-                        Status:
-                      </Typography>
-                      <Chip 
-                        size="sm" 
-                        color={league.draft_status === 'completed' ? 'success' : 'warning'}
-                        variant="soft"
-                      >
-                        {league.draft_status || 'Scheduled'}
-                      </Chip>
-                    </Box>
-                  </Stack>
-
-                  <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography level="body-xs" color="neutral">
-                      Your Team: {league.team_name}
-                    </Typography>
-                    <Typography level="body-xs" color="neutral">
-                      Joined: {league.joined_at ? format(new Date(league.joined_at as string), 'MMM dd, yyyy') : 'Unknown'}
-                    </Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-
-        {(!leagues || leagues.length === 0) && (
-          <Card variant="outlined">
-            <CardContent sx={{ textAlign: 'center', py: 4 }}>
-              <Typography level="h4" sx={{ mb: 2 }}>
-                No leagues yet
-              </Typography>
-              <Typography sx={{ mb: 3 }}>
-                Create your first league to get started with fantasy basketball!
-              </Typography>
-              <Button 
-                size="lg" 
-                onClick={() => setShowCreateLeague(true)}
-              >
-                Create Your First League
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </Stack>
+            {/* Future sections can be added here:
+                - Top Performers
+                - Injury Reports
+                - Trade Rumors
+                - Waiver Wire Pickups
+                - Expert Analysis
+            */}
+          </Stack>
+        </Box>
       </Box>
 
       {/* League Creation Form */}
@@ -375,75 +380,9 @@ export default function Dashboard() {
         onClose={() => setShowCreateLeague(false)}
         onSuccess={(leagueId) => {
           setShowCreateLeague(false)
-          refreshLeagues.mutate() // Refresh the leagues list
           navigate(`/league/${leagueId}`) // Navigate to the new league
         }}
       />
-
-      {/* Delete Confirmation Modal */}
-      <Modal open={deleteModalOpen} onClose={handleModalClose}>
-        <ModalDialog variant="outlined" role="alertdialog" sx={{ maxWidth: 500 }}>
-          <ModalClose />
-          <DialogTitle>
-            <Warning sx={{ mr: 1 }} />
-            Confirm League Deletion
-          </DialogTitle>
-          <Divider />
-          <DialogContent>
-            <Alert color="danger" sx={{ mb: 2 }}>
-              <Typography level="body-sm">
-                This action cannot be undone. This will permanently delete the league and all associated data including teams, rosters, and settings.
-              </Typography>
-            </Alert>
-            <Typography level="body-sm" color="neutral" sx={{ mb: 2 }}>
-              To confirm, please type the league name exactly as shown:
-            </Typography>
-            <Typography 
-              level="body-sm" 
-              sx={{ 
-                fontWeight: 'bold', 
-                mb: 2, 
-                p: 2, 
-                bgcolor: 'background.level1', 
-                borderRadius: 'sm',
-                fontFamily: 'monospace'
-              }}
-            >
-              {leagueToDelete?.name}
-            </Typography>
-            <FormControl>
-              <FormLabel>League Name</FormLabel>
-              <Input
-                placeholder="Type the league name here"
-                value={confirmationText}
-                onChange={(e) => setConfirmationText(e.target.value)}
-                disabled={isDeleting}
-                autoFocus
-              />
-            </FormControl>
-          </DialogContent>
-          <DialogActions>
-            <Button
-              variant="plain"
-              color="neutral"
-              onClick={handleModalClose}
-              disabled={isDeleting}
-            >
-              Cancel
-            </Button>
-            <Button
-              color="danger"
-              variant="solid"
-              startDecorator={<Delete />}
-              onClick={handleDeleteConfirm}
-              disabled={!leagueToDelete || confirmationText !== leagueToDelete.name || isDeleting}
-              loading={isDeleting}
-            >
-              {isDeleting ? 'Deleting...' : 'Delete League'}
-            </Button>
-          </DialogActions>
-        </ModalDialog>
-      </Modal>
     </Box>
   )
 }

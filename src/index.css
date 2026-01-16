@@ -27,13 +27,18 @@
 
 html {
   overflow-x: hidden;
+  overflow-y: auto;
   width: 100%;
+  margin: 0;
+  padding: 0;
 }
 
 body {
   margin: 0;
+  padding: 0;
   min-width: 320px;
   min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height - accounts for mobile browser UI */
   background-color: var(--newsprint-bg);
   background-image: 
     repeating-linear-gradient(
@@ -44,7 +49,12 @@ body {
       rgba(255,255,255,.015) 4px
     );
   overflow-x: hidden;
+  overflow-y: auto;
   width: 100%;
+  /* Smooth scrolling for better URL bar hiding */
+  -webkit-overflow-scrolling: touch;
+  /* Prevent pull-to-refresh on mobile (can cause URL bar to show) */
+  overscroll-behavior-y: contain;
 }
 
 #root {
@@ -52,6 +62,19 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  position: relative;
+}
+
+/* Ensure no white line at top */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
 /* Newspaper-style text selection */
@@ -103,4 +126,18 @@ blockquote {
   padding-left: 1rem;
   font-style: italic;
   color: var(--ink-gray);
+}
+
+/* Hide scrollbars on specific content containers - be selective to avoid interfering with navigation */
+.content,
+[class*="content"][class*="container"],
+[class*="Content"][class*="Container"] {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE and Edge */
+}
+
+.content::-webkit-scrollbar,
+[class*="content"][class*="container"]::-webkit-scrollbar,
+[class*="Content"][class*="Container"]::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, Opera */
 }

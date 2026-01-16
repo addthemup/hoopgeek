@@ -107,17 +107,34 @@ DECLARE
     player_record RECORD;
 BEGIN
     -- Try to update existing player
+    -- Preserve existing team_id if incoming value is NULL or 0 (prevents overwriting with stale data)
     UPDATE nba_players SET
         name = p_name,
         first_name = p_first_name,
         last_name = p_last_name,
         player_slug = p_player_slug,
         position = p_position,
-        team_id = p_team_id,
-        team_name = p_team_name,
-        team_abbreviation = p_team_abbreviation,
-        team_slug = p_team_slug,
-        team_city = p_team_city,
+        -- Only update team_id if new value is not NULL and not 0 (preserves accurate roster data)
+        team_id = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_id 
+            ELSE p_team_id 
+        END,
+        team_name = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_name 
+            ELSE p_team_name 
+        END,
+        team_abbreviation = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_abbreviation 
+            ELSE p_team_abbreviation 
+        END,
+        team_slug = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_slug 
+            ELSE p_team_slug 
+        END,
+        team_city = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_city 
+            ELSE p_team_city 
+        END,
         jersey_number = p_jersey_number,
         height = p_height,
         weight = p_weight,

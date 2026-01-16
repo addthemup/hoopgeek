@@ -11,7 +11,19 @@ import time
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from supabase import create_client, Client
-from nba_api.stats.endpoints import boxscoretraditionalv3
+from nba_api.stats.endpoints import boxscoretraditionalv3, scoreboardv2
+import pandas as pd
+
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Try multiple common env file locations
+    load_dotenv('.env.local')
+    load_dotenv('.env')
+except ImportError:
+    pass  # dotenv not installed, skip
+except:
+    pass  # File not found, skip
 
 def setup_supabase() -> Client:
     """Initialize Supabase client"""
@@ -37,26 +49,59 @@ def get_yesterday_games(supabase: Client, target_date: str = None) -> List[Dict]
         
         print(f"📅 Fetching completed games from {yesterday_date}...")
         
-        # Query for completed games from yesterday (game_status = 3 means Final)
+        # Query for games from the date without season_year filter first to see what exists
+        # This allows us to update scores even if status hasn't been updated yet
         result = supabase.table('nba_games') \
-            .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_id, away_team_id, game_status_text') \
-            .eq('season_year', 2025) \
-            .eq('game_status', 3) \
+            .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_id, away_team_id, game_status, game_status_text, season_year') \
             .gte('game_date', f'{yesterday_date}T00:00:00') \
             .lte('game_date', f'{yesterday_date}T23:59:59') \
             .order('game_date', desc=False) \
             .execute()
         
         games = []
-        for game in result.data:
-            games.append({
-                'game_id': game['game_id'],
-                'date': game['game_date'].split('T')[0],
-                'home_team': game['home_team_tricode'],
-                'away_team': game['away_team_tricode'],
-                'home_team_id': game['home_team_id'],
-                'away_team_id': game['away_team_id']
-            })
+        if result.data and len(result.data) > 0:
+            # Show what season_years we found
+            season_years_found = set([g.get('season_year') for g in result.data if g.get('season_year')])
+            print(f"🔍 Found {len(result.data)} games in database with season_years: {season_years_found}")
+            for game in result.data:
+                games.append({
+                    'game_id': game['game_id'],
+                    'date': game['game_date'].split('T')[0],
+                    'home_team': game['home_team_tricode'],
+                    'away_team': game['away_team_tricode'],
+                    'home_team_id': game['home_team_id'],
+                    'away_team_id': game['away_team_id']
+                })
+        else:
+            print(f"⚠️  No games found in database for {yesterday_date}, trying NBA API...")
+            # Try to fetch games from NBA API
+            try:
+                scoreboard = scoreboardv2.ScoreboardV2(game_date=yesterday_date)
+                # Get available data frames
+                available_frames = scoreboard.get_data_frames()
+                game_header = scoreboard.game_header.get_data_frame()
+                
+                if game_header is not None and not game_header.empty and len(game_header) > 0:
+                    print(f"✅ Found {len(game_header)} games from NBA API for {yesterday_date}")
+                    for _, row in game_header.iterrows():
+                        try:
+                            games.append({
+                                'game_id': str(int(row['GAME_ID'])),
+                                'date': yesterday_date,
+                                'home_team': row.get('HOME_TEAM_ABBREVIATION', ''),
+                                'away_team': row.get('VISITOR_TEAM_ABBREVIATION', ''),
+                                'home_team_id': int(row.get('HOME_TEAM_ID', 0)) if pd.notna(row.get('HOME_TEAM_ID')) else 0,
+                                'away_team_id': int(row.get('VISITOR_TEAM_ID', 0)) if pd.notna(row.get('VISITOR_TEAM_ID')) else 0
+                            })
+                        except Exception as row_error:
+                            print(f"⚠️  Error processing game row: {row_error}")
+                            continue
+                else:
+                    print(f"⚠️  No games found in NBA API for {yesterday_date}")
+            except Exception as e:
+                print(f"⚠️  Error fetching from NBA API: {e}")
+                import traceback
+                traceback.print_exc()
         
         print(f"✅ Found {len(games)} completed games from {yesterday_date}")
         return games
@@ -125,12 +170,24 @@ def fetch_box_score(game_id: str) -> Optional[Dict]:
         # Get box score from NBA API
         box_score = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id)
         player_stats = box_score.player_stats.get_data_frame()
+        team_stats = box_score.team_stats.get_data_frame()
         
         print(f"✅ Retrieved {len(player_stats)} players from NBA API")
+        
+        # Extract team scores from team_stats
+        away_score = 0
+        home_score = 0
+        if not team_stats.empty and len(team_stats) >= 2:
+            # Team stats are usually ordered: away team first, then home team
+            away_score = int(team_stats.iloc[0]['points']) if 'points' in team_stats.columns else 0
+            home_score = int(team_stats.iloc[1]['points']) if len(team_stats) > 1 and 'points' in team_stats.columns else 0
         
         return {
             'game_id': game_id,
             'player_stats': player_stats,
+            'team_stats': team_stats,
+            'away_score': away_score,
+            'home_score': home_score,
             'total_players': len(player_stats)
         }
         
@@ -138,11 +195,38 @@ def fetch_box_score(game_id: str) -> Optional[Dict]:
         print(f"❌ Error fetching box score for game {game_id}: {e}")
         return None
 
+def update_game_scores(supabase: Client, game_id: str, away_score: int, home_score: int):
+    """Update game scores in nba_games table"""
+    try:
+        result = supabase.table('nba_games') \
+            .update({
+                'away_team_score': away_score,
+                'home_team_score': home_score
+            }) \
+            .eq('game_id', game_id) \
+            .execute()
+        
+        if result.data:
+            print(f"✅ Updated scores in nba_games: {away_score}-{home_score}")
+        else:
+            print(f"⚠️  No game found in nba_games for {game_id}")
+    except Exception as e:
+        print(f"❌ Error updating game scores: {e}")
+
 def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict):
     """Store box score data in database"""
     try:
         game_id = box_score_data['game_id']
         stored_count = 0
+        
+        # Update game scores in nba_games table
+        if 'away_score' in box_score_data and 'home_score' in box_score_data:
+            update_game_scores(
+                supabase, 
+                game_id, 
+                box_score_data['away_score'], 
+                box_score_data['home_score']
+            )
         
         print(f"💾 Storing {len(box_score_data['player_stats'])} players for game {game_id}...")
         
@@ -170,12 +254,20 @@ def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict
                 except:
                     return None
             
+            # Calculate season_year from game date
+            date_obj = datetime.strptime(game_info['date'], '%Y-%m-%d')
+            if date_obj.month >= 10:
+                season_year_int = date_obj.year
+            else:
+                season_year_int = date_obj.year - 1
+            season_year_str = f'{season_year_int}-{str(season_year_int + 1)[-2:]}'
+            
             transformed_player = {
                 'player_id': player_id,
                 'nba_player_id': nba_player_id,
                 'game_id': game_id,
                 'game_date': game_info['date'],
-                'season_year': '2025-26',
+                'season_year': season_year_str,
                 'player_name': player_name,
                 'matchup': f"{game_info['away_team']} @ {game_info['home_team']}",
                 'jersey_num': to_int_or_none(player_stat.get('jerseyNum')),
@@ -227,37 +319,24 @@ def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict
         print(f"❌ Error storing box score data: {e}")
         return 0
 
-def main():
-    """Main function to fetch yesterday's box scores"""
-    # Allow date to be passed as command line argument
-    if len(sys.argv) > 1:
-        try:
-            target_date = datetime.strptime(sys.argv[1], '%Y-%m-%d')
-            yesterday = target_date
-            yesterday_str = yesterday.strftime('%Y-%m-%d')
-        except ValueError:
-            print(f"❌ Invalid date format. Use YYYY-MM-DD (e.g., 2025-10-22)")
-            sys.exit(1)
-    else:
-        yesterday = datetime.now() - timedelta(days=1)
-        yesterday_str = yesterday.strftime('%Y-%m-%d')
+def process_date(supabase: Client, target_date: str, skip_existing: bool = True):
+    """Process box scores for a single date"""
+    print(f"\n{'=' * 80}")
+    print(f"📅 Processing date: {target_date}")
+    print(f"{'=' * 80}")
     
-    print("=" * 80)
-    print("🏀 NBA Daily Box Score Import")
-    print(f"📅 Importing games from: {yesterday_str}")
-    print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 80)
-    
-    # Setup
-    supabase = setup_supabase()
-    
-    # Get yesterday's completed games from database
-    games = get_yesterday_games(supabase, yesterday_str)
+    # Get completed games from database for this date
+    games = get_yesterday_games(supabase, target_date)
     
     if not games:
-        print(f"ℹ️  No completed games found for {yesterday_str}")
-        print("   This is normal if no games were played yesterday.")
-        return
+        print(f"ℹ️  No completed games found for {target_date}")
+        return {
+            'date': target_date,
+            'total_games': 0,
+            'skipped_games': 0,
+            'successful_games': 0,
+            'total_players': 0
+        }
     
     total_players_imported = 0
     successful_games = 0
@@ -274,9 +353,21 @@ def main():
         print(f"\n[{i}/{len(games)}] 🎮 {game_id}: {matchup} ({date})")
         
         # Check if we already have box score data for this game
-        if check_if_box_score_exists(supabase, game_id):
-            print(f"⏭️  Box score already exists for {game_id}. Skipping.")
+        box_score_exists = check_if_box_score_exists(supabase, game_id)
+        
+        if skip_existing and box_score_exists:
+            print(f"⏭️  Box score already exists for {game_id}.")
+            # Still fetch and update scores in nba_games table
+            box_score_data = fetch_box_score(game_id)
+            if box_score_data and 'away_score' in box_score_data and 'home_score' in box_score_data:
+                update_game_scores(
+                    supabase,
+                    game_id,
+                    box_score_data['away_score'],
+                    box_score_data['home_score']
+                )
             skipped_games += 1
+            time.sleep(1)
             continue
         
         # Fetch box score
@@ -293,19 +384,97 @@ def main():
         # Rate limiting - be nice to NBA API
         time.sleep(1)
     
+    return {
+        'date': target_date,
+        'total_games': len(games),
+        'skipped_games': skipped_games,
+        'successful_games': successful_games,
+        'total_players': total_players_imported
+    }
+
+def main():
+    """Main function to fetch box scores for date range"""
+    # Parse command line arguments
+    start_date = None
+    end_date = None
+    skip_existing = True  # Default to skipping existing
+    
+    # Check for --force flag
+    if '--force' in sys.argv or '-f' in sys.argv:
+        skip_existing = False
+        sys.argv = [arg for arg in sys.argv if arg not in ['--force', '-f']]
+        print("⚠️  FORCE MODE: Will overwrite existing boxscores")
+    
+    if len(sys.argv) >= 2:
+        try:
+            start_date = datetime.strptime(sys.argv[1], '%Y-%m-%d')
+        except ValueError:
+            print(f"❌ Invalid start date format. Use YYYY-MM-DD (e.g., 2025-10-21)")
+            sys.exit(1)
+    
+    if len(sys.argv) >= 3:
+        try:
+            end_date = datetime.strptime(sys.argv[2], '%Y-%m-%d')
+        except ValueError:
+            print(f"❌ Invalid end date format. Use YYYY-MM-DD (e.g., 2025-10-29)")
+            sys.exit(1)
+    
+    # Default to yesterday if no dates provided
+    if not start_date:
+        start_date = datetime.now() - timedelta(days=1)
+        end_date = start_date
+    elif not end_date:
+        end_date = start_date
+    
+    # Ensure start_date <= end_date
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    
+    print("=" * 80)
+    print("🏀 NBA Daily Box Score Import")
+    print(f"📅 Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"⏰ Run time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"🔄 Skip existing: {skip_existing}")
+    print("=" * 80)
+    
+    # Setup
+    supabase = setup_supabase()
+    
+    # Process each date in the range
+    current_date = start_date
+    all_results = []
+    
+    while current_date <= end_date:
+        date_str = current_date.strftime('%Y-%m-%d')
+        result = process_date(supabase, date_str, skip_existing=skip_existing)
+        all_results.append(result)
+        current_date += timedelta(days=1)
+    
+    # Print summary
     print(f"\n{'=' * 80}")
-    print(f"🎯 Import Summary:")
-    print(f"   Date: {yesterday_str}")
-    print(f"   Total games found: {len(games)}")
-    print(f"   Games skipped (already imported): {skipped_games}")
-    print(f"   Games processed: {len(games) - skipped_games}")
-    print(f"   Successful imports: {successful_games}")
-    print(f"   Total players imported: {total_players_imported}")
-    if len(games) - skipped_games > 0:
-        print(f"   Success rate: {(successful_games/(len(games) - skipped_games)*100):.1f}%")
+    print(f"🎯 Overall Import Summary:")
     print(f"{'=' * 80}")
     
-    print(f"\n✅ Daily box score import completed!")
+    total_games = sum(r['total_games'] for r in all_results)
+    total_skipped = sum(r['skipped_games'] for r in all_results)
+    total_successful = sum(r['successful_games'] for r in all_results)
+    total_players = sum(r['total_players'] for r in all_results)
+    
+    print(f"   Date range: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+    print(f"   Total games found: {total_games}")
+    print(f"   Games skipped (already imported): {total_skipped}")
+    print(f"   Games processed: {total_games - total_skipped}")
+    print(f"   Successful imports: {total_successful}")
+    print(f"   Total players imported: {total_players}")
+    if total_games - total_skipped > 0:
+        print(f"   Success rate: {(total_successful/(total_games - total_skipped)*100):.1f}%")
+    
+    print(f"\n📊 Per-date breakdown:")
+    for result in all_results:
+        print(f"   {result['date']}: {result['successful_games']}/{result['total_games']} games, {result['total_players']} players")
+    
+    print(f"{'=' * 80}")
+    print(f"\n✅ Box score import completed!")
 
 if __name__ == "__main__":
     main()

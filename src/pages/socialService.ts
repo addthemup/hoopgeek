@@ -225,18 +225,19 @@ export class SocialService {
    */
   static async shareToExternal(contentId: string, platform: 'twitter' | 'facebook' | 'copy'): Promise<void> {
     const baseUrl = window.location.origin
-    const shareUrl = `${baseUrl}/post/${contentId}`
-    const shareText = `Check out this epic NBA highlight! 🏀`
+    // Share the post URL - the og:image meta tag will point to the og-image URL
+    // This way iMessage shows the post as a link preview, not an image attachment
+    const shareUrl = `${baseUrl}/${contentId}`
 
     switch (platform) {
       case 'twitter':
-        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}`, '_blank')
+        window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}`, '_blank')
         break
       case 'facebook':
         window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank')
         break
       case 'copy':
-        await navigator.clipboard.writeText(`${shareText} ${shareUrl}`)
+        await navigator.clipboard.writeText(shareUrl)
         break
     }
   }

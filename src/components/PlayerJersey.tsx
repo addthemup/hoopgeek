@@ -7,6 +7,7 @@ interface PlayerJerseyProps {
   nbaTeam: string; // Team abbreviation (e.g., "LAL", "BOS")
   position?: string;
   size?: 'small' | 'medium' | 'large';
+  textColor?: string; // Optional text color override for player name
 }
 
 export default function PlayerJersey({ 
@@ -14,7 +15,8 @@ export default function PlayerJersey({
   jerseyNumber, 
   nbaTeam, 
   position,
-  size = 'medium' 
+  size = 'medium',
+  textColor = '#000'
 }: PlayerJerseyProps) {
   const teamColors = getTeamColors(nbaTeam);
   
@@ -172,7 +174,7 @@ export default function PlayerJersey({
           fontWeight: 'bold',
           textAlign: 'center',
           fontSize: dimensions.name,
-          color: '#000',
+          color: textColor,
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
           maxWidth: dimensions.jersey + 20,

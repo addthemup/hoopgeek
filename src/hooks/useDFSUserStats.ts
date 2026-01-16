@@ -30,7 +30,7 @@ export function useDFSUserStats(userId: string | undefined) {
         .from('dfs_entries')
         .select(`
           id,
-          total_points,
+          final_points,
           final_rank,
           prize_won,
           is_submitted,
@@ -47,7 +47,7 @@ export function useDFSUserStats(userId: string | undefined) {
       const activeLineups = entries?.filter(e => 
         e.is_submitted && (e.dfs_pools as any)?.status === 'live'
       ).length || 0;
-      const totalPoints = entries?.reduce((sum, e) => sum + (e.total_points || 0), 0) || 0;
+      const totalPoints = entries?.reduce((sum, e) => sum + (e.final_points || 0), 0) || 0;
       const winRate = contestsEntered > 0 ? (contestsWon / contestsEntered) * 100 : 0;
 
       return {

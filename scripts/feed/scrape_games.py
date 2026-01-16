@@ -1,0 +1,2537 @@
+#!/usr/bin/env python3
+"""
+Script to scrape NBA 2025-26 season game IDs and get video MP4 links.
+Queries completed games for a specific date, then allows selection of a game to get all video MP4s.
+"""
+
+from nba_api.stats.endpoints.leaguegamefinder import LeagueGameFinder
+from nba_api.stats.library.parameters import PlayerOrTeamAbbreviation, SeasonTypeNullable
+import sys
+import argparse
+import re
+import json
+import requests
+import pandas as pd
+import time
+from datetime import datetime
+
+
+def validate_date(date_string):
+    """
+    Validate date format YYYY-MM-DD
+    """
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_string):
+        raise argparse.ArgumentTypeError(f"Date must be in format YYYY-MM-DD (e.g., 2025-10-31)")
+    
+    try:
+        datetime.strptime(date_string, '%Y-%m-%d')
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"Invalid date: {date_string}")
+    
+    return date_string
+
+
+def get_games_for_date(game_date):
+    """
+    Get all games for a specific date with team information.
+    
+    Args:
+        game_date: Date string in format YYYY-MM-DD
+    
+    Returns:
+        DataFrame with game information
+    """
+    try:
+        print(f"Querying games for {game_date}...")
+        game_finder = LeagueGameFinder(
+            player_or_team_abbreviation=PlayerOrTeamAbbreviation.team,
+            season_nullable="2025-26",
+            season_type_nullable=SeasonTypeNullable.regular,
+            date_from_nullable=game_date,
+            date_to_nullable=game_date,
+            get_request=True
+        )
+        
+        df = game_finder.league_game_finder_results.get_data_frame()
+        
+        if df.empty:
+            print(f"\n⚠ WARNING: No games found for 2025-26 season on {game_date}")
+            return None
+        
+        return df
+        
+    except Exception as e:
+        print(f"\n✗ FAIL: Error querying games")
+        print(f"Error details: {str(e)}")
+        raise
+
+
+def display_games(df):
+    """
+    Display games in a numbered list with team matchups.
+    
+    Args:
+        df: DataFrame with game information
+    
+    Returns:
+        Dictionary mapping index to game_id
+    """
+    # Get unique games with team info
+    games_info = []
+    seen_game_ids = set()
+    
+    for _, row in df.iterrows():
+        game_id = row['GAME_ID']
+        if game_id not in seen_game_ids:
+            seen_game_ids.add(game_id)
+            # Get matchup info (format: "TEAM @ TEAM" or "TEAM vs. TEAM")
+            matchup = row['MATCHUP']
+            game_date = row['GAME_DATE']
+            games_info.append({
+                'game_id': game_id,
+                'matchup': matchup,
+                'date': game_date
+            })
+    
+    print(f"\n{'='*60}")
+    print(f"Games found: {len(games_info)}")
+    print(f"{'='*60}\n")
+    
+    game_map = {}
+    for idx, game in enumerate(games_info, 1):
+        game_map[idx] = game['game_id']
+        print(f"{idx}. Game ID: {game['game_id']} - {game['matchup']}")
+    
+    return game_map
+
+
+def convert_pctime_to_iso8601(pctime_str):
+    """
+    Convert PCTIMESTRING (e.g., "11:36") to ISO 8601 duration format (e.g., "PT11M36.00S")
+    """
+    if not pctime_str or pd.isna(pctime_str):
+        return None
+    
+    try:
+        # Format is usually "MM:SS" or "M:SS"
+        parts = str(pctime_str).split(':')
+        if len(parts) == 2:
+            minutes = int(parts[0])
+            seconds = float(parts[1])
+            return f"PT{minutes}M{seconds:.2f}S"
+    except:
+        pass
+    return None
+
+
+def parse_description_for_shot_info(description):
+    """
+    Parse description to extract shot information like distance, type, result.
+    Returns dict with actionType, subType, shotResult, shotDistance, isFieldGoal
+    """
+    if not description:
+        return {}
+    
+    desc = str(description).upper()
+    info = {
+        'actionType': None,
+        'subType': None,
+        'shotResult': None,
+        'shotDistance': None,
+        'isFieldGoal': 0
+    }
+    
+    # Check for shot types
+    if 'JUMP SHOT' in desc:
+        info['actionType'] = 'Jump Shot'
+        info['subType'] = 'Jump Shot'
+        info['isFieldGoal'] = 1
+    elif 'LAYUP' in desc:
+        info['actionType'] = 'Layup'
+        info['subType'] = 'Layup'
+        info['isFieldGoal'] = 1
+    elif 'DUNK' in desc:
+        info['actionType'] = 'Dunk'
+        info['subType'] = 'Dunk'
+        info['isFieldGoal'] = 1
+    elif 'HOOK SHOT' in desc:
+        info['actionType'] = 'Hook Shot'
+        info['subType'] = 'Hook Shot'
+        info['isFieldGoal'] = 1
+    elif 'FLOATING JUMP SHOT' in desc:
+        info['actionType'] = 'Floating Jump Shot'
+        info['subType'] = 'Floating Jump Shot'
+        info['isFieldGoal'] = 1
+    elif 'PULLUP JUMP SHOT' in desc:
+        info['actionType'] = 'Pullup Jump Shot'
+        info['subType'] = 'Pullup Jump Shot'
+        info['isFieldGoal'] = 1
+    elif 'RUNNING JUMP SHOT' in desc or 'RUNNING PULL-UP JUMP SHOT' in desc:
+        info['actionType'] = 'Running Jump Shot'
+        info['subType'] = 'Running Jump Shot'
+        info['isFieldGoal'] = 1
+    elif '3PT' in desc or '3-PT' in desc:
+        info['actionType'] = '3PT Jump Shot'
+        info['subType'] = '3PT Jump Shot'
+        info['isFieldGoal'] = 1
+    
+    # Check for shot result
+    if 'MISS' in desc:
+        info['shotResult'] = 'Missed'
+        if info['actionType']:
+            info['actionType'] = 'Missed Shot'
+    elif 'PTS' in desc or 'POINTS' in desc:
+        info['shotResult'] = 'Made'
+    
+    # Extract shot distance (e.g., "25' 3PT" or "15' Pullup")
+    distance_match = re.search(r"(\d+)'", desc)
+    if distance_match:
+        info['shotDistance'] = int(distance_match.group(1))
+    
+    return info
+
+
+def parse_score(score_str):
+    """
+    Parse score string (e.g., "100 - 95") to separate home and away scores.
+    Returns tuple (scoreHome, scoreAway) or (None, None)
+    """
+    if not score_str or pd.isna(score_str):
+        return ("", "")
+    
+    try:
+        parts = str(score_str).split(' - ')
+        if len(parts) == 2:
+            return (parts[0].strip(), parts[1].strip())
+    except:
+        pass
+    return ("", "")
+
+
+def build_video_info_from_v3(game_id, action_num, video_url, pbp_row):
+    """
+    Build comprehensive video info dictionary from PlayByPlayV3 data.
+    PlayByPlayV3 already has all the fields we need, so we just need to map them.
+    
+    Args:
+        game_id: Game ID string
+        action_num: Action number
+        video_url: MP4 video URL
+        pbp_row: Dictionary with play-by-play row data from PlayByPlayV3
+    
+    Returns:
+        Dictionary with all video event fields matching the desired format
+    """
+    # Helper function to safely get value or None
+    def safe_get(key, default=None):
+        val = pbp_row.get(key, default)
+        if pd.isna(val) or val == '':
+            return default if default is not None else None
+        # For numeric defaults, allow 0 values
+        if default is not None and isinstance(default, (int, float)):
+            return val if val is not None else default
+        return val if val else (default if default is not None else None)
+    
+    # Build the video info dictionary using PlayByPlayV3 fields directly
+    video_info = {
+        'gameId': game_id,
+        'eventNum': safe_get('actionNumber'),  # Use actionNumber as eventNum
+        'actionId': safe_get('actionId', 0) or 0,
+        'period': safe_get('period', 1) or 1,
+        'clock': safe_get('clock'),  # Already in ISO 8601 format!
+        'description': safe_get('description', ''),
+        'teamId': safe_get('teamId'),
+        'teamTricode': safe_get('teamTricode'),
+        'scoreHome': str(safe_get('scoreHome', '')) if safe_get('scoreHome') else '',
+        'scoreAway': str(safe_get('scoreAway', '')) if safe_get('scoreAway') else '',
+        'videoAvailable': safe_get('videoAvailable', 0) or 0,
+        'actionType': safe_get('actionType'),
+        'subType': safe_get('subType'),
+        'shotResult': safe_get('shotResult'),
+        'shotDistance': safe_get('shotDistance'),
+        'isFieldGoal': safe_get('isFieldGoal', 0) or 0,
+        'playerName': safe_get('playerName'),
+        'playerNameI': safe_get('playerNameI'),
+        'personId': safe_get('personId'),
+        'xLegacy': safe_get('xLegacy'),
+        'yLegacy': safe_get('yLegacy'),
+        'location': safe_get('location'),
+        'pointsTotal': safe_get('pointsTotal', 0) or 0,
+        'mp4': video_url,
+        'mp4_local': None
+    }
+    
+    return video_info
+
+
+def build_video_info(game_id, event_id, video_url, description, pbp_row):
+    """
+    Build comprehensive video info dictionary matching the desired format.
+    
+    Args:
+        game_id: Game ID string
+        event_id: Event number
+        video_url: MP4 video URL
+        description: Event description
+        pbp_row: Dictionary with play-by-play row data
+    
+    Returns:
+        Dictionary with all video event fields
+    """
+    # Parse shot info from description
+    shot_info = parse_description_for_shot_info(description)
+    
+    # Get player info (usually PLAYER1)
+    player_id = pbp_row.get('PLAYER1_ID', 0)
+    if pd.notna(player_id):
+        player_id = int(player_id) if player_id else 0
+    else:
+        player_id = 0
+    
+    player_name = pbp_row.get('PLAYER1_NAME')
+    player_name_i = pbp_row.get('PLAYER1_NAME')  # Format as "First Last" - might need parsing
+    
+    # Get team info
+    team_id = pbp_row.get('PLAYER1_TEAM_ID', 0)
+    if pd.notna(team_id):
+        team_id = int(team_id) if team_id else 0
+    else:
+        team_id = 0
+    
+    team_tricode = pbp_row.get('PLAYER1_TEAM_ABBREVIATION', '')
+    
+    # Get period
+    period = pbp_row.get('PERIOD', 1)
+    if pd.notna(period):
+        period = int(period)
+    else:
+        period = 1
+    
+    # Get clock time and convert to ISO 8601
+    pctime = pbp_row.get('PCTIMESTRING', '')
+    clock = convert_pctime_to_iso8601(pctime)
+    
+    # Get scores
+    score_str = pbp_row.get('SCORE', '')
+    score_home, score_away = parse_score(score_str)
+    
+    # Get action ID (EVENTMSGACTIONTYPE)
+    action_id = pbp_row.get('EVENTMSGACTIONTYPE', 0)
+    if pd.notna(action_id):
+        action_id = int(action_id) if action_id else 0
+    else:
+        action_id = 0
+    
+    # Video available flag
+    video_available = pbp_row.get('VIDEO_AVAILABLE_FLAG', 0)
+    if pd.notna(video_available):
+        video_available = int(video_available) if video_available else 0
+    else:
+        video_available = 0
+    
+    # Calculate points total from description
+    points_total = 0
+    if 'PTS' in description:
+        pts_match = re.search(r'\((\d+)\s*PTS?\)', description.upper())
+        if pts_match:
+            points_total = int(pts_match.group(1))
+    
+    # Build the video info dictionary
+    video_info = {
+        'gameId': game_id,
+        'eventNum': event_id,
+        'actionId': action_id,
+        'period': period,
+        'clock': clock,
+        'description': description,
+        'teamId': team_id if team_id > 0 else None,
+        'teamTricode': team_tricode if team_tricode else None,
+        'scoreHome': score_home,
+        'scoreAway': score_away,
+        'videoAvailable': video_available,
+        'actionType': shot_info.get('actionType'),
+        'subType': shot_info.get('subType'),
+        'shotResult': shot_info.get('shotResult'),
+        'shotDistance': shot_info.get('shotDistance'),
+        'isFieldGoal': shot_info.get('isFieldGoal', 0),
+        'playerName': player_name if player_name and pd.notna(player_name) else None,
+        'playerNameI': player_name_i if player_name_i and pd.notna(player_name_i) else None,
+        'personId': player_id if player_id > 0 else None,
+        'xLegacy': None,  # Not available in PlayByPlayV2
+        'yLegacy': None,  # Not available in PlayByPlayV2
+        'location': None,  # Could be derived but not directly available
+        'pointsTotal': points_total,
+        'mp4': video_url,
+        'mp4_local': None
+    }
+    
+    return video_info
+
+
+def get_game_videos(game_id):
+    """
+    Get all video MP4 links for a specific game using VideoEventsAsset endpoint.
+    First gets all event IDs from play-by-play, then queries videos for each event.
+    This approach avoids missing events that aren't sequential.
+    
+    Args:
+        game_id: Game ID string (e.g., "0022500001")
+    
+    Returns:
+        List of video events with MP4 links
+    """
+    try:
+        print(f"\nFetching video data for game {game_id}...")
+        
+        from nba_api.stats.endpoints.playbyplayv3 import PlayByPlayV3
+        from nba_api.stats.endpoints import videoeventsasset
+        
+        videos = []
+        
+        # Step 1: Get all action numbers from play-by-play data using PlayByPlayV3
+        print("  Step 1: Getting play-by-play data to find all action numbers...")
+        try:
+            pbp = PlayByPlayV3(game_id=game_id, get_request=True)
+            
+            # Add delay after play-by-play request
+            time.sleep(1.0)
+            
+            if not pbp.play_by_play:
+                print("  ✗ No play-by-play data found")
+                return []
+            
+            pbp_df = pbp.play_by_play.get_data_frame()
+            
+            if pbp_df.empty:
+                print("  ✗ Play-by-play DataFrame is empty")
+                return []
+            
+            # Store all play-by-play data keyed by action number
+            action_numbers = []
+            pbp_data = {}  # Dictionary to store all play-by-play data by action number
+            
+            # PlayByPlayV3 uses 'actionNumber' as the column name
+            if 'actionNumber' not in pbp_df.columns:
+                print("  ✗ Could not find actionNumber column in play-by-play data")
+                print(f"    Available columns: {list(pbp_df.columns)}")
+                return []
+            
+            # Store all play-by-play rows by action number
+            for _, row in pbp_df.iterrows():
+                action_num = row['actionNumber']
+                if pd.notna(action_num) and action_num > 0:
+                    action_num_int = int(action_num)
+                    if action_num_int not in action_numbers:
+                        action_numbers.append(action_num_int)
+                        # Store the entire row data for this action
+                        pbp_data[action_num_int] = row.to_dict()
+            
+            action_numbers.sort()
+            print(f"  ✓ Found {len(action_numbers)} unique action numbers (range: {min(action_numbers)} - {max(action_numbers)})")
+            
+        except Exception as e:
+            print(f"  ✗ Error getting play-by-play data: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
+        
+        # Step 2: Query VideoEventsAsset for each action number
+        # Note: VideoEventsAsset uses game_event_id which corresponds to actionNumber
+        print(f"\n  Step 2: Querying videos for {len(action_numbers)} actions...")
+        print(f"  This may take a while. Processing in batches with rate limiting...")
+        print(f"  Estimated time: ~{len(action_numbers) * 0.6 / 60:.1f} minutes")
+        
+        found_descriptions = set()
+        processed_count = 0
+        success_count = 0
+        error_count = 0
+        consecutive_errors = 0
+        batch_size = 5  # Reduced batch size for more conservative rate limiting
+        
+        for i in range(0, len(action_numbers), batch_size):
+            batch = action_numbers[i:i+batch_size]
+            
+            for action_num in batch:
+                try:
+                    # VideoEventsAsset uses game_event_id which corresponds to actionNumber
+                    video_event = videoeventsasset.VideoEventsAsset(
+                        game_id=game_id,
+                        game_event_id=action_num,
+                        get_request=True
+                    )
+                    
+                    event_json = video_event.get_json()
+                    if not event_json:
+                        processed_count += 1
+                        continue
+                    
+                    event_data = json.loads(event_json)
+                    
+                    # Extract video URLs and playlist data
+                    result_sets = event_data.get('resultSets', {})
+                    meta = result_sets.get('Meta', {})
+                    video_urls = meta.get('videoUrls', [])
+                    playlist = result_sets.get('playlist', [])
+                    
+                    # Check if this action has video
+                    if video_urls and playlist:
+                        video_url = None
+                        
+                        # Try to get MP4 URL from videoUrls
+                        if isinstance(video_urls, list) and len(video_urls) > 0:
+                            first_video = video_urls[0]
+                            if isinstance(first_video, dict):
+                                video_url = first_video.get('lurl') or first_video.get('mp4') or first_video.get('url')
+                            elif isinstance(first_video, str):
+                                video_url = first_video
+                        
+                        # Get description from playlist
+                        description = None
+                        if isinstance(playlist, list) and len(playlist) > 0:
+                            first_play = playlist[0]
+                            if isinstance(first_play, dict):
+                                description = first_play.get('dsc', '') or first_play.get('description', '')
+                        
+                        # Only add if we have a video URL
+                        if video_url:
+                            # Get play-by-play data for this action
+                            pbp_row = pbp_data.get(action_num, {})
+                            
+                            # Use description from playlist, or fall back to play-by-play description
+                            if not description:
+                                description = pbp_row.get('description', f'Action {action_num}')
+                            
+                            # Build comprehensive video info with all fields from PlayByPlayV3
+                            video_info = build_video_info_from_v3(
+                                game_id=game_id,
+                                action_num=action_num,
+                                video_url=video_url,
+                                pbp_row=pbp_row
+                            )
+                            
+                            # Only add if we haven't seen this exact video before
+                            video_key = f"{action_num}_{video_url}"
+                            if video_key not in found_descriptions:
+                                found_descriptions.add(video_key)
+                                videos.append(video_info)
+                                success_count += 1
+                                
+                                if success_count % 10 == 0:
+                                    print(f"    ✓ Found {success_count} videos so far...")
+                    
+                    processed_count += 1
+                    consecutive_errors = 0  # Reset on success
+                    
+                except Exception as e:
+                    error_count += 1
+                    consecutive_errors += 1
+                    processed_count += 1
+                    
+                    # Exponential backoff on consecutive errors
+                    if consecutive_errors > 0:
+                        backoff_time = min(2.0 * (2 ** (consecutive_errors - 1)), 10.0)  # Max 10 seconds
+                        if consecutive_errors <= 3:  # Only delay for first few errors
+                            print(f"    ⚠ Error with action {action_num}, backing off {backoff_time:.1f}s...")
+                            time.sleep(backoff_time)
+                    
+                    # Print error details periodically
+                    if "Invalid game_event_id" not in str(e):
+                        if processed_count % 20 == 0 or consecutive_errors > 3:
+                            print(f"    ⚠ Error with action {action_num}: {str(e)[:50]}")
+                    
+                    # If too many consecutive errors, take a longer break
+                    if consecutive_errors >= 5:
+                        print(f"    ⏸ Too many consecutive errors. Pausing for 10 seconds...")
+                        time.sleep(10.0)
+                        consecutive_errors = 0
+                    
+                    continue
+                
+                # Conservative delay between requests to avoid rate limiting
+                # Increased from 0.1s to 0.6s for better rate limit compliance
+                time.sleep(0.6)
+            
+            # Progress update after each batch
+            if (i + batch_size) % 25 == 0 or i + batch_size >= len(action_numbers):
+                elapsed_estimate = processed_count * 0.6
+                remaining_estimate = (len(action_numbers) - processed_count) * 0.6
+                print(f"    📊 Processed {processed_count}/{len(action_numbers)} actions, "
+                      f"found {success_count} videos, {error_count} errors")
+                print(f"       Estimated remaining time: ~{remaining_estimate / 60:.1f} minutes")
+            
+            # Longer delay between batches (increased from 0.5s to 2.0s)
+            if i + batch_size < len(action_numbers):
+                time.sleep(2.0)
+        
+        print(f"\n  ✓ Complete! Found {len(videos)} videos out of {len(action_numbers)} actions")
+        return videos
+        
+    except ImportError as e:
+        print(f"\n✗ FAIL: Import error - {e}")
+        print("Make sure nba_api is installed: pip install nba-api")
+        return []
+    except Exception as e:
+        print(f"\n✗ FAIL: Error fetching videos for game {game_id}")
+        print(f"Error details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return []
+
+
+def get_boxscore_traditional(game_id):
+    """
+    Get box score traditional data using BoxScoreTraditionalV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats, TeamStats, TeamStarterBenchStats lists
+    """
+    try:
+        print("  Fetching box score traditional data...")
+        from nba_api.stats.endpoints.boxscoretraditionalv3 import BoxScoreTraditionalV3
+        
+        box_score = BoxScoreTraditionalV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': [],
+            'TeamStarterBenchStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        if box_score.team_starter_bench_stats:
+            starter_bench_df = box_score.team_starter_bench_stats.get_data_frame()
+            if not starter_bench_df.empty:
+                box_score_data['TeamStarterBenchStats'] = starter_bench_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score traditional: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': [],
+            'TeamStarterBenchStats': []
+        }
+
+
+def get_boxscore_advanced(game_id):
+    """
+    Get box score advanced data using BoxScoreAdvancedV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score advanced data...")
+        from nba_api.stats.endpoints.boxscoreadvancedv3 import BoxScoreAdvancedV3
+        
+        box_score = BoxScoreAdvancedV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score advanced: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_game_metadata(game_id, game_df_row):
+    """
+    Build game metadata structure from game finder data.
+    
+    Args:
+        game_id: Game ID string
+        game_df_row: Row from LeagueGameFinder DataFrame
+    
+    Returns:
+        Dictionary with game metadata
+    """
+    # Extract date from game
+    game_date_str = game_df_row.get('GAME_DATE', '')
+    
+    # Get team info - we need to find home and away teams
+    # In LeagueGameFinder, MATCHUP format is "TEAM @ TEAM" or "TEAM vs. TEAM"
+    matchup = game_df_row.get('MATCHUP', '')
+    
+    # For now, create basic metadata structure
+    # We can enhance this with more endpoints if needed
+    metadata = {
+        'date': f"{game_date_str}T00:00:00" if game_date_str else None,
+        'arena': None,  # Would need additional endpoint
+        'season': '2025-26',
+        'status': None,
+        'homeTeam': {
+            'team_id': None,
+            'abbreviation': None,
+            'city': None,
+            'name': None,
+            'record': None,
+            'quarters': [None] * 12,
+            'points': None,
+            'stats': {
+                'fg_pct': None,
+                'ft_pct': None,
+                'fg3_pct': None,
+                'ast': None,
+                'reb': None,
+                'tov': None
+            }
+        },
+        'awayTeam': {
+            'team_id': None,
+            'abbreviation': None,
+            'city': None,
+            'name': None,
+            'record': None,
+            'quarters': [None] * 12,
+            'points': None,
+            'stats': {
+                'fg_pct': None,
+                'ft_pct': None,
+                'fg3_pct': None,
+                'ast': None,
+                'reb': None,
+                'tov': None
+            }
+        },
+        'teamLeaders': {},
+        'lastMeeting': None,
+        'seriesStandings': None
+    }
+    
+    return metadata
+
+
+def get_boxscore_four_factors(game_id):
+    """
+    Get box score four factors data using BoxScoreFourFactorsV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score four factors data...")
+        from nba_api.stats.endpoints.boxscorefourfactorsv3 import BoxScoreFourFactorsV3
+        
+        box_score = BoxScoreFourFactorsV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score four factors: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_boxscore_summary(game_id):
+    """
+    Get box score summary data using BoxScoreSummaryV2 endpoint.
+    This includes game info, line scores, officials, inactive players, etc.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with all summary data sets
+    """
+    try:
+        print("  Fetching box score summary data...")
+        from nba_api.stats.endpoints.boxscoresummaryv2 import BoxScoreSummaryV2
+        
+        box_score = BoxScoreSummaryV2(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'AvailableVideo': [],
+            'GameInfo': [],
+            'GameSummary': [],
+            'InactivePlayers': [],
+            'LastMeeting': [],
+            'LineScore': [],
+            'Officials': [],
+            'OtherStats': [],
+            'SeasonSeries': []
+        }
+        
+        if box_score.available_video:
+            df = box_score.available_video.get_data_frame()
+            if not df.empty:
+                box_score_data['AvailableVideo'] = df.to_dict('records')
+        
+        if box_score.game_info:
+            df = box_score.game_info.get_data_frame()
+            if not df.empty:
+                box_score_data['GameInfo'] = df.to_dict('records')
+        
+        if box_score.game_summary:
+            df = box_score.game_summary.get_data_frame()
+            if not df.empty:
+                box_score_data['GameSummary'] = df.to_dict('records')
+        
+        if box_score.inactive_players:
+            df = box_score.inactive_players.get_data_frame()
+            if not df.empty:
+                box_score_data['InactivePlayers'] = df.to_dict('records')
+        
+        if box_score.last_meeting:
+            df = box_score.last_meeting.get_data_frame()
+            if not df.empty:
+                box_score_data['LastMeeting'] = df.to_dict('records')
+        
+        if box_score.line_score:
+            df = box_score.line_score.get_data_frame()
+            if not df.empty:
+                box_score_data['LineScore'] = df.to_dict('records')
+        
+        if box_score.officials:
+            df = box_score.officials.get_data_frame()
+            if not df.empty:
+                box_score_data['Officials'] = df.to_dict('records')
+        
+        if box_score.other_stats:
+            df = box_score.other_stats.get_data_frame()
+            if not df.empty:
+                box_score_data['OtherStats'] = df.to_dict('records')
+        
+        if box_score.season_series:
+            df = box_score.season_series.get_data_frame()
+            if not df.empty:
+                box_score_data['SeasonSeries'] = df.to_dict('records')
+        
+        print(f"    ✓ Found summary data: {len(box_score_data['LineScore'])} line scores, "
+              f"{len(box_score_data['Officials'])} officials, "
+              f"{len(box_score_data['InactivePlayers'])} inactive players")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score summary: {e}")
+        return {
+            'AvailableVideo': [],
+            'GameInfo': [],
+            'GameSummary': [],
+            'InactivePlayers': [],
+            'LastMeeting': [],
+            'LineScore': [],
+            'Officials': [],
+            'OtherStats': [],
+            'SeasonSeries': []
+        }
+
+
+def get_boxscore_scoring(game_id):
+    """
+    Get box score scoring data using BoxScoreScoringV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score scoring data...")
+        from nba_api.stats.endpoints.boxscorescoringv3 import BoxScoreScoringV3
+        
+        box_score = BoxScoreScoringV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score scoring: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_boxscore_usage(game_id):
+    """
+    Get box score usage data using BoxScoreUsageV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score usage data...")
+        from nba_api.stats.endpoints.boxscoreusagev3 import BoxScoreUsageV3
+        
+        box_score = BoxScoreUsageV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score usage: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_boxscore_player_track(game_id):
+    """
+    Get box score player track data using BoxScorePlayerTrackV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score player track data...")
+        from nba_api.stats.endpoints.boxscoreplayertrackv3 import BoxScorePlayerTrackV3
+        
+        box_score = BoxScorePlayerTrackV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score player track: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_boxscore_misc(game_id):
+    """
+    Get box score misc data using BoxScoreMiscV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score misc data...")
+        from nba_api.stats.endpoints.boxscoremiscv3 import BoxScoreMiscV3
+        
+        box_score = BoxScoreMiscV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score misc: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def get_boxscore_matchups(game_id):
+    """
+    Get box score matchups data using BoxScoreMatchupsV3 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats list (matchup data)
+    """
+    try:
+        print("  Fetching box score matchups data...")
+        from nba_api.stats.endpoints.boxscorematchupsv3 import BoxScoreMatchupsV3
+        
+        box_score = BoxScoreMatchupsV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} matchup records")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score matchups: {e}")
+        return {
+            'PlayerStats': []
+        }
+
+
+def get_boxscore_hustle(game_id):
+    """
+    Get box score hustle data using BoxScoreHustleV2 endpoint.
+    
+    Args:
+        game_id: Game ID string
+    
+    Returns:
+        Dictionary with PlayerStats and TeamStats lists
+    """
+    try:
+        print("  Fetching box score hustle data...")
+        from nba_api.stats.endpoints.boxscorehustlev2 import BoxScoreHustleV2
+        
+        box_score = BoxScoreHustleV2(game_id=game_id, get_request=True)
+        time.sleep(1.0)  # Rate limiting
+        
+        box_score_data = {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+        
+        if box_score.player_stats:
+            player_df = box_score.player_stats.get_data_frame()
+            if not player_df.empty:
+                box_score_data['PlayerStats'] = player_df.to_dict('records')
+        
+        if box_score.team_stats:
+            team_df = box_score.team_stats.get_data_frame()
+            if not team_df.empty:
+                box_score_data['TeamStats'] = team_df.to_dict('records')
+        
+        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
+              f"{len(box_score_data['TeamStats'])} teams")
+        return box_score_data
+        
+    except Exception as e:
+        print(f"    ⚠ Error fetching box score hustle: {e}")
+        return {
+            'PlayerStats': [],
+            'TeamStats': []
+        }
+
+
+def aggregate_player_stats(box_score_traditional, box_score_advanced, box_score_four_factors, box_score_hustle, box_score_misc, box_score_player_track, box_score_scoring, box_score_usage):
+    """
+    Aggregate player stats from multiple box score endpoints.
+    Combines stats with prefixes (traditional_*, advanced_*, fourFactors_*, hustle_*, misc_*, playerTrack_*, scoring_*, usage_*) to avoid conflicts.
+    
+    Args:
+        box_score_traditional: Dict with PlayerStats from BoxScoreTraditionalV3
+        box_score_advanced: Dict with PlayerStats from BoxScoreAdvancedV3
+        box_score_four_factors: Dict with PlayerStats from BoxScoreFourFactorsV3
+        box_score_hustle: Dict with PlayerStats from BoxScoreHustleV2
+        box_score_misc: Dict with PlayerStats from BoxScoreMiscV3
+        box_score_player_track: Dict with PlayerStats from BoxScorePlayerTrackV3
+        box_score_scoring: Dict with PlayerStats from BoxScoreScoringV3
+        box_score_usage: Dict with PlayerStats from BoxScoreUsageV3
+    
+    Returns:
+        Dictionary keyed by personId with aggregated player data
+    """
+    aggregated = {}
+    
+    # Helper function to initialize player entry
+    def init_player_entry(player):
+        return {
+            'firstName': player.get('firstName'),
+            'familyName': player.get('familyName'),
+            'nameI': player.get('nameI'),
+            'playerSlug': player.get('playerSlug'),
+            'position': player.get('position'),
+            'teamId': player.get('teamId'),
+            'teamCity': player.get('teamCity'),
+            'teamName': player.get('teamName'),
+            'teamTricode': player.get('teamTricode'),
+            'teamSlug': player.get('teamSlug'),
+            'jerseyNum': player.get('jerseyNum'),
+        }
+    
+    # Helper function to add stats with prefix
+    def add_stats_with_prefix(aggregated, person_id_str, player, prefix, exclude_keys=None):
+        if exclude_keys is None:
+            exclude_keys = ['firstName', 'familyName', 'nameI', 'playerSlug', 
+                          'position', 'teamId', 'teamCity', 'teamName', 
+                          'teamTricode', 'teamSlug', 'jerseyNum', 'gameId', 'personId']
+        
+        for key, value in player.items():
+            if key not in exclude_keys:
+                aggregated[person_id_str][f'{prefix}_{key}'] = value
+        aggregated[person_id_str][f'{prefix}_personId'] = player.get('personId')
+        aggregated[person_id_str][f'{prefix}_gameId'] = player.get('gameId')
+    
+    # Process traditional stats first
+    if box_score_traditional.get('PlayerStats'):
+        for player in box_score_traditional['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Initialize player entry with basic info
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add traditional stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'traditional')
+    
+    # Process advanced stats
+    if box_score_advanced.get('PlayerStats'):
+        for player in box_score_advanced['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists (use advanced data if traditional wasn't available)
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add advanced stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'advanced')
+    
+    # Process four factors stats
+    if box_score_four_factors.get('PlayerStats'):
+        for player in box_score_four_factors['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add four factors stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'fourFactors')
+    
+    # Process hustle stats
+    if box_score_hustle.get('PlayerStats'):
+        for player in box_score_hustle['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add hustle stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'hustle')
+    
+    # Process misc stats
+    if box_score_misc.get('PlayerStats'):
+        for player in box_score_misc['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add misc stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'misc')
+    
+    # Process player track stats
+    if box_score_player_track.get('PlayerStats'):
+        for player in box_score_player_track['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add player track stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'playerTrack')
+    
+    # Process scoring stats
+    if box_score_scoring.get('PlayerStats'):
+        for player in box_score_scoring['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add scoring stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'scoring')
+    
+    # Process usage stats
+    if box_score_usage.get('PlayerStats'):
+        for player in box_score_usage['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Ensure player entry exists
+            if person_id_str not in aggregated:
+                aggregated[person_id_str] = init_player_entry(player)
+            
+            # Add usage stats with prefix
+            add_stats_with_prefix(aggregated, person_id_str, player, 'usage')
+    
+    return aggregated
+
+
+def build_unified_player_stats(game_id, box_score_traditional, box_score_advanced, box_score_four_factors, box_score_hustle, box_score_misc, box_score_player_track, box_score_scoring, box_score_usage, box_score_matchups):
+    """
+    Build a unified PlayerStats array with all stats merged into each player object.
+    Uses traditional box score as the base structure and merges all other stats.
+    
+    Args:
+        game_id: Game ID string
+        box_score_traditional: Dict with PlayerStats from BoxScoreTraditionalV3
+        box_score_advanced: Dict with PlayerStats from BoxScoreAdvancedV3
+        box_score_four_factors: Dict with PlayerStats from BoxScoreFourFactorsV3
+        box_score_hustle: Dict with PlayerStats from BoxScoreHustleV2
+        box_score_misc: Dict with PlayerStats from BoxScoreMiscV3
+        box_score_player_track: Dict with PlayerStats from BoxScorePlayerTrackV3
+        box_score_scoring: Dict with PlayerStats from BoxScoreScoringV3
+        box_score_usage: Dict with PlayerStats from BoxScoreUsageV3
+        box_score_matchups: Dict with PlayerStats from BoxScoreMatchupsV3
+    
+    Returns:
+        List of player dictionaries with all stats merged
+    """
+    unified_players = []
+    
+    # Create a map of personId -> player data for quick lookup
+    player_map = {}
+    
+    # Helper function to safely merge stats into a player object
+    def merge_stats(target_player, source_player, exclude_keys=None):
+        if exclude_keys is None:
+            exclude_keys = ['personId', 'gameId', 'teamId', 'teamCity', 'teamName', 
+                          'teamTricode', 'teamSlug', 'firstName', 'familyName', 
+                          'nameI', 'playerSlug', 'position', 'comment', 'jerseyNum']
+        
+        for key, value in source_player.items():
+            if key not in exclude_keys:
+                # Always add stats from other endpoints (overwrite if exists)
+                # This merges all stats from all endpoints into one player object
+                target_player[key] = value
+    
+    # Start with traditional box score as the base (it has the most complete player info)
+    if box_score_traditional.get('PlayerStats'):
+        for player in box_score_traditional['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            
+            # Create a copy of the player dict as the base
+            player_entry = player.copy()
+            player_entry['gameId'] = game_id
+            player_map[person_id_str] = player_entry
+    
+    # Merge advanced stats
+    if box_score_advanced.get('PlayerStats'):
+        for player in box_score_advanced['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge four factors stats
+    if box_score_four_factors.get('PlayerStats'):
+        for player in box_score_four_factors['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge hustle stats
+    if box_score_hustle.get('PlayerStats'):
+        for player in box_score_hustle['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge misc stats
+    if box_score_misc.get('PlayerStats'):
+        for player in box_score_misc['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge player track stats
+    if box_score_player_track.get('PlayerStats'):
+        for player in box_score_player_track['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge scoring stats
+    if box_score_scoring.get('PlayerStats'):
+        for player in box_score_scoring['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Merge usage stats
+    if box_score_usage.get('PlayerStats'):
+        for player in box_score_usage['PlayerStats']:
+            person_id = player.get('personId')
+            if not person_id:
+                continue
+            
+            person_id_str = str(person_id)
+            if person_id_str in player_map:
+                merge_stats(player_map[person_id_str], player)
+    
+    # Convert map to list
+    unified_players = list(player_map.values())
+    
+    # Sort by teamId, then by personId for consistent ordering
+    unified_players.sort(key=lambda x: (x.get('teamId', 0), x.get('personId', 0)))
+    
+    return unified_players
+
+
+def aggregate_team_stats(box_score_traditional, box_score_advanced, box_score_four_factors, box_score_hustle, box_score_misc, box_score_player_track, box_score_scoring, box_score_usage):
+    """
+    Aggregate team stats from multiple box score endpoints.
+    Combines stats with prefixes (traditional_*, advanced_*, fourFactors_*, hustle_*, misc_*, playerTrack_*, scoring_*, usage_*) to avoid conflicts.
+    
+    Args:
+        box_score_traditional: Dict with TeamStats from BoxScoreTraditionalV3
+        box_score_advanced: Dict with TeamStats from BoxScoreAdvancedV3
+        box_score_four_factors: Dict with TeamStats from BoxScoreFourFactorsV3
+        box_score_hustle: Dict with TeamStats from BoxScoreHustleV2
+        box_score_misc: Dict with TeamStats from BoxScoreMiscV3
+        box_score_player_track: Dict with TeamStats from BoxScorePlayerTrackV3
+        box_score_scoring: Dict with TeamStats from BoxScoreScoringV3
+        box_score_usage: Dict with TeamStats from BoxScoreUsageV3
+    
+    Returns:
+        Dictionary keyed by teamId with aggregated team data
+    """
+    aggregated = {}
+    
+    # Helper function to initialize team entry
+    def init_team_entry(team):
+        return {
+            'teamId': team.get('teamId'),
+            'teamCity': team.get('teamCity'),
+            'teamName': team.get('teamName'),
+            'teamTricode': team.get('teamTricode'),
+            'teamSlug': team.get('teamSlug'),
+        }
+    
+    # Helper function to add stats with prefix
+    def add_stats_with_prefix(aggregated, team_id_str, team, prefix, exclude_keys=None):
+        if exclude_keys is None:
+            exclude_keys = ['teamId', 'teamCity', 'teamName', 'teamTricode', 'teamSlug', 'gameId']
+        
+        for key, value in team.items():
+            if key not in exclude_keys:
+                aggregated[team_id_str][f'{prefix}_{key}'] = value
+        aggregated[team_id_str][f'{prefix}_teamId'] = team.get('teamId')
+        aggregated[team_id_str][f'{prefix}_gameId'] = team.get('gameId')
+    
+    # Process traditional stats first
+    if box_score_traditional.get('TeamStats'):
+        for team in box_score_traditional['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            # Initialize team entry with basic info
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            # Add traditional stats with prefix
+            add_stats_with_prefix(aggregated, team_id_str, team, 'traditional')
+    
+    # Process advanced stats
+    if box_score_advanced.get('TeamStats'):
+        for team in box_score_advanced['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'advanced')
+    
+    # Process four factors stats
+    if box_score_four_factors.get('TeamStats'):
+        for team in box_score_four_factors['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'fourFactors')
+    
+    # Process hustle stats
+    if box_score_hustle.get('TeamStats'):
+        for team in box_score_hustle['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'hustle')
+    
+    # Process misc stats
+    if box_score_misc.get('TeamStats'):
+        for team in box_score_misc['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'misc')
+    
+    # Process player track stats
+    if box_score_player_track.get('TeamStats'):
+        for team in box_score_player_track['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'playerTrack')
+    
+    # Process scoring stats
+    if box_score_scoring.get('TeamStats'):
+        for team in box_score_scoring['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'scoring')
+    
+    # Process usage stats
+    if box_score_usage.get('TeamStats'):
+        for team in box_score_usage['TeamStats']:
+            team_id = team.get('teamId')
+            if not team_id:
+                continue
+            
+            team_id_str = str(team_id)
+            
+            if team_id_str not in aggregated:
+                aggregated[team_id_str] = init_team_entry(team)
+            
+            add_stats_with_prefix(aggregated, team_id_str, team, 'usage')
+    
+    return aggregated
+
+
+def tell_story(game_data):
+    """
+    Analyze game data and tell the story of how the game was won.
+    Adapted to work with a single game object (not a dict of games).
+    
+    Args:
+        game_data: Single game data dictionary with AggregatedTeamStats
+    
+    Returns:
+        Dictionary with story output
+    """
+    story_output = {
+        "matchup": None,
+        "final_score": None,
+        "advantages": [],
+        "teams": {
+            "winner": {},
+            "loser": {}
+        }
+    }
+    
+    team_stats = game_data.get('AggregatedTeamStats', {})
+    teams = list(team_stats.values())
+    
+    if len(teams) != 2:
+        return story_output
+    
+    team1, team2 = teams[0], teams[1]
+    
+    # Determine winner
+    team1_pts = int(team1.get('traditional_points', 0))
+    team2_pts = int(team2.get('traditional_points', 0))
+    winner = team1 if team1_pts > team2_pts else team2
+    loser = team2 if team1_pts > team2_pts else team1
+    
+    # Extract teamId and teamTricode
+    winner_team_id = int(winner.get('teamId', 0))
+    winner_team_tricode = winner.get('teamTricode', '')
+    loser_team_id = int(loser.get('teamId', 0))
+    loser_team_tricode = loser.get('teamTricode', '')
+    
+    # Update story output with team information
+    story_output['teams']['winner'] = {
+        'name': winner.get('teamName', ''),
+        'city': winner.get('teamCity', ''),
+        'tricode': winner_team_tricode,
+        'teamId': winner_team_id,
+        'points': max(team1_pts, team2_pts)
+    }
+    
+    story_output['teams']['loser'] = {
+        'name': loser.get('teamName', ''),
+        'city': loser.get('teamCity', ''),
+        'tricode': loser_team_tricode,
+        'teamId': loser_team_id,
+        'points': min(team1_pts, team2_pts)
+    }
+    
+    story_output['matchup'] = f"{winner.get('teamCity', '')} {winner.get('teamName', '')} vs {loser.get('teamCity', '')} {loser.get('teamName', '')}"
+    story_output['final_score'] = f"{winner.get('teamCity', '')} {max(team1_pts, team2_pts)} - {loser.get('teamCity', '')} {min(team1_pts, team2_pts)}"
+    
+    # List of stats to compare
+    stats_to_compare = {
+        'advanced_assistToTurnover': ('Assist-to-Turnover', 0.2),
+        'advanced_offensiveReboundPercentage': ('Offensive Rebound %', 0.1),
+        'advanced_defensiveReboundPercentage': ('Defensive Rebound %', 0.1),
+        'advanced_trueShootingPercentage': ('True Shooting %', 0.05),
+        'fourFactors_freeThrowAttemptRate': ('Free Throw Rate', 0.1),
+        'misc_pointsOffTurnovers': ('Points Off Turnovers', 5),
+        'misc_pointsSecondChance': ('Second Chance Points', 5),
+        'misc_pointsFastBreak': ('Fast Break Points', 5),
+        'misc_pointsPaint': ('Points in Paint', 8),
+        'misc_blocks': ('Blocks', 2),
+        'playerTrack_touches': ('Ball Touches', 20),
+        'playerTrack_passes': ('Total Passes', 25),
+        'playerTrack_contestedFieldGoalPercentage': ('Contested FG%', 0.05),
+        'playerTrack_uncontestedFieldGoalsPercentage': ('Uncontested FG%', 0.05),
+        'playerTrack_defendedAtRimFieldGoalPercentage': ('Defended At Rim FG%', 0.08),
+    }
+    
+    significant_advantages = []
+    for stat_key, (stat_name, threshold) in stats_to_compare.items():
+        winner_stat = float(winner.get(stat_key, 0))
+        loser_stat = float(loser.get(stat_key, 0))
+        
+        diff = abs(winner_stat - loser_stat)
+        if diff > threshold:
+            # For Turnover %, lower is better so we flip the comparison
+            if stat_key == 'fourFactors_teamTurnoverPercentage':
+                advantage = winner_stat < loser_stat
+            else:
+                advantage = winner_stat > loser_stat
+            
+            # Only include advantages where the winner had the better stat
+            if advantage:
+                # Calculate weighted difference - reduce ball movement stats by 75%
+                weighted_diff = diff
+                if stat_key in ['playerTrack_touches', 'playerTrack_passes']:
+                    weighted_diff = diff * 0.25
+                
+                significant_advantages.append({
+                    'stat_name': stat_name,
+                    'team': winner.get('teamCity', ''),
+                    'teamId': winner_team_id,
+                    'teamTricode': winner_team_tricode,
+                    'value1': float(winner_stat),
+                    'value2': float(loser_stat),
+                    'diff': float(winner_stat - loser_stat),
+                    'weighted_diff': weighted_diff
+                })
+    
+    # Sort advantages by weighted difference magnitude
+    significant_advantages.sort(key=lambda x: abs(x.get('weighted_diff', 0)), reverse=True)
+    
+    # Remove weighted_diff from final output
+    for adv in significant_advantages:
+        if 'weighted_diff' in adv:
+            del adv['weighted_diff']
+    
+    story_output['advantages'] = significant_advantages[:15]
+    
+    return story_output
+
+
+def parse_clock(clock_str):
+    """Convert PT12M00.00S format to seconds"""
+    if not clock_str:
+        return 0
+    # Remove 'PT' and 'S'
+    time_str = str(clock_str).replace('PT', '').replace('S', '')
+    # Split minutes and seconds
+    if 'M' in time_str:
+        minutes, seconds = time_str.split('M')
+        return float(minutes) * 60 + float(seconds)
+    return float(time_str)
+
+
+def calculate_lead_changes(play_by_play_data):
+    """Calculate total lead changes and lead changes in critical moments"""
+    lead_changes = 0
+    lead_changes_under_5 = 0
+    lead_changes_under_1 = 0
+    buzzer_beater_changes = 0
+    current_leader = None
+    
+    for play in play_by_play_data:
+        # Skip if no scores are recorded
+        if not play.get('scoreHome') or not play.get('scoreAway'):
+            continue
+            
+        try:
+            score_home = int(play['scoreHome'])
+            score_away = int(play['scoreAway'])
+        except (ValueError, TypeError):
+            continue
+        
+        # Determine current leader
+        new_leader = None
+        if score_home > score_away:
+            new_leader = 'home'
+        elif score_away > score_home:
+            new_leader = 'away'
+            
+        # Check if in last 5 minutes of 4th period or overtime
+        period = play.get('period', 1)
+        if period >= 4:  # Include overtime periods
+            clock = play.get('clock')
+            if clock:
+                try:
+                    clock_seconds = parse_clock(clock)
+                    
+                    # Check for buzzer beater separately - any made shot in last 3 seconds
+                    if clock_seconds <= 3 and play.get('shotResult') == 'Made':
+                        buzzer_beater_changes += 1
+                    
+                    # Check for lead change
+                    if new_leader and new_leader != current_leader and current_leader is not None:
+                        lead_changes += 1
+                        
+                        if clock_seconds <= 300:  # 5 minutes = 300 seconds
+                            lead_changes_under_5 += 1
+                            
+                            if clock_seconds <= 60:  # Last minute
+                                lead_changes_under_1 += 1
+                except (ValueError, TypeError):
+                    pass
+        else:
+            # Handle lead changes in earlier periods
+            if new_leader and new_leader != current_leader and current_leader is not None:
+                lead_changes += 1
+        
+        current_leader = new_leader if new_leader else current_leader
+    
+    return lead_changes, lead_changes_under_5, lead_changes_under_1, buzzer_beater_changes
+
+
+def calculate_dunk_stats(play_by_play_data):
+    """Calculate statistics for different types of dunks"""
+    dunk_stats = {
+        "Alley Oop": 0,
+        "Putback": 0,
+        "Running": 0,
+        "Driving": 0,
+        "Tip": 0,
+        "Cutting": 0,
+        "Total Dunks": 0
+    }
+    
+    for i, play in enumerate(play_by_play_data):
+        sub_type = play.get('subType') or ''
+        if sub_type and 'Dunk' in sub_type and play.get('shotResult') == 'Made':
+            # Skip if no scores are recorded
+            if not play.get('scoreHome') or not play.get('scoreAway'):
+                continue
+            
+            try:
+                # Verify score increased
+                prev_home = int(play_by_play_data[i-1]['scoreHome']) if i > 0 and play_by_play_data[i-1].get('scoreHome') else 0
+                prev_away = int(play_by_play_data[i-1]['scoreAway']) if i > 0 and play_by_play_data[i-1].get('scoreAway') else 0
+                curr_home = int(play['scoreHome'])
+                curr_away = int(play['scoreAway'])
+            except (ValueError, TypeError, KeyError):
+                continue
+            
+            if (curr_home > prev_home) or (curr_away > prev_away):
+                dunk_type = sub_type
+                dunk_stats["Total Dunks"] += 1
+                
+                # Check for each specific type
+                for dunk_category in dunk_stats.keys():
+                    if dunk_category != "Total Dunks" and dunk_category in dunk_type:
+                        dunk_stats[dunk_category] += 1
+                        break
+    
+    return dunk_stats
+
+
+def calculate_deep_shots(play_by_play_data):
+    """Calculate deep three pointers (>27 feet) and 'four pointers' (>30 feet)"""
+    deep_threes = 0
+    four_pointers = 0
+    
+    for play in play_by_play_data:
+        if play.get('shotResult') == 'Made' and play.get('isFieldGoal') == 1:
+            shot_distance = play.get('shotDistance')
+            if shot_distance and shot_distance > 27:
+                deep_threes += 1
+                if shot_distance > 30:
+                    four_pointers += 1
+    
+    return deep_threes, four_pointers
+
+
+def calculate_scoring_milestones(player_stats):
+    """Calculate which players hit scoring milestones (70, 60, 50, 40 points) and triple doubles"""
+    milestones = {
+        "70 Ball": [],
+        "60 Ball": [],
+        "50 Ball": [],
+        "40 Ball": [],
+        "Triple Double": []
+    }
+    
+    for player_id, stats in player_stats.items():
+        try:
+            # Get traditional stats - check both prefixed and non-prefixed versions
+            points = int(stats.get('traditional_points', stats.get('points', 0)) or 0)
+            rebounds = int(stats.get('traditional_reboundsTotal', stats.get('reboundsTotal', 0)) or 0)
+            assists = int(stats.get('traditional_assists', stats.get('assists', 0)) or 0)
+            blocks = int(stats.get('traditional_blocks', stats.get('blocks', 0)) or 0)
+            steals = int(stats.get('traditional_steals', stats.get('steals', 0)) or 0)
+            
+            # Get player name
+            player_name = f"{stats.get('firstName', '')} {stats.get('familyName', '')}".strip()
+            if not player_name:
+                player_name = stats.get('nameI', 'Unknown Player')
+            
+            # Check for triple double (any combination of PTS/REB/AST/BLK/STL)
+            stats_list = [points, rebounds, assists, blocks, steals]
+            double_digits = sum(1 for stat in stats_list if stat >= 10)
+            if double_digits >= 3:
+                milestones["Triple Double"].append((
+                    player_name, 
+                    f"PTS: {points}, REB: {rebounds}, AST: {assists}, BLK: {blocks}, STL: {steals}"
+                ))
+            
+            # Check scoring milestones
+            if points >= 70:
+                milestones["70 Ball"].append((player_name, points))
+            elif points >= 60:
+                milestones["60 Ball"].append((player_name, points))
+            elif points >= 50:
+                milestones["50 Ball"].append((player_name, points))
+            elif points >= 40:
+                milestones["40 Ball"].append((player_name, points))
+                
+        except (TypeError, ValueError):
+            continue
+    
+    return milestones
+
+
+def calculate_team_stats(team_stats):
+    """Calculate combined and comparative team statistics"""
+    # Get stats for both teams
+    teams = list(team_stats.values())
+    if len(teams) != 2:
+        return None
+    
+    team1, team2 = teams[0], teams[1]
+    
+    # Get team names from the stats
+    team1_name = team1.get('teamTricode', 'team1')
+    team2_name = team2.get('teamTricode', 'team2')
+    
+    # Calculate margin of victory
+    team1_pts = int(team1.get('traditional_points', 0))
+    team2_pts = int(team2.get('traditional_points', 0))
+    margin_of_victory = abs(team1_pts - team2_pts)
+    
+    # Calculate three point stats
+    team1_threes = int(team1.get('traditional_threePointersMade', 0))
+    team2_threes = int(team2.get('traditional_threePointersMade', 0))
+    combined_threes = team1_threes + team2_threes
+    
+    team1_three_pct = float(team1.get('traditional_threePointersPercentage', 0) or 0)
+    team2_three_pct = float(team2.get('traditional_threePointersPercentage', 0) or 0)
+    combined_three_pct = (team1_three_pct + team2_three_pct) / 2
+    
+    # Calculate pace
+    team1_pace = float(team1.get('advanced_pace', 0) or 0)
+    team2_pace = float(team2.get('advanced_pace', 0) or 0)
+    pace = (team1_pace + team2_pace) / 2 if (team1_pace + team2_pace) > 0 else 100
+    
+    # Calculate contested shots and percentages
+    team1_contested = int(team1.get('playerTrack_contestedFieldGoalsMade', 0) or 0)
+    team1_contested_att = int(team1.get('playerTrack_contestedFieldGoalsAttempted', 0) or 0)
+    team2_contested = int(team2.get('playerTrack_contestedFieldGoalsMade', 0) or 0)
+    team2_contested_att = int(team2.get('playerTrack_contestedFieldGoalsAttempted', 0) or 0)
+    
+    combined_contested_pct = 0
+    if (team1_contested_att + team2_contested_att) > 0:
+        combined_contested_pct = ((team1_contested + team2_contested) / 
+                                (team1_contested_att + team2_contested_att) * 100)
+    
+    # Calculate contested three point percentages
+    team1_contested_3 = int(team1.get('hustle_contestedShots3pt', 0) or 0)
+    team2_contested_3 = int(team2.get('hustle_contestedShots3pt', 0) or 0)
+    team1_3pa = int(team1.get('traditional_threePointersAttempted', 0) or 0)
+    team2_3pa = int(team2.get('traditional_threePointersAttempted', 0) or 0)
+    
+    combined_contested_3_pct = 0
+    if (team1_3pa + team2_3pa) > 0:
+        combined_contested_3_pct = ((team1_contested_3 + team2_contested_3) / 
+                                  (team1_3pa + team2_3pa) * 100)
+    
+    # Calculate other stats
+    combined_contested_shots = (int(team1.get('hustle_contestedShots', 0) or 0) + 
+                              int(team2.get('hustle_contestedShots', 0) or 0))
+    
+    combined_contested_threes = (int(team1.get('hustle_contestedShots3pt', 0) or 0) + 
+                               int(team2.get('hustle_contestedShots3pt', 0) or 0))
+    
+    combined_fast_break = (int(team1.get('misc_pointsFastBreak', 0) or 0) + 
+                          int(team2.get('misc_pointsFastBreak', 0) or 0))
+    
+    return {
+        "Margin of Victory": margin_of_victory,
+        "Combined Threes": combined_threes,
+        "Team Threes": {
+            team1_name: team1_threes,
+            team2_name: team2_threes
+        },
+        "Combined Three %": round(combined_three_pct * 100, 1),
+        "Team Three %": {
+            team1_name: round(team1_three_pct * 100, 1),
+            team2_name: round(team2_three_pct * 100, 1)
+        },
+        "Pace": round(pace, 1),
+        "Team Pace": {
+            team1_name: round(team1_pace, 1),
+            team2_name: round(team2_pace, 1)
+        },
+        "Combined Contested Shots": combined_contested_shots,
+        "Team Contested Shots": {
+            team1_name: int(team1.get('hustle_contestedShots', 0) or 0),
+            team2_name: int(team2.get('hustle_contestedShots', 0) or 0)
+        },
+        "Combined Contested Shot %": round(combined_contested_pct, 1),
+        "Team Contested Shot %": {
+            team1_name: round((team1_contested / team1_contested_att * 100) if team1_contested_att > 0 else 0, 1),
+            team2_name: round((team2_contested / team2_contested_att * 100) if team2_contested_att > 0 else 0, 1)
+        },
+        "Combined Contested Threes": combined_contested_threes,
+        "Team Contested Threes": {
+            team1_name: team1_contested_3,
+            team2_name: team2_contested_3
+        },
+        "Combined Contested Three %": round(combined_contested_3_pct, 1),
+        "Team Contested Three %": {
+            team1_name: round((team1_contested_3 / team1_3pa * 100) if team1_3pa > 0 else 0, 1),
+            team2_name: round((team2_contested_3 / team2_3pa * 100) if team2_3pa > 0 else 0, 1)
+        },
+        "Combined Fast Break Points": combined_fast_break,
+        "Team Fast Break Points": {
+            team1_name: int(team1.get('misc_pointsFastBreak', 0) or 0),
+            team2_name: int(team2.get('misc_pointsFastBreak', 0) or 0)
+        }
+    }
+
+
+def get_reduction_factor(raw_score):
+    """Scale down high scores to prevent inflation"""
+    if raw_score >= 170:
+        return 100 / raw_score  # Scale down to exactly 100
+    elif raw_score >= 160:  # 160-170 -> 99-100
+        return (99 + ((raw_score - 160) / 10)) / raw_score
+    elif raw_score >= 150:  # 150-160 -> 98-99
+        return (98 + ((raw_score - 150) / 10)) / raw_score
+    elif raw_score >= 140:  # 140-150 -> 96-98
+        return (96 + ((raw_score - 140) / 5)) / raw_score
+    elif raw_score >= 130:  # 130-140 -> 94-96
+        return (94 + ((raw_score - 130) / 5)) / raw_score
+    elif raw_score >= 120:  # 120-130 -> 92-94
+        return (92 + ((raw_score - 120) / 5)) / raw_score
+    elif raw_score >= 110:  # 110-120 -> 90-92
+        return (90 + ((raw_score - 110) / 5)) / raw_score
+    elif raw_score >= 100:  # 100-110 -> 88-90
+        return (88 + ((raw_score - 100) / 5)) / raw_score
+    elif raw_score > 88:   # 88-100 -> 85-88
+        return (85 + ((raw_score - 88) / 4)) / raw_score
+    else:
+        return 1.0  # No reduction needed
+
+
+def get_boost_factor(score):
+    """Revised boost factors to prevent extremely low scores"""
+    if score >= 80:
+        return 1.0
+    elif score >= 70:
+        return 1.1
+    elif score >= 60:
+        return 1.15
+    elif score >= 50:
+        return 1.2
+    elif score >= 40:
+        return 1.25
+    elif score >= 30:
+        return 1.3
+    else:  # Below 30
+        return 1.4
+
+
+def calculate_fun_score(team_stats, lead_changes, lead_changes_5min, lead_changes_1min, buzzer_beater_changes, deep_threes, four_pointers, scoring_milestones, dunk_stats):
+    """Calculate the Fun Score for a game based on various exciting statistics"""
+    fun_score = 20  # Start with a base score
+    print("\n  Fun Score Components:")
+    
+    # Three point shooting
+    three_pct = team_stats["Combined Three %"]
+    three_pt_penalty = 0
+    if three_pct < 30:
+        three_pt_penalty = (30 - three_pct) * 0.5
+    three_pt_score = max(5, (three_pct / 4) - three_pt_penalty)
+    fun_score += three_pt_score
+    print(f"    • Three Point Shooting: {three_pt_score:.1f} points ({three_pct}%)")
+    
+    # Contested shots
+    contested_three_pct = team_stats["Combined Contested Three %"]
+    contested_penalty = 0
+    if contested_three_pct < 30:
+        contested_penalty = (30 - contested_three_pct) * 0.8
+    
+    contested_three_score = team_stats["Combined Contested Threes"] * (contested_three_pct / 125)
+    contested_shot_score = team_stats["Combined Contested Shots"] * (team_stats["Combined Contested Shot %"] / 100)
+    contested_total = max(5, (contested_three_score + contested_shot_score) * 0.15 - contested_penalty)
+    fun_score += contested_total
+    print(f"    • Contested Shots: {contested_total:.1f} points ({contested_three_pct}% contested 3s)")
+    
+    # Lead changes
+    base_changes = lead_changes * 0.5
+    changes_5min = lead_changes_5min * 2.0
+    changes_1min = lead_changes_1min * 4.0
+    buzzer_bonus = buzzer_beater_changes * 15
+    
+    lead_changes_total = max(5, base_changes + changes_5min + changes_1min + buzzer_bonus)
+    fun_score += lead_changes_total
+    print(f"    • Lead Changes: {lead_changes_total:.1f} points")
+    print(f"      - Base Changes: {base_changes:.1f} ({lead_changes} changes)")
+    print(f"      - Last 5 Min: {changes_5min:.1f} ({lead_changes_5min} changes)")
+    print(f"      - Last 1 Min: {changes_1min:.1f} ({lead_changes_1min} changes)")
+    print(f"      - Buzzer Beaters: {buzzer_bonus:.1f} ({buzzer_beater_changes} beaters)")
+    
+    # Deep shots
+    deep_shot_score = (deep_threes * 2.5) + (four_pointers * 4)
+    fun_score += deep_shot_score
+    print(f"    • Deep Shots: {deep_shot_score:.1f} points")
+    print(f"      - Deep Threes: {deep_threes * 3:.1f} ({deep_threes} shots)")
+    print(f"      - Four Pointers: {four_pointers * 5:.1f} ({four_pointers} shots)")
+    
+    # Dunks
+    dunk_score = dunk_stats["Total Dunks"] * 1
+    fun_score += dunk_score
+    print(f"    • Dunks: {dunk_score:.1f} points ({dunk_stats['Total Dunks']} dunks)")
+    
+    # Scoring milestones
+    milestone_score = 0
+    milestone_details = []
+    for milestone, players in scoring_milestones.items():
+        for i, player in enumerate(players):
+            if milestone == "70 Ball":
+                milestone_score += 25
+                milestone_details.append(f"70pt game: {player[0]}")
+            elif milestone == "60 Ball":
+                milestone_score += 15
+                milestone_details.append(f"60pt game: {player[0]}")
+            elif milestone == "50 Ball":
+                milestone_score += 10
+                milestone_details.append(f"50pt game: {player[0]}")
+            elif milestone == "40 Ball":
+                milestone_score += 5
+                milestone_details.append(f"40pt game: {player[0]}")
+            elif milestone == "Triple Double":
+                bonus = 5 if i == 0 else 10
+                milestone_score += bonus
+                milestone_details.append(f"Triple Double: {player[0]}")
+    
+    fun_score += milestone_score
+    if milestone_score > 0:
+        print(f"    • Scoring Milestones: {milestone_score:.1f} points")
+        for detail in milestone_details:
+            print(f"      - {detail}")
+    
+    # Add margin of victory bonus
+    margin = team_stats["Margin of Victory"]
+    margin_bonus = 0
+    if 1 <= margin <= 3:
+        margin_bonus = 20
+    elif 4 <= margin <= 6:
+        margin_bonus = 10
+    elif 7 <= margin <= 8:
+        margin_bonus = 5
+    
+    if margin_bonus > 0:
+        fun_score += margin_bonus
+        print(f"    • Close Game Bonus: {margin_bonus:.1f} points ({margin} point margin)")
+    
+    # Apply pace multiplier
+    pace = team_stats["Pace"]
+    pace_multiplier = pace / 100
+    raw_score = fun_score * pace_multiplier
+    
+    # Apply the boost factor
+    boost_factor = get_boost_factor(raw_score)
+    if boost_factor > 1.0:
+        final_score = raw_score * boost_factor
+        print(f"\n    Raw Score: {raw_score:.1f}")
+        print(f"    Pace Multiplier: {pace_multiplier:.2f} ({pace:.1f} pace)")
+        print(f"    Boost Factor: {boost_factor:.2f}")
+    else:
+        final_score = raw_score
+        print(f"\n    Raw Score: {raw_score:.1f}")
+        print(f"    Pace Multiplier: {pace_multiplier:.2f} ({pace:.1f} pace)")
+        print("    No boost applied (score >= 85)")
+    
+    # Apply reduction for high scores
+    reduction_factor = get_reduction_factor(raw_score)
+    final_score = raw_score * reduction_factor
+    
+    print(f"    Final Fun Score: {final_score:.1f}")
+    
+    return round(final_score, 1)
+
+
+def calculate_game_score(game_data):
+    """Calculate fun score and related statistics for a single game"""
+    play_by_play = game_data.get('playByPlay', {}).get('allPlays', [])
+    team_stats_dict = game_data.get('AggregatedTeamStats', {})
+    
+    if not team_stats_dict or len(team_stats_dict) < 2:
+        return None
+    
+    team_stats = calculate_team_stats(team_stats_dict)
+    
+    if not team_stats:
+        return None
+    
+    total_changes, changes_under_5, changes_under_1, buzzer_beater_changes = calculate_lead_changes(play_by_play)
+    dunk_stats = calculate_dunk_stats(play_by_play)
+    deep_threes, four_pointers = calculate_deep_shots(play_by_play)
+    scoring_milestones = calculate_scoring_milestones(game_data.get('AggregatedPlayerStats', {}))
+    
+    fun_score = calculate_fun_score(
+        team_stats, 
+        total_changes, 
+        changes_under_5,
+        changes_under_1,
+        buzzer_beater_changes,
+        deep_threes, 
+        four_pointers, 
+        scoring_milestones,
+        dunk_stats
+    )
+    
+    return {
+        "team_stats": team_stats,
+        "lead_changes": {
+            "total": total_changes,
+            "last_5_minutes": changes_under_5,
+            "last_minute": changes_under_1,
+            "buzzer_beater": buzzer_beater_changes
+        },
+        "dunk_stats": dunk_stats,
+        "deep_shots": {
+            "deep_threes": deep_threes,
+            "four_pointers": four_pointers
+        },
+        "scoring_milestones": scoring_milestones,
+        "fun_score": fun_score
+    }
+
+
+def get_complete_game_data(game_id, game_df):
+    """
+    Get complete game data including videos, box score, and metadata.
+    Structures data to match the desired JSON format.
+    
+    Args:
+        game_id: Game ID string
+        game_df: DataFrame from LeagueGameFinder with game info
+    
+    Returns:
+        Complete game data dictionary matching the JSON structure
+    """
+    try:
+        # Find the game row in the DataFrame
+        game_row = None
+        for _, row in game_df.iterrows():
+            if row.get('GAME_ID') == game_id:
+                game_row = row
+                break
+        
+        if game_row is None:
+            print(f"  ⚠ Could not find game info for {game_id}")
+            game_row = {}
+        
+        # Initialize the complete game data structure
+        game_data = {
+            'gameId': game_id,
+            'gameMetadata': get_game_metadata(game_id, game_row),
+            'score': {
+                game_id: {
+                    'team_stats': {}
+                }
+            },
+            'story': None,
+            'script': None,
+            'playByPlay': {
+                'allPlays': []
+            },
+            'AggregatedPlayerStats': {},
+            'AggregatedTeamStats': {},
+            'PlayerStats': []
+        }
+        
+        # Get box score data (needed for aggregation, but not stored in final output)
+        box_score_traditional = get_boxscore_traditional(game_id)
+        box_score_advanced = get_boxscore_advanced(game_id)
+        box_score_four_factors = get_boxscore_four_factors(game_id)
+        box_score_hustle = get_boxscore_hustle(game_id)
+        box_score_misc = get_boxscore_misc(game_id)
+        box_score_player_track = get_boxscore_player_track(game_id)
+        box_score_scoring = get_boxscore_scoring(game_id)
+        box_score_usage = get_boxscore_usage(game_id)
+        box_score_summary = get_boxscore_summary(game_id)
+        box_score_matchups = get_boxscore_matchups(game_id)
+        
+        # Aggregate player stats from all endpoints
+        aggregated_players = aggregate_player_stats(
+            box_score_traditional, 
+            box_score_advanced, 
+            box_score_four_factors,
+            box_score_hustle,
+            box_score_misc,
+            box_score_player_track,
+            box_score_scoring,
+            box_score_usage
+        )
+        game_data['AggregatedPlayerStats'] = aggregated_players
+        
+        # Build unified PlayerStats array with all stats merged
+        print("  Building unified player stats...")
+        unified_player_stats = build_unified_player_stats(
+            game_id,
+            box_score_traditional,
+            box_score_advanced,
+            box_score_four_factors,
+            box_score_hustle,
+            box_score_misc,
+            box_score_player_track,
+            box_score_scoring,
+            box_score_usage,
+            box_score_matchups
+        )
+        game_data['PlayerStats'] = unified_player_stats
+        
+        # Aggregate team stats from all endpoints
+        aggregated_teams = aggregate_team_stats(
+            box_score_traditional,
+            box_score_advanced,
+            box_score_four_factors,
+            box_score_hustle,
+            box_score_misc,
+            box_score_player_track,
+            box_score_scoring,
+            box_score_usage
+        )
+        game_data['AggregatedTeamStats'] = aggregated_teams
+        
+        # Enhance metadata with team info from box score
+        if box_score_traditional.get('TeamStats'):
+            team_stats = box_score_traditional['TeamStats']
+            if len(team_stats) >= 2:
+                # Update metadata with team info
+                game_data['gameMetadata']['homeTeam'].update({
+                    'team_id': team_stats[1].get('teamId'),
+                    'abbreviation': team_stats[1].get('teamTricode'),
+                    'city': team_stats[1].get('teamCity'),
+                    'name': team_stats[1].get('teamName'),
+                    'points': team_stats[1].get('points'),
+                    'stats': {
+                        'fg_pct': team_stats[1].get('fieldGoalsPercentage'),
+                        'ft_pct': team_stats[1].get('freeThrowsPercentage'),
+                        'fg3_pct': team_stats[1].get('threePointersPercentage'),
+                        'ast': team_stats[1].get('assists'),
+                        'reb': team_stats[1].get('reboundsTotal'),
+                        'tov': team_stats[1].get('turnovers')
+                    }
+                })
+                game_data['gameMetadata']['awayTeam'].update({
+                    'team_id': team_stats[0].get('teamId'),
+                    'abbreviation': team_stats[0].get('teamTricode'),
+                    'city': team_stats[0].get('teamCity'),
+                    'name': team_stats[0].get('teamName'),
+                    'points': team_stats[0].get('points'),
+                    'stats': {
+                        'fg_pct': team_stats[0].get('fieldGoalsPercentage'),
+                        'ft_pct': team_stats[0].get('freeThrowsPercentage'),
+                        'fg3_pct': team_stats[0].get('threePointersPercentage'),
+                        'ast': team_stats[0].get('assists'),
+                        'reb': team_stats[0].get('reboundsTotal'),
+                        'tov': team_stats[0].get('turnovers')
+                    }
+                })
+        
+        # Get videos and play-by-play
+        print("  Fetching videos and play-by-play data...")
+        videos = get_game_videos(game_id)
+        
+        if videos:
+            # Add videos to playByPlay structure
+            game_data['playByPlay']['allPlays'] = videos
+        
+        # Generate story (after all data is collected)
+        print("  Generating game story...")
+        story = tell_story(game_data)
+        game_data['story'] = story
+        
+        # Calculate fun score (after videos/play-by-play is fetched)
+        print("  Calculating fun score...")
+        score_data = calculate_game_score(game_data)
+        if score_data:
+            game_data['score'] = {
+                game_id: score_data
+            }
+        else:
+            print("    ⚠ Could not calculate fun score")
+        
+        return game_data
+        
+    except Exception as e:
+        print(f"\n✗ FAIL: Error building complete game data")
+        print(f"Error details: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+def scrape_nba_game_ids(game_date):
+    """
+    Main function: Get games for a date, display them, let user select one, then get videos.
+    
+    Args:
+        game_date: Date string in format YYYY-MM-DD
+    """
+    try:
+        print(f"Starting to scrape NBA 2025-26 season games for {game_date}...")
+        print("Connecting to NBA API...")
+        
+        # Get games for the date handling exception here so we can continue to video selection
+        df = get_games_for_date(game_date)
+        if df is None or df.empty:
+            return
+        
+        # Display games and get user selection
+        game_map = display_games(df)
+        
+        if not game_map:
+            print("\n⚠ No games found to select.")
+            return
+        
+        # Get user selection
+        print(f"\n{'='*60}")
+        try:
+            selection = input(f"\nSelect a game (1-{len(game_map)}) or 'q' to quit: ").strip()
+            
+            if selection.lower() == 'q':
+                print("Exiting...")
+                return
+            
+            game_idx = int(selection)
+            if game_idx not in game_map:
+                print(f"\n✗ FAIL: Invalid selection. Please choose a number between 1 and {len(game_map)}")
+                return
+            
+            selected_game_id = game_map[game_idx]
+            print(f"\nSelected game: {selected_game_id}")
+            
+            # Get all game data
+            print("\nFetching game data...")
+            game_data = get_complete_game_data(selected_game_id, df)
+            
+            if game_data:
+                # Save complete game data to JSON file
+                output_file = f"{selected_game_id}.json"
+                with open(output_file, 'w') as f:
+                    json.dump(game_data, f, indent=2)
+                print(f"\n✓ Complete game data saved to {output_file}")
+                
+                # Print summary - only aggregated stats
+                if 'AggregatedPlayerStats' in game_data:
+                    agg_count = len(game_data['AggregatedPlayerStats'])
+                    print(f"\n  Aggregated Player Stats: {agg_count} players")
+                    print(f"    (Includes: traditional, advanced, four factors, hustle, misc, player track, scoring, usage)")
+                
+                if 'PlayerStats' in game_data:
+                    unified_count = len(game_data['PlayerStats'])
+                    print(f"\n  Unified Player Stats: {unified_count} players")
+                    print(f"    (All stats merged into single array: traditional, advanced, four factors, hustle, misc, player track, scoring, usage)")
+                
+                if 'AggregatedTeamStats' in game_data:
+                    agg_team_count = len(game_data['AggregatedTeamStats'])
+                    print(f"\n  Aggregated Team Stats: {agg_team_count} teams")
+                    print(f"    (Includes: traditional, advanced, four factors, hustle, misc, player track, scoring, usage)")
+                
+                if 'story' in game_data and game_data['story']:
+                    story = game_data['story']
+                    print(f"\n  Game Story:")
+                    print(f"    Matchup: {story.get('matchup', 'N/A')}")
+                    print(f"    Final Score: {story.get('final_score', 'N/A')}")
+                    print(f"    Advantages Found: {len(story.get('advantages', []))}")
+                
+                if 'score' in game_data and game_data['score']:
+                    score_info = game_data['score'].get(selected_game_id, {})
+                    if score_info:
+                        fun_score = score_info.get('fun_score', 'N/A')
+                        print(f"\n  Fun Score: {fun_score}")
+                        if fun_score != 'N/A':
+                            lead_changes = score_info.get('lead_changes', {})
+                            print(f"    Lead Changes: {lead_changes.get('total', 0)} total, "
+                                  f"{lead_changes.get('last_5_minutes', 0)} in last 5 min, "
+                                  f"{lead_changes.get('last_minute', 0)} in last minute")
+                            dunk_stats = score_info.get('dunk_stats', {})
+                            print(f"    Dunks: {dunk_stats.get('Total Dunks', 0)} total")
+                            deep_shots = score_info.get('deep_shots', {})
+                            print(f"    Deep Shots: {deep_shots.get('deep_threes', 0)} deep threes, "
+                                  f"{deep_shots.get('four_pointers', 0)} four pointers")
+                
+                # Check for videos/playByPlay
+                if 'playByPlay' in game_data and 'allPlays' in game_data['playByPlay']:
+                    videos_count = len(game_data['playByPlay']['allPlays'])
+                    print(f"\n  Videos/Plays: {videos_count} events")
+            else:
+                print(f"\n⚠ WARNING: Failed to fetch complete game data")
+                
+        except ValueError:
+            print(f"\n✗ FAIL: Invalid input. Please enter a number.")
+        except KeyboardInterrupt:
+            print("\n\nExiting...")
+            return
+        
+    except ImportError as e:
+        print(f"\n✗ FAIL: Import error - nba_api package may not be installed")
+        print(f"Install it with: pip install nba-api")
+        print(f"Error details: {str(e)}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n✗ FAIL: Error occurred while scraping games")
+        print(f"Error details: {str(e)}")
+        print(f"Error type: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description='Scrape NBA 2025-26 season game IDs and get video MP4 links for a selected game',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Examples:
+  python3 scrape_games.py 2025-10-31
+  python3 scrape_games.py 2025-11-15
+        '''
+    )
+    parser.add_argument(
+        'date',
+        type=validate_date,
+        help='Date to query (format: YYYY-MM-DD, e.g., 2025-10-31)'
+    )
+    
+    args = parser.parse_args()
+    scrape_nba_game_ids(args.date)
+

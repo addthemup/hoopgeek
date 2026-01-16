@@ -1,0 +1,239 @@
+{
+  "matched": [
+    {
+      "propName": "Nikola Vucevic",
+      "dbName": "Nikola Vučević",
+      "propsUpdated": 282,
+      "playerId": "1475b760-1ae0-4fbb-8047-c3c814160392",
+      "nbaPlayerId": 202696
+    },
+    {
+      "propName": "Egor Demin",
+      "dbName": "Egor Dëmin",
+      "propsUpdated": 267,
+      "playerId": "ed454c9e-2a3a-4591-b1cf-2bec90be0696",
+      "nbaPlayerId": 1642856
+    },
+    {
+      "propName": "Jusuf Nurkic",
+      "dbName": "Jusuf Nurkić",
+      "propsUpdated": 228,
+      "playerId": "fc5874ec-9fa5-412d-b2b6-97ce81302897",
+      "nbaPlayerId": 203994
+    },
+    {
+      "propName": "Michael Porter Jr",
+      "dbName": "Michael Porter Jr.",
+      "propsUpdated": 216,
+      "playerId": "cbef3ae6-32b1-431a-8797-a3d4b7b7f66f",
+      "nbaPlayerId": 1629008
+    },
+    {
+      "propName": "Jaime Jaquez Jr",
+      "dbName": "Jaime Jaquez Jr.",
+      "propsUpdated": 192,
+      "playerId": "ccb83eab-4279-4072-959e-ecef6e2e1e61",
+      "nbaPlayerId": 1631170
+    },
+    {
+      "propName": "Wendell Carter Jr",
+      "dbName": "Wendell Carter Jr.",
+      "propsUpdated": 189,
+      "playerId": "b64dce93-fe9c-4a07-a056-7b24220ea06c",
+      "nbaPlayerId": 1628976
+    },
+    {
+      "propName": "Luka Doncic",
+      "dbName": "Luka Dončić",
+      "propsUpdated": 188,
+      "playerId": "9fbf4a41-4f67-4f6c-a71a-3ca903d0609c",
+      "nbaPlayerId": 1629029
+    },
+    {
+      "propName": "Moussa Diabate",
+      "dbName": "Moussa Diabaté",
+      "propsUpdated": 173,
+      "playerId": "596f7eb5-0d6d-42e6-b721-9d7e6f1e4c4b",
+      "nbaPlayerId": 1631217
+    },
+    {
+      "propName": "Dennis Schroder",
+      "dbName": "Dennis Schröder",
+      "propsUpdated": 165,
+      "playerId": "1a8a06a7-376f-478e-ad51-5acf3f272b6a",
+      "nbaPlayerId": 203471
+    },
+    {
+      "propName": "Tidjane Salaun",
+      "dbName": "Tidjane Salaün",
+      "propsUpdated": 147,
+      "playerId": "c588bca7-0bfe-46bc-8e82-63410a851abc",
+      "nbaPlayerId": 1642275
+    },
+    {
+      "propName": "Jaren Jackson Jr",
+      "dbName": "Jaren Jackson",
+      "propsUpdated": 123,
+      "playerId": "53abf2a0-0bd9-443d-9ec8-e45c88879f9b",
+      "nbaPlayerId": 1114
+    },
+    {
+      "propName": "Nikola Jokic",
+      "dbName": "Nikola Jokić",
+      "propsUpdated": 123,
+      "playerId": "a9e4cd50-2b95-44f5-a8c8-703a53c8774a",
+      "nbaPlayerId": 203999
+    },
+    {
+      "propName": "Jimmy Butler",
+      "dbName": "Jimmy Butler III",
+      "propsUpdated": 102,
+      "playerId": "44fe05d6-466e-4b3f-8d03-50feea323e4c",
+      "nbaPlayerId": 202710
+    },
+    {
+      "propName": "Kristaps Porzingis",
+      "dbName": "Kristaps Porziņģis",
+      "propsUpdated": 83,
+      "playerId": "c38980b5-ae0e-4d68-a752-a53cf2d2d8a1",
+      "nbaPlayerId": 204001
+    },
+    {
+      "propName": "Jonas Valanciunas",
+      "dbName": "Jonas Valančiūnas",
+      "propsUpdated": 81,
+      "playerId": "1b99fc88-daff-47a9-9649-8d18e8e176cb",
+      "nbaPlayerId": 202685
+    },
+    {
+      "propName": "Nikola Jovic",
+      "dbName": "Nikola Jović",
+      "propsUpdated": 72,
+      "playerId": "de79a3b9-247f-416b-affc-c38a7babd6da",
+      "nbaPlayerId": 1631107
+    },
+    {
+      "propName": "Derrick Jones Jr",
+      "dbName": "Derrick Jones Jr.",
+      "propsUpdated": 38,
+      "playerId": "2ef2c6f0-2d5d-4344-b0f9-813562606494",
+      "nbaPlayerId": 1627884
+    },
+    {
+      "propName": "Hugo Gonzalez",
+      "dbName": "Hugo González",
+      "propsUpdated": 14,
+      "playerId": "8f8b3426-0dff-4de8-a9c9-0af5388995c8",
+      "nbaPlayerId": 1642864
+    },
+    {
+      "propName": "Terrence Shannon",
+      "dbName": "Terrence Shannon Jr.",
+      "propsUpdated": 8,
+      "playerId": "48f459ae-ea7b-4197-8dc7-a2fe6e0daf24",
+      "nbaPlayerId": 1630545
+    },
+    {
+      "propName": "Craig Porter",
+      "dbName": "Craig Porter Jr.",
+      "propsUpdated": 2,
+      "playerId": "49b98121-a38d-499d-ada7-4cd82f2223d8",
+      "nbaPlayerId": 1641854
+    }
+  ],
+  "needsReview": [],
+  "notFound": [
+    {
+      "propName": "Deandre Hunter",
+      "count": 350
+    },
+    {
+      "propName": "C Flagg",
+      "count": 296
+    },
+    {
+      "propName": "Shai Gilgeousalexander",
+      "count": 291
+    },
+    {
+      "propName": "Nickeil Alexanderwalker",
+      "count": 284
+    },
+    {
+      "propName": "Karlanthony Towns",
+      "count": 272
+    },
+    {
+      "propName": "Kelel Ware",
+      "count": 266
+    },
+    {
+      "propName": "Deaaron Fox",
+      "count": 238
+    },
+    {
+      "propName": "Tj Mcconnell",
+      "count": 233
+    },
+    {
+      "propName": "Q Post",
+      "count": 200
+    },
+    {
+      "propName": "Deanthony Melton",
+      "count": 190
+    },
+    {
+      "propName": "Alexandre Sarr",
+      "count": 181
+    },
+    {
+      "propName": "Airious Bailey",
+      "count": 170
+    },
+    {
+      "propName": "Royce Oneale",
+      "count": 147
+    },
+    {
+      "propName": "Ron Holland",
+      "count": 140
+    },
+    {
+      "propName": "Daniel Wolf",
+      "count": 137
+    },
+    {
+      "propName": "Vit Krejci",
+      "count": 121
+    },
+    {
+      "propName": "Collin Murrayboyles",
+      "count": 114
+    },
+    {
+      "propName": "Kentavious Caldwellpope",
+      "count": 92
+    },
+    {
+      "propName": "Dayron Sharpe",
+      "count": 68
+    },
+    {
+      "propName": "Jakobe Walter",
+      "count": 40
+    },
+    {
+      "propName": "R Rupert",
+      "count": 38
+    },
+    {
+      "propName": "Oliviermaxence Prosper",
+      "count": 14
+    },
+    {
+      "propName": "Trayce Jacksondavis",
+      "count": 2
+    }
+  ]
+}

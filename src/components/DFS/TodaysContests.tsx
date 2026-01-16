@@ -24,7 +24,7 @@ import {
   InfoOutlined,
   Share,
 } from '@mui/icons-material';
-import PoolDetailsModal from './PoolDetailsModal';
+import { useNavigate } from 'react-router-dom';
 
 interface DFSContest {
   pool_id: string;
@@ -58,8 +58,8 @@ interface DFSContest {
 }
 
 export default function TodaysContests() {
+  const navigate = useNavigate();
   const [selectedDifficulty, setSelectedDifficulty] = useState<string | null>(null);
-  const [selectedPoolId, setSelectedPoolId] = useState<string | null>(null);
   const [copiedPoolId, setCopiedPoolId] = useState<string | null>(null);
 
   const handleShare = (poolId: string) => {
@@ -222,8 +222,16 @@ export default function TodaysContests() {
                       </Box>
                       <Typography 
                         level="title-lg" 
-                        sx={{ fontWeight: 'bold', mb: 0.5 }}
-                        onClick={() => setSelectedPoolId(contest.pool_id)}
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          mb: 0.5,
+                          cursor: 'pointer',
+                          '&:hover': {
+                            color: 'primary.500',
+                            textDecoration: 'underline'
+                          }
+                        }}
+                        onClick={() => navigate(`/dfs/pool/${contest.pool_id}`)}
                       >
                         {contest.name}
                       </Typography>
@@ -284,7 +292,7 @@ export default function TodaysContests() {
                       </Button>
                       <IconButton 
                         variant="outlined"
-                        onClick={() => setSelectedPoolId(contest.pool_id)}
+                        onClick={() => navigate(`/dfs/pool/${contest.pool_id}`)}
                       >
                         <InfoOutlined />
                       </IconButton>
@@ -365,7 +373,7 @@ export default function TodaysContests() {
                             textDecoration: 'underline'
                           }
                         }}
-                        onClick={() => setSelectedPoolId(contest.pool_id)}
+                        onClick={() => navigate(`/dfs/pool/${contest.pool_id}`)}
                       >
                         {contest.name}
                       </Typography>
@@ -472,7 +480,7 @@ export default function TodaysContests() {
                         <IconButton 
                           size="sm" 
                           variant="outlined"
-                          onClick={() => setSelectedPoolId(contest.pool_id)}
+                          onClick={() => navigate(`/dfs/pool/${contest.pool_id}`)}
                         >
                           <InfoOutlined />
                         </IconButton>
@@ -487,12 +495,6 @@ export default function TodaysContests() {
         </>
       )}
 
-      {/* Pool Details Modal */}
-      <PoolDetailsModal
-        poolId={selectedPoolId}
-        open={!!selectedPoolId}
-        onClose={() => setSelectedPoolId(null)}
-      />
     </Box>
   );
 }

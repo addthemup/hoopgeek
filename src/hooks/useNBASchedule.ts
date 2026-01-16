@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
+import { utcToESTDate } from '../utils/nbaDateUtils';
 
 export interface NBAGame {
   id: number;
@@ -148,8 +149,11 @@ export function useWeekSchedule(weekNumber: number) {
       const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
       games.forEach(game => {
-        const gameDate = new Date(game.game_date);
-        const dayIndex = gameDate.getDay(); // 0=Sunday, 1=Monday, etc.
+        // Convert game_date to EST date string first, then determine day of week
+        const estDateString = utcToESTDate(game.game_date);
+        // Parse the EST date string to get the day of week in EST timezone
+        const estDate = new Date(estDateString + 'T12:00:00'); // Use noon to avoid timezone issues
+        const dayIndex = estDate.getDay(); // 0=Sunday, 1=Monday, etc.
         // Convert to Monday-first: Sunday (0) becomes 6, Monday (1) becomes 0, etc.
         const mondayFirstIndex = dayIndex === 0 ? 6 : dayIndex - 1;
         const dayName = dayNames[mondayFirstIndex];
@@ -160,13 +164,16 @@ export function useWeekSchedule(weekNumber: number) {
         gamesByDay[dayName].push(game);
       });
 
-      // Sort games within each day by game time
-      Object.keys(gamesByDay).forEach(dayName => {
-        gamesByDay[dayName].sort((a, b) => {
-          const timeA = new Date(a.game_date).getTime();
-          const timeB = new Date(b.game_date).getTime();
-          return timeA - timeB;
-        });
+      // Sort games within each day by game time, ensuring days are in correct order
+      // Iterate over dayNames array to maintain order
+      dayNames.forEach(dayName => {
+        if (gamesByDay[dayName]) {
+          gamesByDay[dayName].sort((a, b) => {
+            const timeA = new Date(a.game_date).getTime();
+            const timeB = new Date(b.game_date).getTime();
+            return timeA - timeB;
+          });
+        }
       });
 
       // If no games found and not already trying preseason, try preseason as fallback

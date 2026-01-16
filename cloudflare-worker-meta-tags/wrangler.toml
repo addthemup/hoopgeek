@@ -1,18 +1,15 @@
 # Cloudflare Worker configuration for meta tag injection
-name = "hoopgeek-meta-injector"
+name = "hoopgeek-meta-injector-production"
 main = "meta-injector.js"
 compatibility_date = "2024-01-01"
 
-# This worker should be deployed as a route on your Cloudflare Pages domain
-# It will intercept requests from social media bots and inject custom meta tags
-
-[env.production]
+# Routes - attach worker to domain
+# This will intercept all requests to hoop-geek.com
 routes = [
-  { pattern = "hoopgeek.app/dfs/join/*", zone_name = "hoopgeek.app" }
+  { pattern = "hoop-geek.com/*", zone_name = "hoop-geek.com" }
 ]
 
 # Environment variables (set these in Cloudflare dashboard or using wrangler secret)
-[env.production.vars]
 # SUPABASE_URL will be set via wrangler secret
 # SUPABASE_ANON_KEY will be set via wrangler secret
 

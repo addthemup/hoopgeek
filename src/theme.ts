@@ -193,6 +193,7 @@ export const newspaperTheme = extendTheme({
           fontFamily: '"Crimson Text", "Georgia", serif',
           backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
           color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          border: theme.palette.mode === 'dark' ? '1px solid #333' : '1px solid #d0d0d0',
           '--Input-focusedHighlight': theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
           '& input': {
             color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
@@ -200,6 +201,18 @@ export const newspaperTheme = extendTheme({
           '& input::placeholder': {
             color: theme.palette.mode === 'dark' ? '#999999' : '#666666',
             opacity: 1,
+          },
+          // Force light mode colors when explicitly set
+          '&.force-light': {
+            backgroundColor: '#ffffff !important',
+            color: '#000000 !important',
+            border: '1px solid #d0d0d0 !important',
+            '& input': {
+              color: '#000000 !important',
+            },
+            '& input::placeholder': {
+              color: '#666666 !important',
+            },
           },
         }),
       },
@@ -211,12 +224,25 @@ export const newspaperTheme = extendTheme({
           fontFamily: '"Crimson Text", "Georgia", serif',
           backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
           color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          border: theme.palette.mode === 'dark' ? '1px solid #333' : '1px solid #d0d0d0',
           '& textarea': {
             color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
           },
           '& textarea::placeholder': {
             color: theme.palette.mode === 'dark' ? '#999999' : '#666666',
             opacity: 1,
+          },
+          // Force light mode colors when explicitly set
+          '&.force-light': {
+            backgroundColor: '#ffffff !important',
+            color: '#000000 !important',
+            border: '1px solid #d0d0d0 !important',
+            '& textarea': {
+              color: '#000000 !important',
+            },
+            '& textarea::placeholder': {
+              color: '#666666 !important',
+            },
           },
         }),
       },
@@ -228,8 +254,81 @@ export const newspaperTheme = extendTheme({
           fontFamily: '"Crimson Text", "Georgia", serif',
           backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
           color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          border: theme.palette.mode === 'dark' ? '1px solid #333' : '1px solid #d0d0d0',
           '& select': {
             color: theme.palette.mode === 'dark' ? '#ffffff' : '#000000',
+          },
+          // Force light mode colors when explicitly set
+          '&.force-light': {
+            backgroundColor: '#ffffff !important',
+            color: '#000000 !important',
+            border: '1px solid #d0d0d0 !important',
+            '& select': {
+              color: '#000000 !important',
+            },
+          },
+        }),
+      },
+    },
+    JoySwitch: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          '--Switch-track-background': theme.palette.mode === 'dark' ? '#333' : '#d0d0d0',
+          '--Switch-thumb-background': theme.palette.mode === 'dark' ? '#fff' : '#fff',
+          '--Switch-thumb-color': theme.palette.mode === 'dark' ? '#000' : '#000',
+          '&.Mui-checked': {
+            '--Switch-track-background': theme.palette.mode === 'dark' ? '#6a59ff' : '#6a59ff',
+            '--Switch-thumb-background': theme.palette.mode === 'dark' ? '#fff' : '#fff',
+            '--Switch-thumb-color': theme.palette.mode === 'dark' ? '#6a59ff' : '#6a59ff',
+          },
+          // Force light mode styling
+          '&.force-light': {
+            '--Switch-track-background': '#d0d0d0 !important',
+            '--Switch-thumb-background': '#ffffff !important',
+            '--Switch-thumb-color': '#000000 !important',
+            '&.Mui-checked': {
+              '--Switch-track-background': '#6a59ff !important',
+              '--Switch-thumb-background': '#ffffff !important',
+              '--Switch-thumb-color': '#6a59ff !important',
+            },
+          },
+        }),
+      },
+    },
+    JoyCheckbox: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          color: theme.palette.mode === 'dark' ? '#fff' : '#000',
+          '&.Mui-checked': {
+            color: theme.palette.mode === 'dark' ? '#6a59ff' : '#6a59ff',
+            '& .MuiSvgIcon-root': {
+              color: theme.palette.mode === 'dark' ? '#6a59ff' : '#6a59ff',
+              backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+              border: theme.palette.mode === 'dark' ? '2px solid #6a59ff' : '2px solid #6a59ff',
+            },
+          },
+          '& .MuiSvgIcon-root': {
+            border: theme.palette.mode === 'dark' ? '2px solid #333' : '2px solid #d0d0d0',
+            borderRadius: '4px',
+            backgroundColor: theme.palette.mode === 'dark' ? '#1a1a1a' : '#ffffff',
+            color: theme.palette.mode === 'dark' ? '#fff' : '#000',
+          },
+          // Force light mode styling
+          '&.force-light': {
+            color: '#000000 !important',
+            '&.Mui-checked': {
+              color: '#6a59ff !important',
+              '& .MuiSvgIcon-root': {
+                color: '#6a59ff !important',
+                backgroundColor: '#ffffff !important',
+                border: '2px solid #6a59ff !important',
+              },
+            },
+            '& .MuiSvgIcon-root': {
+              border: '2px solid #d0d0d0 !important',
+              backgroundColor: '#ffffff !important',
+              color: '#000000 !important',
+            },
           },
         }),
       },

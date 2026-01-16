@@ -34,11 +34,20 @@ export function useUserProfile(userId: string | undefined) {
       const { data, error } = await supabase
         .rpc('get_user_profile', { user_id: userId });
       
-      if (error) throw error;
-      return data?.[0] as UserProfile | null;
+      if (error) {
+        console.error('Error fetching user profile:', error);
+        throw error;
+      }
+      
+      const profile = data?.[0] as UserProfile | null;
+      console.log('Fetched user profile:', profile);
+      // Return null instead of undefined to satisfy React Query
+      return profile ?? null;
     },
     enabled: !!userId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 0, // Always refetch when data is stale
+    refetchOnMount: true, // Refetch when component mounts
+    refetchOnWindowFocus: true, // Refetch when window regains focus
   });
 }
 
@@ -50,6 +59,7 @@ export function useUpdateUserProfile() {
   
   return useMutation({
     mutationFn: async (params: UpdateUserProfileParams) => {
+      console.log('Calling update_user_profile with params:', params);
       const { data, error } = await supabase.rpc('update_user_profile', {
         p_user_id: params.user_id,
         p_display_name: params.display_name,
@@ -59,12 +69,21 @@ export function useUpdateUserProfile() {
         p_timezone: params.timezone
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error updating user profile:', error);
+        throw error;
+      }
+      
+      console.log('update_user_profile RPC returned:', data);
       return data;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['user-profile', variables.user_id] });
-      queryClient.invalidateQueries({ queryKey: ['complete-user-settings', variables.user_id] });
+    onSuccess: async (data, variables) => {
+      console.log('Profile update successful, invalidating queries for user:', variables.user_id);
+      // Invalidate and refetch immediately
+      await queryClient.invalidateQueries({ queryKey: ['user-profile', variables.user_id] });
+      await queryClient.invalidateQueries({ queryKey: ['complete-user-settings', variables.user_id] });
+      // Force a refetch
+      await queryClient.refetchQueries({ queryKey: ['user-profile', variables.user_id] });
     }
   });
 }
@@ -202,11 +221,55 @@ export function useFavoriteTeams(userId: string | undefined) {
     queryFn: async () => {
       if (!userId) throw new Error('User ID is required');
       
-      const { data, error } = await supabase
-        .rpc('get_user_favorite_teams', { p_user_id: userId });
+      // Query directly from user_favorite_teams
+      const { data: favoriteTeams, error: favoritesError } = await supabase
+        .from('user_favorite_teams')
+        .select('id, team_id, notes, notify_on_games, notify_on_trades, created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
       
-      if (error) throw error;
-      return data as FavoriteTeam[];
+      if (favoritesError) {
+        console.error('Error fetching favorite teams:', favoritesError);
+        throw favoritesError;
+      }
+      
+      if (!favoriteTeams || favoriteTeams.length === 0) {
+        return [];
+      }
+      
+      // Get team IDs and fetch team details
+      const teamIds = favoriteTeams.map((ft: any) => ft.team_id);
+      
+      const { data: teams, error: teamsError } = await supabase
+        .from('nba_teams')
+        .select('team_id, abbreviation, nickname, city')
+        .in('team_id', teamIds);
+      
+      if (teamsError) {
+        console.error('Error fetching team details:', teamsError);
+        throw teamsError;
+      }
+      
+      // Create a map of team_id to team details
+      const teamMap = new Map((teams || []).map((team: any) => [team.team_id, team]));
+      
+      // Transform the data to match FavoriteTeam interface
+      const transformed = favoriteTeams.map((item: any) => {
+        const team = teamMap.get(item.team_id);
+        return {
+          id: item.id,
+          team_id: item.team_id,
+          team_name: team ? `${team.city || ''} ${team.nickname || ''}`.trim() : '',
+          team_abbreviation: team?.abbreviation || '',
+          team_city: team?.city || '',
+          notes: item.notes,
+          notify_on_games: item.notify_on_games,
+          notify_on_trades: item.notify_on_trades,
+          created_at: item.created_at,
+        };
+      });
+      
+      return transformed as FavoriteTeam[];
     },
     enabled: !!userId,
     staleTime: 1000 * 60 * 5, // 5 minutes

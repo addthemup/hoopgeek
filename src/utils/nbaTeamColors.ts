@@ -424,3 +424,26 @@ export const getTeamSecondaryColor = (teamIdentifier: string): string => {
   return getTeamColors(teamIdentifier).secondary;
 };
 
+/**
+ * Determine if a color is light or dark, returns appropriate text color
+ * Returns '#000000' for light backgrounds, '#FFFFFF' for dark backgrounds
+ */
+export const getTextColorForBackground = (hexColor: string): string => {
+  if (!hexColor) return '#FFFFFF';
+  
+  // Remove # if present
+  const hex = hexColor.replace('#', '');
+  
+  // Convert to RGB
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Calculate relative luminance (0-1)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  
+  // If luminance is greater than 0.5, it's a light color, use black text
+  // Otherwise, use white text
+  return luminance > 0.5 ? '#000000' : '#FFFFFF';
+};
+

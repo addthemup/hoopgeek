@@ -332,8 +332,8 @@ WHERE session_start >= CURRENT_DATE - INTERVAL '365 days'
 GROUP BY date_trunc('day', session_start)
 ORDER BY metric_date DESC;
 
--- Create index on materialized view
-CREATE INDEX idx_daily_engagement_date ON daily_engagement_metrics(metric_date DESC);
+-- Create unique index on materialized view (required for CONCURRENTLY refresh)
+CREATE UNIQUE INDEX idx_daily_engagement_date_unique ON daily_engagement_metrics(metric_date DESC);
 
 -- ============================================================================
 -- MATERIALIZED VIEW: DFS CONVERSION FUNNEL
@@ -372,6 +372,10 @@ FROM user_cohorts uc
 LEFT JOIN dfs_activity da ON uc.user_id = da.user_id
 GROUP BY uc.cohort_week, uc.cohort_month
 ORDER BY uc.cohort_week DESC;
+
+-- Create unique index on materialized view (required for CONCURRENTLY refresh)
+-- cohort_week should be unique since we group by it
+CREATE UNIQUE INDEX idx_dfs_conversion_cohort_unique ON dfs_conversion_funnel(cohort_week DESC);
 
 -- ============================================================================
 -- FUNCTIONS FOR ENGAGEMENT TRACKING
@@ -591,6 +595,16 @@ CREATE POLICY engagement_events_insert_own
 -- DFS user statistics: users can only see their own
 CREATE POLICY dfs_user_statistics_select_own
   ON dfs_user_statistics FOR SELECT
+  USING (auth.uid() = user_id);
+
+-- Allow users to INSERT their own statistics row (via trigger)
+CREATE POLICY dfs_user_statistics_insert_own
+  ON dfs_user_statistics FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+-- Allow users to UPDATE their own statistics (via trigger)
+CREATE POLICY dfs_user_statistics_update_own
+  ON dfs_user_statistics FOR UPDATE
   USING (auth.uid() = user_id);
 
 -- Admin policies (assuming admin role check function exists)

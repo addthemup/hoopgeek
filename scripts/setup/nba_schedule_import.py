@@ -14,9 +14,20 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from supabase import create_client, Client
 
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    # Try multiple common env file locations
+    load_dotenv('.env.local')
+    load_dotenv('.env')
+except ImportError:
+    pass  # dotenv not installed, skip
+except:
+    pass  # File not found, skip
+
 def get_supabase_credentials():
     """Get Supabase credentials from environment variables"""
-    url = os.getenv('VITE_SUPABASE_URL')
+    url = os.getenv('VITE_SUPABASE_URL') or os.getenv('SUPABASE_URL')
     key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
     
     if not url or not key:

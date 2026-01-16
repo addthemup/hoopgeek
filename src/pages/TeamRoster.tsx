@@ -11,7 +11,16 @@ import {
   Alert,
   Grid,
   LinearProgress,
+  Button,
+  Input,
+  IconButton,
+  Modal,
+  ModalDialog,
+  ModalClose,
+  DialogTitle,
+  DialogContent,
 } from '@mui/joy';
+import { Palette, SwapHoriz } from '@mui/icons-material';
 import { useTeamRoster } from '../hooks/useTeamRoster';
 import { useTeams } from '../hooks/useTeams';
 import TeamSchedule from '../components/TeamSchedule';
@@ -27,6 +36,8 @@ import TeamPerformanceRadial from '../components/Team/TeamPerformanceRadial';
 import { useCurrentFantasyWeek } from '../hooks/useCurrentFantasyWeek';
 import { useMatchups } from '../hooks/useMatchups';
 import Trades from './Trades';
+import Lineups from './Lineups';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface TeamRosterProps {
   leagueId: string;
@@ -67,10 +78,14 @@ function PlayerAvatar({ player, isEmpty }: { player: any; isEmpty: boolean }) {
 }
 
 export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
+  const queryClient = useQueryClient();
   const { data: teams } = useTeams(leagueId);
   const { data: league } = useLeague(leagueId);
   const [selectedPlayer, setSelectedPlayer] = useState<{ id: string; name: string } | null>(null);
   const [tradeContext, setTradeContext] = useState<TradeContext | null>(null);
+  const [colorModalOpen, setColorModalOpen] = useState(false);
+  const [primaryColor, setPrimaryColor] = useState('#3B82F6');
+  const [secondaryColor, setSecondaryColor] = useState('#1E40AF');
   
   // Determine which team to display
   const selectedTeam = teamId 
@@ -86,6 +101,37 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
   });
 
   const { data: roster, isLoading, error } = useTeamRoster(selectedTeam?.id || '');
+
+  // Load team colors from selected team
+  useMemo(() => {
+    if (selectedTeam) {
+      setPrimaryColor((selectedTeam as any).primary_color || '#3B82F6');
+      setSecondaryColor((selectedTeam as any).secondary_color || '#1E40AF');
+    }
+  }, [selectedTeam]);
+
+  // Mutation to update team colors
+  const updateColorsMutation = useMutation({
+    mutationFn: async ({ primary, secondary }: { primary: string; secondary: string }) => {
+      const { error } = await supabase
+        .from('fantasy_teams')
+        .update({ 
+          primary_color: primary,
+          secondary_color: secondary 
+        })
+        .eq('id', selectedTeam?.id || '');
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['teams', leagueId] });
+      setColorModalOpen(false);
+    },
+  });
+
+  const handleSaveColors = () => {
+    updateColorsMutation.mutate({ primary: primaryColor, secondary: secondaryColor });
+  };
 
   // Sort roster spots: players first, then empty spots
   const sortedRoster = useMemo(() => {
@@ -279,6 +325,30 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
 
   return (
     <Box sx={{ p: 3 }}>
+      {/* Quick Actions Bar - Trades and Team Colors */}
+      <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+        <Button
+          variant="solid"
+          color="primary"
+          startDecorator={<SwapHoriz />}
+          onClick={() => setTradeContext({ 
+            player: null, 
+            teamId: selectedTeam?.id || '', 
+            teamName: selectedTeam?.team_name || '' 
+          })}
+          sx={{ flex: 1 }}
+        >
+          Propose Trade
+        </Button>
+        <IconButton
+          variant="outlined"
+          color="neutral"
+          onClick={() => setColorModalOpen(true)}
+        >
+          <Palette />
+        </IconButton>
+      </Stack>
+
       {/* Team Header */}
       <Card
         variant="outlined"
@@ -291,7 +361,7 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
         <Box
           sx={{
             p: 3,
-            background: 'linear-gradient(135deg, var(--joy-palette-primary-600) 0%, var(--joy-palette-primary-700) 100%)',
+            background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
           }}
         >
           <Grid container spacing={3} alignItems="center">
@@ -795,6 +865,107 @@ export default function TeamRoster({ leagueId, teamId }: TeamRosterProps) {
       <Box sx={{ mt: 4 }}>
         <TeamSchedule teamId={selectedTeam.id} />
       </Box>
+
+      {/* Lineups Section - Integrated below roster */}
+      <Box sx={{ mt: 4 }}>
+        <Typography level="h3" sx={{ fontWeight: 'bold', mb: 2 }}>
+          Weekly Lineups
+        </Typography>
+        <Lineups leagueId={leagueId} />
+      </Box>
+
+      {/* Color Picker Modal */}
+      <Modal open={colorModalOpen} onClose={() => setColorModalOpen(false)}>
+        <ModalDialog
+          sx={{
+            maxWidth: 500,
+            borderRadius: 'md',
+            p: 3,
+          }}
+        >
+          <ModalClose />
+          <DialogTitle>Team Colors</DialogTitle>
+          <DialogContent>
+            <Stack spacing={3} sx={{ mt: 2 }}>
+              <Box>
+                <Typography level="body-sm" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Primary Color
+                </Typography>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <Input
+                    type="color"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    sx={{ width: 80, height: 40 }}
+                  />
+                  <Input
+                    type="text"
+                    value={primaryColor}
+                    onChange={(e) => setPrimaryColor(e.target.value)}
+                    placeholder="#3B82F6"
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+              </Box>
+              
+              <Box>
+                <Typography level="body-sm" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Secondary Color
+                </Typography>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <Input
+                    type="color"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    sx={{ width: 80, height: 40 }}
+                  />
+                  <Input
+                    type="text"
+                    value={secondaryColor}
+                    onChange={(e) => setSecondaryColor(e.target.value)}
+                    placeholder="#1E40AF"
+                    sx={{ flex: 1 }}
+                  />
+                </Stack>
+              </Box>
+
+              {/* Color Preview */}
+              <Box>
+                <Typography level="body-sm" sx={{ mb: 1, fontWeight: 'bold' }}>
+                  Preview
+                </Typography>
+                <Box
+                  sx={{
+                    height: 100,
+                    borderRadius: 'md',
+                    background: `linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%)`,
+                    border: '2px solid',
+                    borderColor: 'divider',
+                  }}
+                />
+              </Box>
+
+              <Stack direction="row" spacing={2} justifyContent="flex-end">
+                <Button
+                  variant="outlined"
+                  color="neutral"
+                  onClick={() => setColorModalOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="solid"
+                  color="primary"
+                  onClick={handleSaveColors}
+                  loading={updateColorsMutation.isPending}
+                >
+                  Save Colors
+                </Button>
+              </Stack>
+            </Stack>
+          </DialogContent>
+        </ModalDialog>
+      </Modal>
     </Box>
   );
 }

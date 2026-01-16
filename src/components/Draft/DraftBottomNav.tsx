@@ -72,9 +72,11 @@ export default function DraftBottomNav({ activeTab, onTabChange, isCommissioner 
       sx={{
         position: 'fixed',
         bottom: 0,
-        left: 0,
-        right: 0,
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 999,
+        maxWidth: { xs: '100%', sm: 805, md: 1035 },
+        width: '100%',
         borderTopLeftRadius: '12px',
         borderTopRightRadius: '12px',
         bgcolor: `${'var(--colors-index)'}.500`,

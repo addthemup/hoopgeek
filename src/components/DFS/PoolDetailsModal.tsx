@@ -21,9 +21,8 @@ import {
 } from '@mui/joy';
 import { SportsSoccer, EmojiEvents, Timer, TrendingUp, Share, ArrowBack, Refresh, Edit } from '@mui/icons-material';
 import { format } from 'date-fns';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
-import { calculateFantasyPoints, FANDUEL_SCORING } from '../../utils/fantasyScoring';
 import DFSLineupBuilder from './DFSLineupBuilder';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -51,6 +50,9 @@ interface PoolDetails {
   status: string;
   games_count?: number;
   players_count?: number;
+  icon_name?: string | null;
+  html_color_primary?: string | null;
+  html_color_secondary?: string | null;
 }
 
 interface LeaderboardEntry {
@@ -104,6 +106,7 @@ function PlayerAvatar({ player }: { player: { nba_player_id: number; player_name
 export default function PoolDetailsModal({ poolId, open, onClose, initialView = 'details', entryId: initialEntryId = null }: PoolDetailsModalProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const [linkCopied, setLinkCopied] = useState(false);
   const [currentView, setCurrentView] = useState<'details' | 'leaderboard' | 'entry' | 'lineup-builder'>(initialView);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(initialEntryId);
@@ -137,7 +140,7 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
       
       const { data, error } = await supabase
         .from('dfs_pools')
-        .select('*')
+        .select('*, icon_name, html_color_primary, html_color_secondary')
         .eq('id', poolId)
         .single();
 
@@ -151,18 +154,22 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
       return {
         ...data,
         current_entries: count || 0,
+        // Explicitly preserve icon fields
+        icon_name: data.icon_name,
+        html_color_primary: data.html_color_primary,
+        html_color_secondary: data.html_color_secondary,
       };
     },
     enabled: open && !!poolId,
   });
 
-  // Fetch user's entries for this pool
+  // Fetch user's entries for this pool with lineup players
   const { data: userEntries, refetch: refetchUserEntries } = useQuery({
     queryKey: ['dfs-user-pool-entries', poolId, user?.id],
     queryFn: async () => {
       if (!poolId || !user?.id) return [];
       
-      const { data, error } = await supabase
+      const { data: entries, error } = await supabase
         .from('dfs_entries')
         .select('id, is_submitted, total_salary, created_at')
         .eq('pool_id', poolId)
@@ -170,10 +177,91 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      return data || [];
+      if (!entries) return [];
+
+      // For each entry, fetch the lineup players
+      const entriesWithLineups = await Promise.all(
+        entries.map(async (entry) => {
+          // Get lineup for this entry
+          const { data: lineup, error: lineupError } = await supabase
+            .from('dfs_lineups')
+            .select('id')
+            .eq('entry_id', entry.id)
+            .eq('pool_id', poolId)
+            .maybeSingle();
+
+          if (lineupError || !lineup) {
+            return { ...entry, players: [] };
+          }
+
+          // Get lineup positions with unit information
+          const { data: positions, error: positionsError } = await supabase
+            .from('dfs_lineup_positions')
+            .select('nba_player_id, player_name, unit')
+            .eq('lineup_id', lineup.id)
+            .eq('pool_id', poolId)
+            .order('unit', { ascending: true })
+            .order('unit_position', { ascending: true });
+
+          if (positionsError) {
+            return { ...entry, players: [] };
+          }
+
+          return {
+            ...entry,
+            players: positions || [],
+          };
+        })
+      );
+
+      return entriesWithLineups;
     },
     enabled: open && !!poolId && !!user?.id,
   });
+
+  // Countdown timer for lock time
+  const [timeUntilLock, setTimeUntilLock] = useState<string>('');
+  const [isLocked, setIsLocked] = useState(false);
+
+  useEffect(() => {
+    if (!pool?.lock_time) {
+      setTimeUntilLock('N/A');
+      return;
+    }
+
+    const updateCountdown = () => {
+      const now = new Date();
+      const lockTime = new Date(pool.lock_time);
+      const timeDiff = lockTime.getTime() - now.getTime();
+
+      if (timeDiff <= 0) {
+        setTimeUntilLock('Locked');
+        setIsLocked(true);
+        return;
+      }
+
+      setIsLocked(false);
+      const hours = Math.floor(timeDiff / (1000 * 60 * 60));
+      const minutes = Math.floor((timeDiff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((timeDiff % (1000 * 60)) / 1000);
+
+      if (hours > 0) {
+        setTimeUntilLock(`${hours}h ${minutes}m ${seconds}s`);
+      } else if (minutes > 0) {
+        setTimeUntilLock(`${minutes}m ${seconds}s`);
+      } else {
+        setTimeUntilLock(`${seconds}s`);
+      }
+    };
+
+    // Update immediately
+    updateCountdown();
+
+    // Update every second
+    const interval = setInterval(updateCountdown, 1000);
+
+    return () => clearInterval(interval);
+  }, [pool?.lock_time]);
 
   // Fetch leaderboard for live/past pools
   const { data: leaderboard, isLoading: leaderboardLoading, refetch } = useQuery<LeaderboardEntry[]>({
@@ -185,7 +273,7 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
 
       const { data: entries, error: entriesError } = await supabase
         .from('dfs_entries')
-        .select('id, user_id, final_points')
+        .select('id, user_id, final_score, final_points')
         .eq('pool_id', poolId)
         .eq('is_submitted', true);
 
@@ -240,60 +328,32 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
             .select('player_id, nba_player_id, player_name, player_team, player_position, player_salary, unit, unit_position, unit_multiplier, raw_fantasy_points, weighted_points')
             .eq('lineup_id', lineup.id);
 
-          console.log(`📝 Entry ${entry.id} lineup positions:`, positions?.length, 'players');
-          if (positions && positions.length > 0) {
-            console.log('   Sample player:', positions[0]);
-          }
-
-          // Get game IDs for this pool to filter live stats
-          const { data: poolGames } = await supabase
-            .from('dfs_pool_games')
-            .select('game_id')
-            .eq('pool_id', poolId);
-          const gameIds = poolGames?.map(g => g.game_id) || [];
-
+          // Use server-side calculated points from database
+          // For live pools, the server should update these via update_lineup_position_scores()
+          // For completed pools, use final_score from entry
           let totalScore = 0;
-          const playerScores = new Map<string, { raw: number, weighted: number }>();
           
-          if (pool?.status === 'live' && gameIds.length > 0) {
-            // Fetch live scores for each player, filtered by pool's games
-            for (const player of positions || []) {
-              const { data: liveStats } = await supabase
-                .from('live_player_stats')
-                .select('stats')
-                .eq('nba_player_id', player.nba_player_id)
-                .in('game_id', gameIds)
-                .maybeSingle();
-
-              if (liveStats?.stats) {
-                const rawFantasyPoints = calculateFantasyPoints(liveStats.stats, FANDUEL_SCORING);
-                const weightedPoints = rawFantasyPoints * (player.unit_multiplier || 1);
-                playerScores.set(player.player_id, { raw: rawFantasyPoints, weighted: weightedPoints });
-                totalScore += weightedPoints;
-                console.log(`   ${player.player_name}: ${rawFantasyPoints.toFixed(1)} pts (${player.unit_multiplier}x = ${weightedPoints.toFixed(1)})`);
-              }
-            }
-          } else if (pool?.status === 'completed') {
-            totalScore = entry.final_points || 0;
-            console.log(`   Using final_points from entry: ${totalScore}`);
+          if (pool?.status === 'completed') {
+            // Use final score from entry (server-calculated)
+            totalScore = entry.final_score || entry.final_points || 0;
+          } else {
+            // For live pools, sum weighted_points from lineup positions (server-calculated)
+            totalScore = (positions || []).reduce((sum, p) => {
+              return sum + (p.weighted_points || 0);
+            }, 0);
           }
-
-          console.log(`✅ Entry ${entry.id} total score: ${totalScore}`);
 
           return {
             entry_id: entry.id,
             user_id: entry.user_id,
             user_name: profileMap.get(entry.user_id) || 'Anonymous',
-            lineup: (positions || []).map(p => {
-              const scores = playerScores.get(p.player_id);
-              return {
-                ...p,
-                unit: p.unit || 'starters',
-                unit_multiplier: p.unit_multiplier || 1,
-                raw_fantasy_points: scores?.raw ?? p.raw_fantasy_points ?? null,
-                weighted_points: scores?.weighted ?? p.weighted_points ?? null,
-              };
-            }),
+            lineup: (positions || []).map(p => ({
+              ...p,
+              unit: p.unit || 'starters',
+              unit_multiplier: p.unit_multiplier || 1,
+              raw_fantasy_points: p.raw_fantasy_points ?? null,
+              weighted_points: p.weighted_points ?? null,
+            })),
             live_score: totalScore,
             rank: 0,
             prize_amount: 0,
@@ -356,23 +416,131 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
   };
 
   // Enter Contest - ALWAYS creates a NEW entry
-  const handleEnterContest = () => {
+  const handleEnterContest = async () => {
+    // Create a new entry explicitly
+    if (!poolId || !user?.id || !pool) return;
+    
     setIsTransitioning(true);
-    setTimeout(() => {
-      setSelectedEntryId(null); // Always null = new entry
-      setCurrentView('lineup-builder');
+    try {
+      const { data: newEntry, error } = await supabase
+        .from('dfs_entries')
+        .insert({
+          pool_id: poolId,
+          user_id: user.id,
+          entry_fee_paid: pool.entry_fee || 0,
+          total_salary: 0,
+          projected_points: 0,
+          is_submitted: false,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      
+      if (newEntry) {
+        setSelectedEntryId(newEntry.id);
+        setCurrentView('lineup-builder');
+        // Invalidate queries to refresh entries list
+        refetchUserEntries();
+      }
+    } catch (error) {
+      console.error('Error creating new entry:', error);
+      alert('Failed to create new entry. Please try again.');
+    } finally {
       setTimeout(() => setIsTransitioning(false), 300);
-    }, 400);
+    }
   };
 
-  // Edit Entry - for editing EXISTING draft entries (before pool starts)
-  const handleEditEntry = (entryId: string) => {
+  // Edit Entry - for editing EXISTING entries (including submitted ones)
+  const handleEditEntry = async (entryId: string) => {
+    // Check if entry is submitted and unsubmit it if needed
+    if (!poolId || !user?.id) return;
+    
+    console.log('✏️ Editing entry:', { entryId, poolId, userId: user.id });
     setIsTransitioning(true);
-    setTimeout(() => {
+    
+    try {
+      // Get entry to check if it's submitted
+      const { data: entry, error: entryError } = await supabase
+        .from('dfs_entries')
+        .select('id, is_submitted')
+        .eq('id', entryId)
+        .eq('user_id', user.id)
+        .single();
+
+      if (entryError) {
+        console.error('❌ Error fetching entry:', entryError);
+        throw entryError;
+      }
+      
+      console.log('📋 Entry status:', { entryId: entry?.id, is_submitted: entry?.is_submitted });
+      
+      // If entry is submitted, unsubmit it first to allow editing
+      if (entry?.is_submitted) {
+        console.log('🔄 Unsubmitting entry...');
+        
+        // Directly update the entry instead of using RPC (which finds by pool/user, not entry_id)
+        const { error: updateError } = await supabase
+          .from('dfs_entries')
+          .update({
+            is_submitted: false,
+            submitted_at: null,
+            lineup_locked: false,
+          })
+          .eq('id', entryId)
+          .eq('user_id', user.id);
+
+        if (updateError) {
+          console.error('❌ Error unsubmitting entry:', updateError);
+          alert(`Cannot edit: ${updateError.message || 'Failed to unsubmit entry'}`);
+          setIsTransitioning(false);
+          return;
+        }
+        
+        // Decrement pool entry count manually
+        const { data: poolData, error: poolFetchError } = await supabase
+          .from('dfs_pools')
+          .select('current_entries')
+          .eq('id', poolId)
+          .single();
+        
+        if (!poolFetchError && poolData) {
+          const { error: poolUpdateError } = await supabase
+            .from('dfs_pools')
+            .update({ current_entries: Math.max(0, (poolData.current_entries || 0) - 1) })
+            .eq('id', poolId);
+          
+          if (poolUpdateError) {
+            console.warn('⚠️ Could not decrement pool entries:', poolUpdateError);
+            // Continue anyway - this is not critical
+          }
+        }
+        
+        console.log('✅ Entry unsubmitted successfully');
+        
+        // Invalidate all related queries to refresh data
+        await queryClient.invalidateQueries({ queryKey: ['dfs-lineup', poolId, user.id, entryId] });
+        await queryClient.invalidateQueries({ queryKey: ['dfs-lineup', poolId, user.id] });
+        await queryClient.invalidateQueries({ queryKey: ['dfs-lineup-salary', poolId, user.id, entryId] });
+        await queryClient.invalidateQueries({ queryKey: ['dfs-lineup-salary', poolId, user.id] });
+        await queryClient.invalidateQueries({ queryKey: ['dfs-user-pool-entries', poolId, user.id] });
+      }
+      
+      // Small delay to ensure queries are invalidated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      console.log('✅ Setting entry for editing:', entryId);
       setSelectedEntryId(entryId);
       setCurrentView('lineup-builder');
+      
+      // Refresh entries list
+      refetchUserEntries();
+    } catch (error) {
+      console.error('❌ Error preparing entry for edit:', error);
+      alert(`Failed to edit entry: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
       setTimeout(() => setIsTransitioning(false), 300);
-    }, 400);
+    }
   };
 
   // View Entry - for viewing submitted/live entries (after pool starts)
@@ -542,16 +710,16 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
         ) : (
           <>
             {/* LINEUP BUILDER VIEW */}
-            {currentView === 'lineup-builder' && (
+            {currentView === 'lineup-builder' && poolId && pool && (
               <Box sx={{ p: 3 }}>
                 <DFSLineupBuilder
-                  poolId={poolId || undefined}
+                  poolId={poolId}
                   entryId={selectedEntryId || undefined}
                   onSuccess={() => {
                     setIsTransitioning(true);
                     setTimeout(() => {
                       refetchUserEntries();
-                      handleClose();
+                      setCurrentView('details');
                       setIsTransitioning(false);
                     }, 400);
                   }}
@@ -560,6 +728,16 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
                     handleClose();
                   }}
                 />
+              </Box>
+            )}
+            
+            {/* Loading state for lineup builder */}
+            {currentView === 'lineup-builder' && poolLoading && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '60vh', p: 4, gap: 2 }}>
+                <LinearProgress sx={{ width: '100%' }} />
+                <Typography level="body-sm" sx={{ textAlign: 'center' }}>
+                  Loading lineup editor...
+                </Typography>
               </Box>
             )}
 
@@ -1169,17 +1347,16 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
             <Grid xs={3}>
               <Box sx={{ textAlign: 'center', p: 1.5, bgcolor: 'background.level1', borderRadius: 'sm' }}>
                 <Typography level="body-xs" color="neutral" sx={{ mb: 0.5 }}>Locks In</Typography>
-                        <Typography level="h4" sx={{ fontSize: '1.5rem' }}>
-                          {new Date(pool.lock_time).toLocaleString('en-US', {
-                            hour: 'numeric',
-                            minute: '2-digit'
-                          })}
+                        <Typography 
+                          level="h4" 
+                          sx={{ 
+                            fontSize: '1.5rem',
+                            color: isLocked ? 'danger.500' : 'text.primary',
+                            fontWeight: 'bold'
+                          }}
+                        >
+                          {timeUntilLock || 'Calculating...'}
                         </Typography>
-                        <Typography level="body-xs" color="neutral">
-                          {new Date(pool.lock_time).toLocaleString('en-US', {
-                            timeZoneName: 'short'
-                          }).split(', ')[1]}
-                </Typography>
               </Box>
             </Grid>
           </Grid>
@@ -1249,30 +1426,134 @@ export default function PoolDetailsModal({ poolId, open, onClose, initialView = 
                                   }
                                 }}
                               >
-                                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                  <Box>
-                                    <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
-                                      Entry #{index + 1}
+                                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                                  <Box sx={{ flex: 1 }}>
+                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                                      <Typography level="title-sm" sx={{ fontWeight: 'bold' }}>
+                                        Entry #{index + 1}
+                                      </Typography>
+                                      {entry.is_submitted ? (
+                                        <Chip size="sm" variant="soft" color="success">
+                                          ✓ Submitted
+                                        </Chip>
+                                      ) : (
+                                        <Chip size="sm" variant="soft" color="warning">
+                                          Draft
+                                        </Chip>
+                                      )}
+                                    </Stack>
+                                    <Typography level="body-xs" color="neutral" sx={{ mb: 1 }}>
+                                      {formatSalary(entry.total_salary || 0)} used
                                     </Typography>
-                                    <Typography level="body-xs" color="neutral">
-                                      {entry.is_submitted ? 'Submitted' : 'In Progress'} • {formatSalary(entry.total_salary || 0)} used
-                                    </Typography>
+                                    {/* Player Avatars grouped by unit */}
+                                    {entry.players && entry.players.length > 0 && (() => {
+                                      // Group players by unit
+                                      const starters = entry.players.filter(p => p.unit === 'starters');
+                                      const rotation = entry.players.filter(p => p.unit === 'rotation');
+                                      const bench = entry.players.filter(p => p.unit === 'bench');
+                                      
+                                      return (
+                                        <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                                          {/* Starters */}
+                                          {starters.length > 0 && (
+                                            <>
+                                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                                {starters.map((player, playerIndex) => (
+                                                  <Avatar
+                                                    key={`starters-${playerIndex}`}
+                                                    size="sm"
+                                                    src={player.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
+                                                    sx={{ 
+                                                      width: 32, 
+                                                      height: 32,
+                                                      border: '1px solid',
+                                                      borderColor: 'divider',
+                                                    }}
+                                                    title={player.player_name}
+                                                  >
+                                                    {player.player_name?.charAt(0) || '?'}
+                                                  </Avatar>
+                                                ))}
+                                              </Stack>
+                                              {(rotation.length > 0 || bench.length > 0) && (
+                                                <Divider orientation="vertical" sx={{ height: 24 }} />
+                                              )}
+                                            </>
+                                          )}
+                                          
+                                          {/* Rotation */}
+                                          {rotation.length > 0 && (
+                                            <>
+                                              <Stack direction="row" spacing={0.5} alignItems="center">
+                                                {rotation.map((player, playerIndex) => (
+                                                  <Avatar
+                                                    key={`rotation-${playerIndex}`}
+                                                    size="sm"
+                                                    src={player.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
+                                                    sx={{ 
+                                                      width: 32, 
+                                                      height: 32,
+                                                      border: '1px solid',
+                                                      borderColor: 'divider',
+                                                    }}
+                                                    title={player.player_name}
+                                                  >
+                                                    {player.player_name?.charAt(0) || '?'}
+                                                  </Avatar>
+                                                ))}
+                                              </Stack>
+                                              {bench.length > 0 && (
+                                                <Divider orientation="vertical" sx={{ height: 24 }} />
+                                              )}
+                                            </>
+                                          )}
+                                          
+                                          {/* Bench */}
+                                          {bench.length > 0 && (
+                                            <Stack direction="row" spacing={0.5} alignItems="center">
+                                              {bench.map((player, playerIndex) => (
+                                                <Avatar
+                                                  key={`bench-${playerIndex}`}
+                                                  size="sm"
+                                                  src={player.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png` : undefined}
+                                                  sx={{ 
+                                                    width: 32, 
+                                                    height: 32,
+                                                    border: '1px solid',
+                                                    borderColor: 'divider',
+                                                  }}
+                                                  title={player.player_name}
+                                                >
+                                                  {player.player_name?.charAt(0) || '?'}
+                                                </Avatar>
+                                              ))}
+                                            </Stack>
+                                          )}
+                                        </Stack>
+                                      );
+                                    })()}
                                   </Box>
                                   <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                    {entry.is_submitted ? (
-                                      <Chip size="sm" variant="soft" color="success">
-                                        ✓ Submitted
-                                      </Chip>
-                                    ) : (
-                                      <Chip size="sm" variant="soft" color="warning">
-                                        Draft
-                                      </Chip>
-                                    )}
-                                    {pool.status === 'scheduled' && !entry.is_submitted && (
-                                      <IconButton size="sm" color="primary">
-                                        <Edit />
-                                      </IconButton>
-                                    )}
+                                    <IconButton 
+                                      size="sm" 
+                                      color="primary"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (pool.status === 'scheduled' && !entry.is_submitted) {
+                                          handleEditEntry(entry.id);
+                                        } else {
+                                          handleViewEntry(entry.id);
+                                        }
+                                      }}
+                                      sx={{
+                                        color: 'primary.500',
+                                        '&:hover': {
+                                          bgcolor: 'primary.50',
+                                        },
+                                      }}
+                                    >
+                                      <Edit />
+                                    </IconButton>
                                   </Box>
                                 </Stack>
                               </Sheet>

@@ -11,6 +11,9 @@ export interface UpdateDFSPoolParams {
   status?: string;
   is_guaranteed?: boolean;
   is_featured?: boolean;
+  icon_name?: string;
+  html_color_primary?: string;
+  html_color_secondary?: string;
 }
 
 export function useUpdateDFSPool() {
@@ -36,6 +39,9 @@ export function useUpdateDFSPool() {
       if (updateData.status !== undefined) updates.status = updateData.status;
       if (updateData.is_guaranteed !== undefined) updates.is_guaranteed = updateData.is_guaranteed;
       if (updateData.is_featured !== undefined) updates.is_featured = updateData.is_featured;
+      if (updateData.icon_name !== undefined) updates.icon_name = updateData.icon_name;
+      if (updateData.html_color_primary !== undefined) updates.html_color_primary = updateData.html_color_primary;
+      if (updateData.html_color_secondary !== undefined) updates.html_color_secondary = updateData.html_color_secondary;
 
       const { error } = await supabase
         .from('dfs_pools')

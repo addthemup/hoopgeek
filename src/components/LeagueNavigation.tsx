@@ -27,6 +27,26 @@ import {
   AdminPanelSettings
 } from '@mui/icons-material'
 import { useLeague } from '../hooks/useLeagues'
+import MatchupsAvatarBar from './MatchupsAvatarBar'
+
+interface FantasyTeam {
+  id: string;
+  team_name: string;
+  primary_color?: string;
+  secondary_color?: string;
+}
+
+interface Matchup {
+  id: string;
+  week_number: number;
+  status: string;
+  fantasy_team1_id: string;
+  fantasy_team2_id: string;
+  fantasy_team1_score: number;
+  fantasy_team2_score: number;
+  team1?: FantasyTeam;
+  team2?: FantasyTeam;
+}
 
 interface LeagueNavigationProps {
   leagueId: string
@@ -35,10 +55,14 @@ interface LeagueNavigationProps {
   userHasTeam?: boolean
   defaultTab?: number
   onTabChange?: (tabIndex: number, tabId: string) => void
+  showMatchups?: boolean
+  matchups?: Matchup[]
+  matchupsLoading?: boolean
 }
 
-export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false, defaultTab = 0, onTabChange }: LeagueNavigationProps) {
+export default function LeagueNavigation({ leagueId, isCommissioner, children, userHasTeam = false, defaultTab = 0, onTabChange, showMatchups = false, matchups = [], matchupsLoading = false }: LeagueNavigationProps) {
   const [activeTab, setActiveTab] = useState(defaultTab)
+  const [selectedMatchupId, setSelectedMatchupId] = useState<string | null>(null)
   const { data: league } = useLeague(leagueId)
   
   // Get draft status from league data
@@ -61,37 +85,19 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
       id: 'home',
       label: 'League',
       icon: <Home />,
-      description: 'League overview and standings'
+      description: 'League overview, standings, and matchups'
     },
     ...(userHasTeam ? [{
       id: 'my-team',
       label: 'My Team',
       icon: <Group />,
-      description: 'Your roster and lineup'
+      description: 'Your roster, lineups, and transactions'
     }] : []),
     {
-      id: 'lineups',
-      label: 'Lineups',
-      icon: <Sports />,
-      description: 'NBA 2K-style rotation management'
-    },
-    {
-      id: 'trades',
-      label: 'Trades',
-      icon: <SwapHoriz />,
-      description: 'Trade machine and proposals'
-    },
-    {
       id: 'players',
-      label: 'Players',
+      label: 'Free Agents',
       icon: <SportsBasketball />,
-      description: 'Player database and stats'
-    },
-    {
-      id: 'scoreboard',
-      label: 'Scoreboard',
-      icon: <Scoreboard />,
-      description: 'Live scores and results'
+      description: 'Player database and available free agents'
     },
     {
       id: 'draft',
@@ -100,37 +106,20 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
       description: 'Draft room and results'
     },
     {
-      id: 'standings',
-      label: 'Standings',
-      icon: <Leaderboard />,
-      description: 'League standings and rankings'
+      id: 'settings',
+      label: 'Rules',
+      icon: <Settings />,
+      description: 'League settings and scoring rules'
     },
-    {
-      id: 'transactions',
-      label: 'Transactions',
-      icon: <Message />,
-      description: 'League transactions and activity'
-    },
-            {
-              id: 'members',
-              label: 'Members',
-              icon: <People />,
-              description: 'League members and teams'
-            },
-            ...(isCommissioner ? [
-              {
-                id: 'settings',
-                label: 'Rules',
-                icon: <Settings />,
-                description: 'League settings and management'
-              },
-              {
-                id: 'commissioner',
-                label: 'Commissioner',
-                icon: <AdminPanelSettings />,
-                description: 'League manager tools and administration'
-              }
-            ] : [])
+    ...(isCommissioner ? [
+      {
+        id: 'commissioner',
+        label: 'Commissioner',
+        icon: <AdminPanelSettings />,
+        description: 'League manager tools and administration',
+        desktopOnly: true
+      }
+    ] : [])
   ]
   
   // Debug logging for tabs
@@ -166,15 +155,52 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
     }
   }, [tabs])
 
-  return (
-    <Box sx={{ width: '100%' }}>
+  // Handle matchup click
+  const handleMatchupClick = (matchupId: string) => {
+    if (selectedMatchupId === matchupId) {
+      setSelectedMatchupId(null);
+    } else {
+      setSelectedMatchupId(matchupId);
+    }
+  };
 
-      {/* Navigation Tabs */}
-      <Box sx={{ 
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-        mb: 3
+  return (
+    <Box sx={{ 
+      width: '100%',
+      bgcolor: 'background.body',
+      minHeight: '100vh',
+    }}>
+      {/* Matchups Avatar Bar - Only show if showMatchups is true */}
+      {showMatchups && (
+        <MatchupsAvatarBar 
+          matchups={matchups} 
+          isLoading={matchupsLoading}
+          selectedMatchupId={selectedMatchupId}
+          onMatchupClick={handleMatchupClick}
+        />
+      )}
+
+      {/* Content Container with proper spacing */}
+      <Box sx={{
+        maxWidth: { xs: '100%', sm: 805, md: 1035 },
+        minWidth: { xs: '100%', sm: 805, md: 1035 },
+        mx: 'auto',
+        pt: { xs: showMatchups ? '117px' : '49px', md: showMatchups ? '132px' : '69px' }, // Desktop adjusted for 1.5x taller nav bar
+        width: '100%',
+        boxSizing: 'border-box',
       }}>
+        {/* Navigation Tabs - Sticky within content container */}
+        <Box sx={{ 
+          position: 'sticky',
+          top: { xs: '49px', md: '63px' }, // Adjusted for 1.5x taller desktop nav bar
+          zIndex: 1000,
+          bgcolor: 'background.body',
+          borderBottom: '3px solid',
+          borderColor: 'divider',
+          mb: 0,
+          boxShadow: { xs: '0 2px 4px rgba(0,0,0,0.1)', md: 'none' },
+          mx: { xs: 0, sm: 0, md: 0 }, // Full width within container
+        }}>
         <Tabs
           value={activeTab}
           onChange={handleTabChange}
@@ -203,21 +229,19 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
             size="md"
             sx={{
               '--TabList-gap': '0px',
-              '--TabList-justifyContent': 'flex-start',
-              '--TabList-overflow': 'auto',
-              '--TabList-scrollbarWidth': 'none',
+              width: '100%',
+              display: 'flex',
+              justifyContent: 'space-between',
+              overflow: 'visible',
               '& .MuiTabList-root': {
-                overflow: 'auto',
-                scrollbarWidth: 'none',
-                '&::-webkit-scrollbar': {
-                  display: 'none'
-                }
+                width: '100%',
               }
             }}
           >
             {tabs.map((tab, index) => {
               const isDraftTab = tab.id === 'draft'
               const isActive = isDraftTab && isDraftActive
+              const desktopOnly = (tab as any).desktopOnly
               
               return (
                 <Tab
@@ -225,8 +249,13 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
                   value={index}
                   sx={{
                     minWidth: 'auto',
+                    flex: 1, // Make tabs evenly spaced
                     px: 2,
                     py: 1,
+                    // Hide on mobile if desktopOnly
+                    ...(desktopOnly && {
+                      display: { xs: 'none', md: 'flex' }
+                    }),
                     // Draft active styling
                     ...(isActive && {
                       bgcolor: 'success.softBg',
@@ -269,10 +298,13 @@ export default function LeagueNavigation({ leagueId, isCommissioner, children, u
           {/* Tab Content - TabPanels must be direct children of Tabs */}
           {tabs.map((tab, index) => (
             <TabPanel key={tab.id} value={index} sx={{ p: 0 }}>
-              {children(tab.id)}
+              <Box sx={{ mt: 3 }}>
+                {children(tab.id)}
+              </Box>
             </TabPanel>
           ))}
         </Tabs>
+        </Box>
       </Box>
     </Box>
   )

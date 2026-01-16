@@ -20,6 +20,7 @@ export interface DFSPool {
   is_guaranteed: boolean;
   is_featured: boolean;
   status: string;
+  lineup_requirements?: any; // JSONB object with lineup requirements
 }
 
 export function useDFSPool(poolId: string | undefined) {
@@ -30,7 +31,7 @@ export function useDFSPool(poolId: string | undefined) {
 
       const { data, error } = await supabase
         .from('dfs_pools')
-        .select('*')
+        .select('*, lineup_requirements')
         .eq('id', poolId)
         .single();
 

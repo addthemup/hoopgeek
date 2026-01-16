@@ -1,0 +1,171 @@
+🚀 Starting batch player matching...
+
+📊 Processing 43 unmatched players
+
+[1/43] Deandre Hunter (350 props)...
+  ❌ No matches found
+[2/43] C Flagg (296 props)...
+  ❌ No matches found
+[3/43] Shai Gilgeousalexander (291 props)...
+  ❌ No matches found
+[4/43] Nickeil Alexanderwalker (284 props)...
+  ❌ No matches found
+[5/43] Nikola Vucevic (282 props)...
+  ✅ Confident match: Nikola Vučević (CHI)
+  ✅ Updated 282 props
+[6/43] Karlanthony Towns (272 props)...
+  ❌ No matches found
+[7/43] Egor Demin (267 props)...
+  ✅ Confident match: Egor Dëmin (N/A)
+  ✅ Updated 267 props
+[8/43] Kelel Ware (266 props)...
+  ❌ No matches found
+[9/43] Deaaron Fox (238 props)...
+  ❌ No matches found
+[10/43] Tj Mcconnell (233 props)...
+  ❌ No matches found
+[11/43] Jusuf Nurkic (228 props)...
+  ✅ Confident match: Jusuf Nurkić (CHA)
+  ✅ Updated 228 props
+[12/43] Michael Porter Jr (216 props)...
+  ✅ Confident match: Michael Porter Jr. (DEN)
+  ✅ Updated 216 props
+[13/43] Q Post (200 props)...
+  ❌ No matches found
+[14/43] Jaime Jaquez Jr (192 props)...
+  ✅ Confident match: Jaime Jaquez Jr. (MIA)
+  ✅ Updated 192 props
+[15/43] Deanthony Melton (190 props)...
+  ❌ No matches found
+[16/43] Wendell Carter Jr (189 props)...
+  ✅ Confident match: Wendell Carter Jr. (ORL)
+  ✅ Updated 189 props
+[17/43] Luka Doncic (188 props)...
+  ✅ Confident match: Luka Dončić (LAL)
+  ✅ Updated 188 props
+[18/43] Alexandre Sarr (181 props)...
+  ❌ No matches found
+[19/43] Moussa Diabate (173 props)...
+  ✅ Confident match: Moussa Diabaté (CHA)
+  ✅ Updated 173 props
+[20/43] Airious Bailey (170 props)...
+  ❌ No matches found
+[21/43] Dennis Schroder (165 props)...
+  ✅ Confident match: Dennis Schröder (DET)
+  ✅ Updated 165 props
+[22/43] Royce Oneale (147 props)...
+  ❌ No matches found
+[23/43] Tidjane Salaun (147 props)...
+  ✅ Confident match: Tidjane Salaün (CHA)
+  ✅ Updated 147 props
+[24/43] Ron Holland (140 props)...
+  ❌ No matches found
+[25/43] Daniel Wolf (137 props)...
+  ❌ No matches found
+[26/43] Jaren Jackson Jr (123 props)...
+  ✅ Confident match: Jaren Jackson (N/A)
+  ✅ Updated 123 props
+[27/43] Nikola Jokic (123 props)...
+  ✅ Confident match: Nikola Jokić (DEN)
+  ✅ Updated 123 props
+[28/43] Vit Krejci (121 props)...
+  ❌ No matches found
+[29/43] Collin Murrayboyles (114 props)...
+  ❌ No matches found
+[30/43] Jimmy Butler (102 props)...
+  ✅ Confident match: Jimmy Butler III (GSW)
+  ✅ Updated 102 props
+[31/43] Kentavious Caldwellpope (92 props)...
+  ❌ No matches found
+[32/43] Kristaps Porzingis (83 props)...
+  ✅ Confident match: Kristaps Porziņģis (BOS)
+  ✅ Updated 83 props
+[33/43] Jonas Valanciunas (81 props)...
+  ✅ Confident match: Jonas Valančiūnas (SAC)
+  ✅ Updated 81 props
+[34/43] Nikola Jovic (72 props)...
+  ✅ Confident match: Nikola Jović (MIA)
+  ✅ Updated 72 props
+[35/43] Dayron Sharpe (68 props)...
+  ❌ No matches found
+[36/43] Jakobe Walter (40 props)...
+  ❌ No matches found
+[37/43] Derrick Jones Jr (38 props)...
+  ✅ Confident match: Derrick Jones Jr. (LAC)
+  ✅ Updated 38 props
+[38/43] R Rupert (38 props)...
+  ❌ No matches found
+[39/43] Hugo Gonzalez (14 props)...
+  ✅ Confident match: Hugo González (N/A)
+  ✅ Updated 14 props
+[40/43] Oliviermaxence Prosper (14 props)...
+  ❌ No matches found
+[41/43] Terrence Shannon (8 props)...
+  ✅ Confident match: Terrence Shannon Jr. (MIN)
+  ✅ Updated 8 props
+[42/43] Craig Porter (2 props)...
+  ✅ Confident match: Craig Porter Jr. (CLE)
+  ✅ Updated 2 props
+[43/43] Trayce Jacksondavis (2 props)...
+  ❌ No matches found
+
+
+======================================================================
+📊 BATCH MATCHING SUMMARY
+======================================================================
+
+✅ Successfully Matched: 20
+   Total props updated: 2693
+
+   Matched players:
+     - Nikola Vucevic → Nikola Vučević (282 props)
+     - Egor Demin → Egor Dëmin (267 props)
+     - Jusuf Nurkic → Jusuf Nurkić (228 props)
+     - Michael Porter Jr → Michael Porter Jr. (216 props)
+     - Jaime Jaquez Jr → Jaime Jaquez Jr. (192 props)
+     - Wendell Carter Jr → Wendell Carter Jr. (189 props)
+     - Luka Doncic → Luka Dončić (188 props)
+     - Moussa Diabate → Moussa Diabaté (173 props)
+     - Dennis Schroder → Dennis Schröder (165 props)
+     - Tidjane Salaun → Tidjane Salaün (147 props)
+     - Jaren Jackson Jr → Jaren Jackson (123 props)
+     - Nikola Jokic → Nikola Jokić (123 props)
+     - Jimmy Butler → Jimmy Butler III (102 props)
+     - Kristaps Porzingis → Kristaps Porziņģis (83 props)
+     - Jonas Valanciunas → Jonas Valančiūnas (81 props)
+     - Nikola Jovic → Nikola Jović (72 props)
+     - Derrick Jones Jr → Derrick Jones Jr. (38 props)
+     - Hugo Gonzalez → Hugo González (14 props)
+     - Terrence Shannon → Terrence Shannon Jr. (8 props)
+     - Craig Porter → Craig Porter Jr. (2 props)
+
+⚠️  Needs Manual Review: 0
+
+❌ No Matches Found: 23
+
+   Players with no matches:
+     - Deandre Hunter (350 props)
+     - C Flagg (296 props)
+     - Shai Gilgeousalexander (291 props)
+     - Nickeil Alexanderwalker (284 props)
+     - Karlanthony Towns (272 props)
+     - Kelel Ware (266 props)
+     - Deaaron Fox (238 props)
+     - Tj Mcconnell (233 props)
+     - Q Post (200 props)
+     - Deanthony Melton (190 props)
+     - Alexandre Sarr (181 props)
+     - Airious Bailey (170 props)
+     - Royce Oneale (147 props)
+     - Ron Holland (140 props)
+     - Daniel Wolf (137 props)
+     - Vit Krejci (121 props)
+     - Collin Murrayboyles (114 props)
+     - Kentavious Caldwellpope (92 props)
+     - Dayron Sharpe (68 props)
+     - Jakobe Walter (40 props)
+     - R Rupert (38 props)
+     - Oliviermaxence Prosper (14 props)
+     - Trayce Jacksondavis (2 props)
+
+💾 Results saved to scripts/batch_match_results.json

@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CssVarsProvider } from '@mui/joy/styles'
 import { newspaperTheme } from './theme'
 import DarkModeForce from './DarkModeForce.tsx'
+import { MarginBarsProvider } from './contexts/MarginBarsContext'
 import App from './App.tsx'
 import './index.css'
 import './App.css'
@@ -34,7 +35,9 @@ createRoot(document.getElementById('root')!).render(
               v7_relativeSplatPath: true,
             }}
           >
+            <MarginBarsProvider>
             <App />
+            </MarginBarsProvider>
           </BrowserRouter>
         </DarkModeForce>
       </CssVarsProvider>

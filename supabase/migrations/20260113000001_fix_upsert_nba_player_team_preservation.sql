@@ -1,0 +1,142 @@
+-- =====================================================
+-- FIX: Preserve team_id in upsert_nba_player when incoming value is NULL/0
+-- =====================================================
+-- This prevents import_players_robust from overwriting accurate team data
+-- with stale data from the commonallplayers endpoint (which can have NULL/0
+-- for rookies and recently traded players)
+-- =====================================================
+
+-- Drop existing function if it exists
+DROP FUNCTION IF EXISTS upsert_nba_player(INTEGER, TEXT, TEXT, TEXT, TEXT, INTEGER, TEXT, TEXT, TEXT, TEXT, INTEGER, INTEGER, DATE, TEXT, TEXT, TEXT, TEXT, INTEGER, INTEGER, INTEGER, BIGINT, BOOLEAN, BOOLEAN, INTEGER, INTEGER, INTEGER);
+DROP FUNCTION IF EXISTS upsert_nba_player CASCADE;
+
+CREATE OR REPLACE FUNCTION upsert_nba_player(
+    p_nba_player_id INTEGER,
+    p_name TEXT,
+    p_first_name TEXT DEFAULT NULL,
+    p_last_name TEXT DEFAULT NULL,
+    p_player_slug TEXT DEFAULT NULL,
+    p_position TEXT DEFAULT NULL,
+    p_team_id INTEGER DEFAULT NULL,
+    p_team_name TEXT DEFAULT NULL,
+    p_team_abbreviation TEXT DEFAULT NULL,
+    p_team_slug TEXT DEFAULT NULL,
+    p_team_city TEXT DEFAULT NULL,
+    p_jersey_number TEXT DEFAULT NULL,
+    p_height TEXT DEFAULT NULL,
+    p_weight INTEGER DEFAULT NULL,
+    p_age INTEGER DEFAULT NULL,
+    p_birth_date DATE DEFAULT NULL,
+    p_birth_city TEXT DEFAULT NULL,
+    p_birth_state TEXT DEFAULT NULL,
+    p_birth_country TEXT DEFAULT NULL,
+    p_country TEXT DEFAULT NULL,
+    p_college TEXT DEFAULT NULL,
+    p_draft_year INTEGER DEFAULT NULL,
+    p_draft_round INTEGER DEFAULT NULL,
+    p_draft_number INTEGER DEFAULT NULL,
+    p_salary BIGINT DEFAULT 0,
+    p_is_active BOOLEAN DEFAULT true,
+    p_is_rookie BOOLEAN DEFAULT false,
+    p_years_pro INTEGER DEFAULT 0,
+    p_roster_status TEXT DEFAULT NULL,
+    p_from_year INTEGER DEFAULT NULL,
+    p_to_year INTEGER DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    result JSONB;
+    player_record RECORD;
+BEGIN
+    -- Try to update existing player
+    -- Preserve existing team_id if incoming value is NULL or 0 (prevents overwriting with stale data)
+    UPDATE nba_players SET
+        name = p_name,
+        first_name = p_first_name,
+        last_name = p_last_name,
+        player_slug = p_player_slug,
+        position = p_position,
+        -- Only update team_id if new value is not NULL and not 0 (preserves accurate roster data)
+        team_id = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_id 
+            ELSE p_team_id 
+        END,
+        team_name = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_name 
+            ELSE p_team_name 
+        END,
+        team_abbreviation = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_abbreviation 
+            ELSE p_team_abbreviation 
+        END,
+        team_slug = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_slug 
+            ELSE p_team_slug 
+        END,
+        team_city = CASE 
+            WHEN p_team_id IS NULL OR p_team_id = 0 THEN team_city 
+            ELSE p_team_city 
+        END,
+        jersey_number = p_jersey_number,
+        height = p_height,
+        weight = p_weight,
+        age = p_age,
+        birth_date = p_birth_date,
+        birth_city = p_birth_city,
+        birth_state = p_birth_state,
+        birth_country = p_birth_country,
+        country = p_country,
+        college = p_college,
+        draft_year = p_draft_year,
+        draft_round = p_draft_round,
+        draft_number = p_draft_number,
+        salary = p_salary,
+        is_active = p_is_active,
+        is_rookie = p_is_rookie,
+        years_pro = p_years_pro,
+        roster_status = p_roster_status,
+        from_year = p_from_year,
+        to_year = p_to_year,
+        updated_at = NOW()
+    WHERE nba_player_id = p_nba_player_id
+    RETURNING * INTO player_record;
+    
+    -- If no rows were updated, insert new player
+    IF NOT FOUND THEN
+        INSERT INTO nba_players (
+            nba_player_id, name, first_name, last_name, player_slug, position,
+            team_id, team_name, team_abbreviation, team_slug, team_city, jersey_number,
+            height, weight, age, birth_date, birth_city, birth_state,
+            birth_country, country, college, draft_year, draft_round, draft_number,
+            salary, is_active, is_rookie, years_pro, roster_status, from_year, to_year
+        ) VALUES (
+            p_nba_player_id, p_name, p_first_name, p_last_name, p_player_slug, p_position,
+            p_team_id, p_team_name, p_team_abbreviation, p_team_slug, p_team_city, p_jersey_number,
+            p_height, p_weight, p_age, p_birth_date, p_birth_city, p_birth_state,
+            p_birth_country, p_country, p_college, p_draft_year, p_draft_round, p_draft_number,
+            p_salary, p_is_active, p_is_rookie, p_years_pro, p_roster_status, p_from_year, p_to_year
+        ) RETURNING * INTO player_record;
+    END IF;
+    
+    -- Return success result
+    result := jsonb_build_object(
+        'success', TRUE,
+        'action', CASE WHEN FOUND THEN 'updated' ELSE 'inserted' END,
+        'player_id', player_record.id,
+        'nba_player_id', player_record.nba_player_id,
+        'name', player_record.name
+    );
+    
+    RETURN result;
+    
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object(
+        'success', FALSE,
+        'error', SQLERRM,
+        'sqlstate', SQLSTATE
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION upsert_nba_player TO authenticated;

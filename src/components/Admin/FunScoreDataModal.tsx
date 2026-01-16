@@ -75,7 +75,7 @@ interface FunScoreData {
 interface FunScoreDataModalProps {
   open: boolean;
   onClose: () => void;
-  funScoreData: FunScoreData | null;
+  funScoreData: FunScoreData | null | any;
   gameId?: string;
 }
 

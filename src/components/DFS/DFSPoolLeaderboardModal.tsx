@@ -18,7 +18,6 @@ import {
 import { EmojiEvents, TrendingUp, Refresh } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
-import { calculateFantasyPoints, FANDUEL_SCORING } from '../../utils/fantasyScoring';
 
 interface PoolEntry {
   entry_id: string;
@@ -92,6 +91,7 @@ export default function DFSPoolLeaderboardModal({ poolId, open, onClose }: DFSPo
         .select(`
           id,
           user_id,
+          final_score,
           final_points,
           profiles:user_id (
             username
@@ -124,35 +124,22 @@ export default function DFSPoolLeaderboardModal({ poolId, open, onClose }: DFSPo
 
           const { data: positions } = await supabase
             .from('dfs_lineup_positions')
-            .select('player_id, nba_player_id, player_name')
+            .select('player_id, nba_player_id, player_name, weighted_points')
             .eq('lineup_id', lineup.id);
 
-          const { data: games } = await supabase
-            .from('nba_games')
-            .select('game_id')
-            .eq('slate_date', pool?.slate_date)
-            .eq('game_status', 2);
-
-          const gameIds = games?.map(g => g.game_id) || [];
-
+          // Use server-side calculated points from database
+          // For live pools, the server should update these via update_lineup_position_scores()
+          // For completed pools, use final_score from entry
           let totalScore = 0;
           
-          if (pool?.status === 'live' && gameIds.length > 0) {
-            for (const player of positions || []) {
-              const { data: liveStats } = await supabase
-                .from('live_player_stats')
-                .select('stats')
-                .eq('nba_player_id', player.nba_player_id)
-                .in('game_id', gameIds)
-                .maybeSingle();
-
-              if (liveStats?.stats) {
-                const fantasyPoints = calculateFantasyPoints(liveStats.stats, FANDUEL_SCORING);
-                totalScore += fantasyPoints;
-              }
-            }
-          } else if (pool?.status === 'completed') {
-            totalScore = entry.final_points || 0;
+          if (pool?.status === 'completed') {
+            // Use final score from entry (server-calculated)
+            totalScore = entry.final_score || entry.final_points || 0;
+          } else {
+            // For live pools, sum weighted_points from lineup positions (server-calculated)
+            totalScore = (positions || []).reduce((sum, p) => {
+              return sum + (p.weighted_points || 0);
+            }, 0);
           }
 
           return {
