@@ -37,9 +37,9 @@ import {
   Select,
   Option,
 } from '@mui/joy';
-import { NavigateBefore, NavigateNext, NavigateNext as NavigateNextIcon, Info, CalendarToday, PlayArrow, Queue, PlaylistPlay, CheckCircle, Favorite, Star, Add, FavoriteBorder, Search, EmojiEvents, BarChart, TrendingUp, CalendarMonth, Close, ArrowBack, Analytics, Check, KeyboardArrowRight } from '@mui/icons-material';
+import { NavigateBefore, NavigateNext, NavigateNext as NavigateNextIcon, Info, CalendarToday, PlayArrow, Queue, PlaylistPlay, CheckCircle, Favorite, Star, Add, FavoriteBorder, Search, EmojiEvents, BarChart, TrendingUp, CalendarMonth, Close, ArrowBack, Analytics, Check, KeyboardArrowRight, Share } from '@mui/icons-material';
 import { FaBasketballBall, FaFilter, FaSort, FaChartBar } from 'react-icons/fa';
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -73,6 +73,8 @@ import TodayFuture from '../components/Today/TodayFuture';
 import TodayWeekly from '../components/Today/TodayWeekly';
 import { usePlayerSearch, SearchResult } from '../hooks/usePlayerSearch';
 import { getTodayEST as getTodayESTUtil, utcToESTDate, formatESTTime, isDateInEST } from '../utils/nbaDateUtils';
+import { matchPropsGamesToNbaGames, getNbaGameIdForPropsGame } from '../utils/matchPropsGamesToNbaGames';
+import { cleanPlayerProps, filterGamePropsOnly, type CleanedPlayerProp } from '../utils/cleanPlayerProps';
 
 interface NightPlayer {
   player_id: string | null;
@@ -149,17 +151,18 @@ export default function Today() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedGameIdFromUrl = searchParams.get('gameId');
+  const dateFromUrl = searchParams.get('date');
   
   // Ensure scroll is enabled when on Today page (cleanup from other pages)
-  useEffect(() => {
+  // Use useLayoutEffect to run synchronously before paint, ensuring it runs before other effects
+  useLayoutEffect(() => {
     const html = document.documentElement;
     const body = document.body;
     const root = document.getElementById('root');
     
     // Force reset any styles that might have been set by other pages (like Highlights)
-    // Use setTimeout to ensure this runs after any other cleanup
     const cleanup = () => {
-      // Reset html styles
+      // Reset html styles - allow natural document scrolling
       html.style.overflow = '';
       html.style.height = '';
       html.style.position = '';
@@ -167,10 +170,10 @@ export default function Today() {
       html.style.top = '';
       html.style.left = '';
       html.style.touchAction = '';
-      html.style.overflowY = 'auto';
-      html.style.overflowX = 'hidden';
+      html.style.overflowY = '';
+      html.style.overflowX = '';
       
-      // Reset body styles
+      // Reset body styles - allow natural document scrolling
       body.style.overflow = '';
       body.style.height = '';
       body.style.position = '';
@@ -178,8 +181,8 @@ export default function Today() {
       body.style.top = '';
       body.style.left = '';
       body.style.touchAction = '';
-      body.style.overflowY = 'auto';
-      body.style.overflowX = 'hidden';
+      body.style.overflowY = '';
+      body.style.overflowX = '';
       
       // Reset root element if it exists
       if (root) {
@@ -187,29 +190,114 @@ export default function Today() {
         root.style.height = '';
         root.style.position = '';
         root.style.overflowY = '';
-        root.style.overflowX = 'hidden';
+        root.style.overflowX = '';
+        root.style.touchAction = '';
+      }
+      
+      // Force enable scrolling by ensuring body can scroll
+      // Double-check that position is not fixed
+      if (body.style.position === 'fixed' || html.style.position === 'fixed') {
+        body.style.position = '';
+        html.style.position = '';
+      }
+      
+      // Ensure body has proper overflow for scrolling
+      if (!body.style.overflow || body.style.overflow === 'hidden') {
+        body.style.overflow = '';
+      }
+      if (!html.style.overflow || html.style.overflow === 'hidden') {
+        html.style.overflow = '';
       }
     };
     
-    // Run immediately
+    // Global wheel handler to manually scroll window when elements can't scroll
+    const handleGlobalWheel = (e: WheelEvent) => {
+      // Only handle vertical scrolling
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
+        return; // Ignore primarily horizontal scrolls
+      }
+      
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      
+      // Check if the target or any parent is a scrollable container that can actually scroll
+      let element: HTMLElement | null = target;
+      let foundScrollable = false;
+      
+      while (element && element !== document.body) {
+        const style = window.getComputedStyle(element);
+        const overflowY = style.overflowY;
+        const overflow = style.overflow;
+        
+        // Check if this element is scrollable
+        if (overflowY === 'auto' || overflowY === 'scroll' || overflow === 'auto' || overflow === 'scroll') {
+          const { scrollTop, scrollHeight, clientHeight } = element;
+          const canScrollUp = scrollTop > 0;
+          const canScrollDown = scrollTop < scrollHeight - clientHeight - 1;
+          
+          // If element can scroll in the direction of the wheel, let it handle it
+          if ((e.deltaY < 0 && canScrollUp) || (e.deltaY > 0 && canScrollDown)) {
+            foundScrollable = true;
+            break; // Let the element handle the scroll
+          }
+        }
+        
+        element = element.parentElement;
+      }
+      
+      // If no scrollable container can handle this scroll, manually scroll the window
+      if (!foundScrollable) {
+        window.scrollBy({
+          top: e.deltaY,
+          left: 0,
+          behavior: 'auto'
+        });
+      }
+    };
+    
+    // Run immediately and synchronously
     cleanup();
     
-    // Also run after a short delay to catch any late-running effects
-    const timeoutId = setTimeout(cleanup, 100);
-    const timeoutId2 = setTimeout(cleanup, 300);
+    // Also run after a microtask to catch anything that runs after layout
+    Promise.resolve().then(cleanup);
+    
+    // Run multiple times to catch any late-running effects from other pages
+    const timeoutId = setTimeout(cleanup, 0);
+    const timeoutId2 = setTimeout(cleanup, 50);
+    const timeoutId3 = setTimeout(cleanup, 100);
+    const timeoutId4 = setTimeout(cleanup, 200);
+    
+    // Add global wheel listener to handle scrolling when elements can't scroll
+    window.addEventListener('wheel', handleGlobalWheel, { passive: false, capture: true });
     
     return () => {
       clearTimeout(timeoutId);
       clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+      clearTimeout(timeoutId4);
+      window.removeEventListener('wheel', handleGlobalWheel, { capture: true });
       cleanup();
     };
   }, []);
   
-  // Games calendar state - use dayjs, start with today in EST
+  // Games calendar state - use dayjs, start with today in EST or date from URL
   const [selectedDate, setSelectedDate] = useState<Dayjs>(() => {
+    // If date is in URL, use it (for shareable links)
+    if (dateFromUrl) {
+      const parsedDate = dayjs(dateFromUrl);
+      if (parsedDate.isValid()) {
+        return parsedDate;
+      }
+    }
+    // Otherwise default to today
     const todayEST = getTodayEST();
     return dayjs(todayEST);
   });
+  
+  // Track if we're updating from URL to avoid loops
+  const isUpdatingFromUrlRef = useRef(false);
+  // Track the current URL date to avoid unnecessary updates
+  const currentUrlDateRef = useRef<string | null>(dateFromUrl);
   
   // Week summary insert page state
   // When true, we're showing a week summary page between weeks
@@ -218,6 +306,81 @@ export default function Today() {
 
   // Fetch scoreboard for the selected date (not always today)
   const selectedDateString = selectedDate.format('YYYY-MM-DD');
+  
+  // Sync selectedDate to URL query parameter (for shareable links)
+  useEffect(() => {
+    // Don't update URL if we're currently updating from URL (avoid loops)
+    if (isUpdatingFromUrlRef.current) {
+      return;
+    }
+    
+    const todayEST = getTodayEST();
+    const isToday = selectedDateString === todayEST;
+    const currentUrlDate = searchParams.get('date');
+    
+    // Check if URL already matches what we want
+    if (!isToday && currentUrlDate === selectedDateString) {
+      currentUrlDateRef.current = selectedDateString;
+      return; // URL already correct, no update needed
+    }
+    
+    if (isToday && !currentUrlDate) {
+      currentUrlDateRef.current = null;
+      return; // URL already correct (no date param for today), no update needed
+    }
+    
+    // Only update URL if date is different from today (today doesn't need ?date param)
+    if (!isToday) {
+      const newParams = new URLSearchParams(searchParams);
+      newParams.set('date', selectedDateString);
+      currentUrlDateRef.current = selectedDateString;
+      setSearchParams(newParams, { replace: true });
+    } else {
+      // If viewing today, remove date param if it exists
+      if (searchParams.has('date')) {
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('date');
+        currentUrlDateRef.current = null;
+        setSearchParams(newParams, { replace: true });
+      }
+    }
+  }, [selectedDateString, setSearchParams]); // Removed searchParams from deps to prevent loops
+  
+  // Handle URL date parameter changes (e.g., browser back/forward, direct link)
+  useEffect(() => {
+    // Don't process if we're the ones updating the URL
+    if (isUpdatingFromUrlRef.current) {
+      return;
+    }
+    
+    const urlDate = searchParams.get('date');
+    
+    // If URL date changed externally (browser nav, direct link)
+    if (urlDate !== currentUrlDateRef.current) {
+      currentUrlDateRef.current = urlDate;
+      
+      if (urlDate) {
+        const parsedDate = dayjs(urlDate);
+        if (parsedDate.isValid() && parsedDate.format('YYYY-MM-DD') !== selectedDateString) {
+          isUpdatingFromUrlRef.current = true;
+          setSelectedDate(parsedDate);
+          // Reset flag after state update
+          setTimeout(() => {
+            isUpdatingFromUrlRef.current = false;
+          }, 0);
+        }
+      } else {
+        // URL has no date param - if we're not viewing today, we could reset
+        // But we'll let the user navigate manually to avoid unexpected jumps
+        const todayEST = getTodayEST();
+        if (selectedDateString !== todayEST) {
+          // URL says "today" but we're viewing a different date
+          // This could be from browser back button - we'll keep current date
+          // User can manually navigate if they want
+        }
+      }
+    }
+  }, [searchParams]); // Only depend on searchParams, not selectedDateString
   
   // Reset week summary state when date changes via date picker (not navigation buttons)
   // We track the previous date to detect when it changes externally
@@ -239,24 +402,37 @@ export default function Today() {
     prevSelectedDateRef.current = selectedDateString;
   }, [selectedDateString, isWeekSummary]);
   
-  // Debug: Log when isWeekSummary changes
-  useEffect(() => {
-    console.log('🔄 isWeekSummary changed:', isWeekSummary, 'weekSummaryWeekNumber:', weekSummaryWeekNumber, 'selectedDate:', selectedDateString);
-  }, [isWeekSummary, weekSummaryWeekNumber, selectedDateString]);
+  // Debug: Log when isWeekSummary changes (commented out to reduce console noise)
+  // useEffect(() => {
+  //   console.log('🔄 isWeekSummary changed:', isWeekSummary, 'weekSummaryWeekNumber:', weekSummaryWeekNumber, 'selectedDate:', selectedDateString);
+  // }, [isWeekSummary, weekSummaryWeekNumber, selectedDateString]);
   
   // Auto-update selected date when the actual date changes in EST
   // This ensures that when the date rolls over in EST, the app shows games for the new date
+  // BUT: Only if user is viewing "today" (not a specific past/future date from URL)
   const prevTodayESTRef = useRef<string>(getTodayEST());
   
   useEffect(() => {
     const checkDateChange = () => {
       const currentTodayEST = getTodayEST();
       const currentSelectedDateString = selectedDate.format('YYYY-MM-DD');
+      const urlDate = searchParams.get('date');
       
-      // If the EST date has changed and the user is viewing "today", update to the new date
-      if (currentTodayEST !== prevTodayESTRef.current && currentSelectedDateString === prevTodayESTRef.current) {
+      // Only auto-update if:
+      // 1. EST date has changed
+      // 2. User is viewing "today" (selected date matches previous today)
+      // 3. There's no date in URL (user is on default "today" view, not a shared link)
+      if (
+        currentTodayEST !== prevTodayESTRef.current && 
+        currentSelectedDateString === prevTodayESTRef.current &&
+        !urlDate // Don't auto-update if user has a specific date in URL
+      ) {
         console.log('📅 EST date changed from', prevTodayESTRef.current, 'to', currentTodayEST, '- updating selected date');
+        isUpdatingFromUrlRef.current = true;
         setSelectedDate(dayjs(currentTodayEST));
+        setTimeout(() => {
+          isUpdatingFromUrlRef.current = false;
+        }, 0);
         prevTodayESTRef.current = currentTodayEST;
       } else if (currentTodayEST !== prevTodayESTRef.current) {
         // Update the ref even if we're not viewing today
@@ -271,7 +447,7 @@ export default function Today() {
     const interval = setInterval(checkDateChange, 60000);
     
     return () => clearInterval(interval);
-  }, [selectedDate]);
+  }, [selectedDate, searchParams]);
   
   const todayEST = getTodayEST();
   const isSelectedDateToday = selectedDateString === todayEST;
@@ -787,27 +963,52 @@ export default function Today() {
     return gamesByDate || [];
   }, [isSelectedDateToday, nbaScoreboard, gamesByDate, selectedDateString]);
 
+  // Handle wheel events on the main container to ensure scroll works everywhere
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const handleMainWheel = (e: React.WheelEvent) => {
+    // For vertical scrolling, manually scroll the window
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      // This is primarily a vertical scroll - scroll the window directly
+      window.scrollBy({
+        top: e.deltaY,
+        left: 0,
+        behavior: 'auto'
+      });
+      // Don't prevent default to allow natural scrolling too
+    }
+  };
+
   // Main Today page - scrollable with all content
   return (
-    <Box sx={{ 
-      bgcolor: '#000000',
-      minHeight: '100vh',
-      overflowX: 'hidden',
-      width: '100%',
-    }}>
-      <Box sx={{ 
-        maxWidth: { xs: '100%', sm: 805, md: 1035 },
-        minWidth: { xs: '100%', sm: 805, md: 1035 },
-        mx: 'auto',
-        pt: isLandscapeMobile 
-          ? '12px'
-          : { xs: '12px', md: '80px' },
-        pb: { xs: 0, sm: 4, md: 4 },
-        px: { xs: 0, sm: 2, md: 2 },
+    <Box 
+      ref={mainContainerRef}
+      onWheel={handleMainWheel}
+      sx={{ 
+        bgcolor: '#000000',
+        minHeight: '100vh',
+        overflowX: 'hidden',
         width: '100%',
-        boxSizing: 'border-box',
-      }}>
-        <Stack spacing={4}>
+      }}
+    >
+      <Box 
+        onWheel={handleMainWheel}
+        sx={{ 
+          maxWidth: { xs: '100%', sm: 805, md: 1035 },
+          minWidth: { xs: '100%', sm: 805, md: 1035 },
+          mx: 'auto',
+          pt: isLandscapeMobile 
+            ? '12px'
+            : { xs: '12px', md: '80px' },
+          pb: { xs: 0, sm: 4, md: 4 },
+          px: { xs: 0, sm: 2, md: 2 },
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <Stack 
+          spacing={4}
+          onWheel={handleMainWheel}
+        >
           {/* Games Carousel - Header Section (like player page header) */}
           <Box sx={{ 
             display: 'flex', 
@@ -1068,7 +1269,10 @@ export default function Today() {
                         navigate={navigate}
                         standings={standings}
                         standingsLoading={standingsLoading}
-                        onOpenPropPredictions={() => setShowPropPredictions(true)}
+                        onOpenPropPredictions={(propsData) => {
+                          setPropPredictionsData(propsData);
+                          setShowPropPredictions(true);
+                        }}
                       />
                     )}
                     {dateState === 'present' && (
@@ -1078,7 +1282,10 @@ export default function Today() {
                         nbaScoreboard={nbaScoreboard}
                         standings={standings}
                         standingsLoading={standingsLoading}
-                        onOpenPropPredictions={() => setShowPropPredictions(true)}
+                        onOpenPropPredictions={(propsData) => {
+                          setPropPredictionsData(propsData);
+                          setShowPropPredictions(true);
+                        }}
                       />
                     )}
                     {dateState === 'future' && (
@@ -1087,7 +1294,10 @@ export default function Today() {
                         navigate={navigate}
                         standings={standings}
                         standingsLoading={standingsLoading}
-                        onOpenPropPredictions={() => setShowPropPredictions(true)}
+                        onOpenPropPredictions={(propsData) => {
+                          setPropPredictionsData(propsData);
+                          setShowPropPredictions(true);
+                        }}
                       />
                     )}
                   </>
@@ -1244,8 +1454,41 @@ function WeekViewSidebar({
     enabled: isPast,
   });
 
+  // Handle wheel events to allow scroll propagation when at boundaries
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const handleSidebarWheel = (e: React.WheelEvent) => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = sidebar;
+    const isAtTop = scrollTop <= 0 && e.deltaY < 0;
+    const isAtBottom = scrollTop >= scrollHeight - clientHeight - 1 && e.deltaY > 0;
+    
+    // If at boundary and trying to scroll further, allow scroll to propagate to parent
+    if (isAtTop || isAtBottom) {
+      // Don't stop propagation - let it bubble up to document
+      return;
+    }
+    
+    // Otherwise, stop propagation to keep scroll within sidebar
+    e.stopPropagation();
+  };
+
   return (
-    <Stack spacing={2} sx={{ position: 'sticky', top: { xs: 0, md: 80 }, maxHeight: { md: 'calc(100vh - 100px)' }, overflowY: 'auto' }}>
+    <Stack 
+      ref={sidebarRef}
+      onWheel={handleSidebarWheel}
+      spacing={2} 
+      sx={{ 
+        position: 'sticky', 
+        top: { xs: 0, md: 80 }, 
+        maxHeight: { md: 'calc(100vh - 100px)' }, 
+        overflowY: 'auto',
+        // Allow touch scrolling on mobile
+        touchAction: 'pan-y',
+        WebkitOverflowScrolling: 'touch',
+      }}
+    >
       {/* Week Header */}
       <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
         <CardContent>
@@ -1928,6 +2171,8 @@ function GamesCarousel({
   const isMobile = useMediaQuery('(max-width:600px)');
   const dateString = selectedDate.format('YYYY-MM-DD');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const todayEST = getTodayEST();
+  const isPastDate = selectedDate.isBefore(dayjs(todayEST), 'day');
 
   // Fetch props for all games
   const { data: allGameProps } = useQuery({
@@ -1957,12 +2202,14 @@ function GamesCarousel({
       });
 
       // Try to find props games first by nba_game_id
+      // Props are stored with the game's date, which is often the next day in EST
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
       let propsGames: any[] = [];
       const { data: propsGamesByNbaId } = await supabase
         .from('player_props_games')
         .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team')
         .in('nba_game_id', gameIds)
-        .eq('game_date', dateString);
+        .in('game_date', [dateString, nextDay]);
 
       if (propsGamesByNbaId && propsGamesByNbaId.length > 0) {
         propsGames = propsGamesByNbaId;
@@ -1971,7 +2218,7 @@ function GamesCarousel({
         const { data: allPropsGamesForDate } = await supabase
           .from('player_props_games')
           .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team')
-          .eq('game_date', dateString);
+          .in('game_date', [dateString, nextDay]);
 
         if (allPropsGamesForDate) {
           // Filter to match team combinations
@@ -2028,7 +2275,7 @@ function GamesCarousel({
             nba_game_id
           )
         `)
-        .eq('game_date', dateString);
+        .in('game_date', [dateString, nextDayForProps]);
 
       if (propsGameIds.length > 0) {
         propsQuery = propsQuery.in('game_id', propsGameIds);
@@ -2141,7 +2388,7 @@ function GamesCarousel({
           .from('nba_games')
           .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_status')
           .or(`home_team_tricode.eq.${abbrev},away_team_tricode.eq.${abbrev}`)
-          .eq('game_status', 'Final')
+          .eq('game_status', 3) // 3 = Final
           .order('game_date', { ascending: false })
           .limit(10);
 
@@ -2276,14 +2523,45 @@ function GamesCarousel({
     );
   }
 
+  // Handle wheel events to allow vertical scrolling to propagate when horizontal scroll is at boundary
+  const handleWheel = (e: React.WheelEvent) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    
+    // If scrolling primarily vertically, always allow it to propagate to parent (don't capture it)
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      // Vertical scroll - don't prevent default, let it propagate
+      e.stopPropagation();
+      return;
+    }
+    
+    // Horizontal scroll - check if we're at the boundary
+    const { scrollLeft, scrollWidth, clientWidth } = container;
+    const isAtLeft = scrollLeft <= 0 && e.deltaX < 0;
+    const isAtRight = scrollLeft >= scrollWidth - clientWidth - 1 && e.deltaX > 0;
+    
+    // If at boundary, allow vertical scroll component to propagate
+    if ((isAtLeft || isAtRight) && Math.abs(e.deltaY) > 0) {
+      // Allow the vertical scroll to propagate to parent
+      e.stopPropagation();
+      return;
+    }
+    
+    // Otherwise, this is a horizontal scroll within bounds - let the container handle it
+    // Don't prevent default or stop propagation, let the browser handle horizontal scrolling
+  };
+
   return (
     <Box
       ref={scrollContainerRef}
+      onWheel={handleWheel}
       sx={{
         width: '100%',
         overflowX: 'auto',
         overflowY: 'hidden',
         pb: 2,
+        touchAction: 'pan-x pan-y', // Allow both horizontal and vertical panning
+        WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
         '&::-webkit-scrollbar': {
           height: '8px',
         },
@@ -2319,6 +2597,10 @@ function GamesCarousel({
           const awayColors = getTeamColors(awayTricode);
           const homeColors = getTeamColors(homeTricode);
           const gameStatus = game.game_status_text || (hasScore ? 'Final' : 'Upcoming');
+          // Game is final if: status text says Final, game_status is 3, OR (past date AND has scores)
+          const isFinal = gameStatus === 'Final' || 
+                         game.game_status === 3 || 
+                         (isPastDate && hasScore);
 
           return (
             <Card
@@ -2722,7 +3004,12 @@ function GamesCarousel({
                             height: { xs: '22px', sm: '25px' },
                           }}
                         >
-                          {prop.line ? prop.line.toFixed(1) : 'N/A'}
+                          {(() => {
+                            const lineValue = prop.currentLine || prop.line;
+                            if (lineValue == null) return 'N/A';
+                            const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                            return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                          })()}
                         </Chip>
                       </Box>
                     ))}
@@ -2765,7 +3052,7 @@ function GamesCarousel({
                     : '#FFC72C',
                 }}
               >
-                {!hasScore ? formatESTTime(game.game_date, 'time') : gameStatus}
+                {isFinal ? 'FINAL' : (!hasScore ? formatESTTime(game.game_date, 'time') : gameStatus)}
               </CardOverflow>
             </Card>
           );
@@ -2778,6 +3065,7 @@ function GamesCarousel({
 // Week and Game Count Component
 function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
+  const [shareSuccess, setShareSuccess] = useState(false);
   
   // Fetch week for selected date from nba_season_weeks
   const { data: week, isLoading: weekLoading } = useQuery({
@@ -2832,15 +3120,74 @@ function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
   // Get games count for selected date
   const todayEST = getTodayEST();
   const isToday = dateString === todayEST;
-  const { data: games } = useGamesByDate(isToday ? null : dateString);
+  // Always fetch database games as fallback, even for today
+  const { data: games } = useGamesByDate(dateString);
   const { data: nbaScoreboard } = useNBAScoreboard(isToday ? dateString : undefined);
   
   const gamesCount = useMemo(() => {
-    if (isToday) {
-      return nbaScoreboard?.games?.length || 0;
+    if (isToday && nbaScoreboard?.games) {
+      // Filter scoreboard games to ensure they're actually on the selected EST date
+      const filteredGames = nbaScoreboard.games.filter((game: any) => {
+        const gameDate = game.gameDate || game.game_date;
+        if (!gameDate) return false;
+        
+        try {
+          // If it's a full timestamp, use isDateInEST directly
+          if (gameDate.includes('T') || gameDate.includes(' ')) {
+            return isDateInEST(gameDate, dateString);
+          } else {
+            // Date string only - treat as UTC midnight and convert to EST
+            const utcDate = new Date(gameDate + 'T00:00:00Z');
+            const estDateString = utcToESTDate(utcDate);
+            return estDateString === dateString;
+          }
+        } catch (e) {
+          return false;
+        }
+      });
+      
+      // If we have filtered scoreboard games, use that count
+      // Otherwise fall back to database games count
+      if (filteredGames.length > 0) {
+        return filteredGames.length;
+      }
     }
+    // For past/future dates, or if scoreboard is empty, use database games
     return games?.length || 0;
-  }, [isToday, nbaScoreboard, games]);
+  }, [isToday, nbaScoreboard, games, dateString]);
+  
+  // Share function
+  const handleShare = async () => {
+    try {
+      const url = new URL(window.location.href);
+      // Ensure date parameter is set
+      if (!isToday) {
+        url.searchParams.set('date', dateString);
+      } else {
+        url.searchParams.delete('date');
+      }
+      const shareUrl = url.toString();
+      
+      // Try native share API first (mobile)
+      if (navigator.share) {
+        await navigator.share({
+          title: `NBA Games - ${selectedDate.format('MMM D, YYYY')}`,
+          text: `Check out ${gamesCount} ${gamesCount === 1 ? 'game' : 'games'} on ${selectedDate.format('MMM D, YYYY')}`,
+          url: shareUrl,
+        });
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      } else {
+        // Fallback to clipboard
+        await navigator.clipboard.writeText(shareUrl);
+        setShareSuccess(true);
+        setTimeout(() => setShareSuccess(false), 2000);
+      }
+    } catch (error) {
+      // User cancelled share or clipboard failed - silently fail
+      console.log('Share cancelled or failed:', error);
+    }
+  };
   
   if (weekLoading) {
     return (
@@ -2860,6 +3207,23 @@ function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
       <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
         {gamesCount} {gamesCount === 1 ? 'game' : 'games'}
       </Typography>
+      <IconButton
+        size="sm"
+        variant="plain"
+        color="neutral"
+        onClick={handleShare}
+        sx={{
+          color: shareSuccess ? '#00c853' : '#B0B0B0',
+          '&:hover': {
+            color: '#FFC72C',
+            bgcolor: 'rgba(255, 199, 44, 0.1)',
+          },
+          transition: 'color 0.2s',
+        }}
+        title={shareSuccess ? 'Link copied!' : 'Share this day'}
+      >
+        {shareSuccess ? <Check sx={{ fontSize: '1rem' }} /> : <Share sx={{ fontSize: '1rem' }} />}
+      </IconButton>
     </Box>
   );
 }
@@ -3891,7 +4255,7 @@ function LeadersSection({
 }
 
 // Players of the Night Section Component
-function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[] }) {
+export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers, compact = false }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[]; compact?: boolean }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
@@ -4216,7 +4580,10 @@ function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlaye
                     <Card
                       key={playerKey}
                       variant="outlined"
-                      onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (player.player_id) navigate(`/player/${player.player_id}`);
+                      }}
                       sx={{
                         bgcolor: '#0f0f0f',
                         borderColor: '#2a2a2a',
@@ -4260,8 +4627,8 @@ function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlaye
                             fontSize: '0.75rem',
                           }}
                         >
-                          ${(player.salary / 1000).toFixed(1)}K
-                              </Typography>
+                          ${(player.salary / 1000000).toFixed(2)}M
+                        </Typography>
                       </Box>
                     </Card>
                   );
@@ -4270,8 +4637,8 @@ function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlaye
             </Box>
           )}
 
-          {/* Bench Section */}
-          {bench.length > 0 && (
+          {/* Bench Section - Only show if not compact */}
+          {!compact && bench.length > 0 && (
             <Box>
               <Typography 
                 level="title-sm" 
@@ -4303,7 +4670,10 @@ function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlaye
                     <Card
                       key={playerKey}
                       variant="outlined"
-                      onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (player.player_id) navigate(`/player/${player.player_id}`);
+                      }}
                       sx={{
                         bgcolor: '#0f0f0f',
                         borderColor: '#2a2a2a',
@@ -4344,15 +4714,15 @@ function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlaye
                           level="body-xs" 
                           sx={{ 
                             color: '#B0B0B0',
-                              fontSize: '0.75rem',
+                            fontSize: '0.75rem',
                           }}
                         >
-                          ${(player.salary / 1000).toFixed(1)}K
-                            </Typography>
-                          </Box>
+                          ${(player.salary / 1000000).toFixed(2)}M
+                        </Typography>
+                      </Box>
                     </Card>
-                );
-              })}
+                  );
+                })}
               </Box>
             </Box>
           )}
@@ -4837,6 +5207,40 @@ function PropPredictionsFullView({
   
   const isLoading = propsData?.isLoading || false;
 
+  // Fetch player_props_games records to get game information for filtering
+  const { data: propsGamesData } = useQuery({
+    queryKey: ['player-props-games-for-date', dateString],
+    queryFn: async () => {
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
+      console.log('🔍 Fetching player_props_games for dates:', dateString, nextDay);
+      const { data, error } = await supabase
+        .from('player_props_games')
+        .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
+        .in('game_date', [dateString, nextDay]);
+      
+      if (error) {
+        console.error('❌ Error fetching player_props_games:', error);
+        return [];
+      }
+      
+      console.log('✅ Fetched', data?.length || 0, 'player_props_games records');
+      return data || [];
+    },
+    enabled: !isLoading && (allProps?.length || 0) > 0,
+  });
+
+  // Create a map of game_id (UUID) -> player_props_games record
+  const propsGamesMap = useMemo(() => {
+    const map = new Map();
+    (propsGamesData || []).forEach((pg: any) => {
+      if (pg.id) {
+        map.set(pg.id, pg);
+      }
+    });
+    console.log('🗺️ Created propsGamesMap with', map.size, 'entries');
+    return map;
+  }, [propsGamesData]);
+
   // Update activeTab when propsData changes
   useEffect(() => {
     if (propsData?.activeTab) {
@@ -4953,13 +5357,14 @@ function PropPredictionsFullView({
   // Fetch ALL props for the date (not filtered by carousel games) - DISABLED
   const _unused_query = useQuery({
     queryKey: ['prop-predictions-full-all', dateString, activeTab],
-    enabled: false, // Disabled - using propsData instead
     queryFn: async () => {
-      // Fetch ALL player_props_games for this date
+      // Fetch ALL player_props_games for this date and the day after
+      // Props are stored with the game's date, which is often the next day in EST
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
       const { data: allPropsGamesForDate } = await supabase
         .from('player_props_games')
         .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
-        .eq('game_date', dateString);
+        .in('game_date', [dateString, nextDay]);
       
       if (!allPropsGamesForDate || allPropsGamesForDate.length === 0) {
         return [];
@@ -4967,7 +5372,7 @@ function PropPredictionsFullView({
       
       const propsGameIds = allPropsGamesForDate.map(pg => pg.id).filter(Boolean);
       
-      // Fetch ALL props for this date
+      // Fetch ALL props for this date and next day
       const { data: props, error: propsError } = await supabase
         .from('player_props')
         .select(`
@@ -4983,7 +5388,7 @@ function PropPredictionsFullView({
           )
         `)
         .in('game_id', propsGameIds)
-        .eq('game_date', dateString)
+        .in('game_date', [dateString, nextDay])
         .limit(10000);
       
       if (propsError || !props || props.length === 0) {
@@ -5011,11 +5416,13 @@ function PropPredictionsFullView({
           return [];
         }
         
+        // Boxscores are stored with the game's date, which is often the next day in EST
+        const nextDayForBoxscores = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
         const { data: boxscores } = await supabase
           .from('nba_boxscores')
           .select('nba_player_id, game_id, pts, reb, ast, stl, blk, tov, fg3m, ftm, fg3a, fta, fgm, fga')
           .in('nba_player_id', playerIds)
-          .eq('game_date', dateString);
+          .in('game_date', [dateString, nextDayForBoxscores]);
         
         if (!boxscores || boxscores.length === 0) {
           return [];
@@ -5087,48 +5494,80 @@ function PropPredictionsFullView({
     enabled: false, // Disabled - using propsData instead
   });
 
-  // Get unique games for filter
+  // Get unique games for filter - use game_id (UUID) from props
   const uniqueGames = useMemo(() => {
     const gamesMap = new Map<string, { id: string; label: string; homeTeam: string; awayTeam: string }>();
     
+    console.log('🎮 Building unique games list from', allProps?.length || 0, 'props');
+    console.log('🎮 PropsGamesMap size:', propsGamesMap.size);
+    
     (allProps || []).forEach((prop: any) => {
-      const propsGame = Array.isArray(prop.player_props_games) 
-        ? prop.player_props_games[0] 
-        : prop.player_props_games;
+      // Use prop.game_id (UUID reference to player_props_games)
+      const gameId = prop.game_id;
+      if (!gameId) {
+        console.warn('⚠️ Prop missing game_id:', prop.id, prop.player_name);
+        return;
+      }
       
-      const propsGameId = propsGame?.id;
+      // Get the player_props_games record
+      let propsGame: any = null;
       
-      if (propsGameId) {
-        let homeTeam = '';
-        let awayTeam = '';
+      // Check if we have it in the map first
+      propsGame = propsGamesMap.get(gameId);
+      
+      // Fallback: check nested player_props_games (for raw props)
+      if (!propsGame) {
+        propsGame = Array.isArray(prop.player_props_games) 
+          ? prop.player_props_games[0] 
+          : prop.player_props_games;
+      }
+      
+      if (!propsGame) {
+        console.warn('⚠️ No propsGame found for game_id:', gameId);
+        return;
+      }
+      
+      const nbaGameId = propsGame.nba_game_id;
+      let homeTeam = '';
+      let awayTeam = '';
+      
+      // Try to get team info from allGames first
+      if (nbaGameId) {
+        const game = allGames.find((g: any) => {
+          const gId = g.gameId || g.game_id;
+          return String(gId) === String(nbaGameId);
+        });
         
-        const nbaGameId = propsGame?.nba_game_id;
-        if (nbaGameId) {
-          const game = allGames.find((g: any) => {
-            const gId = g.gameId || g.game_id;
-            return String(gId) === String(nbaGameId);
-          });
-          
-          if (game) {
-            homeTeam = game.homeTeam?.abbreviation || game.home_team_tricode || game.homeTeam?.tricode || '';
-            awayTeam = game.awayTeam?.abbreviation || game.away_team_tricode || game.awayTeam?.tricode || '';
-          }
-        }
-        
-        if (!homeTeam || !awayTeam) {
-          homeTeam = propsGame?.home_team_tricode || '';
-          awayTeam = propsGame?.away_team_tricode || '';
-        }
-        
-        if (homeTeam && awayTeam) {
-          const label = `${awayTeam} @ ${homeTeam}`;
-          gamesMap.set(propsGameId, { id: propsGameId, label, homeTeam, awayTeam });
+        if (game) {
+          homeTeam = game.homeTeam?.abbreviation || game.home_team_tricode || game.homeTeam?.tricode || '';
+          awayTeam = game.awayTeam?.abbreviation || game.away_team_tricode || game.awayTeam?.tricode || '';
         }
       }
+      
+      // Fallback to propsGame team data
+      if (!homeTeam || !awayTeam) {
+        homeTeam = propsGame.home_team_tricode || '';
+        awayTeam = propsGame.away_team_tricode || '';
+      }
+      
+      // Create label - use team names if available, otherwise use a fallback
+      let label = '';
+      if (homeTeam && awayTeam) {
+        label = `${awayTeam} @ ${homeTeam}`;
+      } else {
+        // Fallback: use game_id or event_id if available
+        const eventId = propsGame.event_id || '';
+        label = eventId ? `Game: ${eventId}` : `Game: ${gameId.substring(0, 8)}...`;
+      }
+      
+      // Always add to map, even if we don't have team names (filter will still work)
+      gamesMap.set(gameId, { id: gameId, label, homeTeam: homeTeam || 'Unknown', awayTeam: awayTeam || 'Unknown' });
     });
     
-    return Array.from(gamesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [allProps, allGames]);
+    const uniqueGamesList = Array.from(gamesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+    console.log('✅ Unique games found:', uniqueGamesList.length, uniqueGamesList.map(g => ({ id: g.id, label: g.label })));
+    return uniqueGamesList;
+  }, [allProps, allGames, propsGamesMap]);
   
   // Get unique prop types for filter
   const uniquePropTypes = useMemo(() => {
@@ -5145,15 +5584,28 @@ function PropPredictionsFullView({
   const filteredAndSortedProps = useMemo(() => {
     let filtered = [...(allProps || [])];
     
-    // Filter by game (using player_props_games.id UUID)
+    // Filter by game (using game_id UUID - the foreign key to player_props_games)
     if (gameFilter) {
+      console.log('🔍 Filtering by game:', gameFilter);
+      console.log('📊 Total props before filter:', filtered.length);
+      console.log('📊 Sample prop game_ids:', filtered.slice(0, 5).map((p: any) => p.game_id));
+      
       filtered = filtered.filter((prop: any) => {
-        const propsGame = Array.isArray(prop.player_props_games) 
-          ? prop.player_props_games[0] 
-          : prop.player_props_games;
-        const propsGameId = propsGame?.id;
-        return propsGameId === gameFilter;
+        const propGameId = prop.game_id;
+        if (!propGameId) {
+          return false;
+        }
+        // Normalize both values to strings for comparison
+        const propGameIdStr = String(propGameId).trim();
+        const filterStr = String(gameFilter).trim();
+        const matches = propGameIdStr === filterStr;
+        if (matches) {
+          console.log('✅ Match found:', propGameIdStr, '===', filterStr);
+        }
+        return matches;
       });
+      
+      console.log('📊 Props after filter:', filtered.length);
     }
     
     // Filter by prop type
@@ -5220,28 +5672,29 @@ function PropPredictionsFullView({
         </Box>
       </Box>
 
-      {/* Tabs */}
+      {/* Consolidated Navigation Bar */}
       <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', mb: 3 }}>
         <CardContent>
-          <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val as 'hottest' | 'coldest')}>
-            <TabList>
-              <Tab value="hottest">Hottest (Over Props Hit)</Tab>
-              <Tab value="coldest">Coldest (Under Props Hit)</Tab>
-            </TabList>
-          </Tabs>
-        </CardContent>
-      </Card>
-
-      {/* Filters */}
-      <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', mb: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <FormControl size="sm" sx={{ minWidth: 250 }}>
-              <FormLabel>Filter by Game</FormLabel>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* Tabs */}
+            <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val as 'hottest' | 'coldest')}>
+              <TabList>
+                <Tab value="hottest">Hottest</Tab>
+                <Tab value="coldest">Coldest</Tab>
+              </TabList>
+            </Tabs>
+            
+            {/* Filters */}
+            <FormControl size="sm" sx={{ minWidth: 200 }}>
+              <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Game</FormLabel>
               <Select
                 value={gameFilter}
-                onChange={(e, val) => setGameFilter(val || '')}
+                onChange={(e, val) => {
+                  console.log('🎯 Game filter changed:', val, 'from:', gameFilter);
+                  setGameFilter(val || '');
+                }}
                 placeholder="All Games"
+                sx={{ minHeight: '32px' }}
               >
                 <Option value="">All Games</Option>
                 {uniqueGames.map((game) => (
@@ -5251,12 +5704,14 @@ function PropPredictionsFullView({
                 ))}
               </Select>
             </FormControl>
-            <FormControl size="sm" sx={{ minWidth: 200 }}>
-              <FormLabel>Filter by Prop Type</FormLabel>
+            
+            <FormControl size="sm" sx={{ minWidth: 150 }}>
+              <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Prop Type</FormLabel>
               <Select
                 value={propTypeFilter}
                 onChange={(e, val) => setPropTypeFilter(val || '')}
                 placeholder="All Props"
+                sx={{ minHeight: '32px' }}
               >
                 <Option value="">All Props</Option>
                 {uniquePropTypes.map((type) => (
@@ -5266,22 +5721,22 @@ function PropPredictionsFullView({
                 ))}
               </Select>
             </FormControl>
-            <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1 }}>
-              <FormControl size="sm" sx={{ minWidth: 150 }}>
-                <FormLabel>Rows per page</FormLabel>
-                <Select
-                  value={rowsPerPage}
-                  onChange={(e, val) => {
-                    setRowsPerPage(val || 25);
-                    setPage(1);
-                  }}
-                >
-                  <Option value={25}>25</Option>
-                  <Option value={50}>50</Option>
-                  <Option value={100}>100</Option>
-                </Select>
-              </FormControl>
-            </Box>
+            
+            <FormControl size="sm" sx={{ minWidth: 120 }}>
+              <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Per Page</FormLabel>
+              <Select
+                value={rowsPerPage}
+                onChange={(e, val) => {
+                  setRowsPerPage(val || 25);
+                  setPage(1);
+                }}
+                sx={{ minHeight: '32px' }}
+              >
+                <Option value={25}>25</Option>
+                <Option value={50}>50</Option>
+                <Option value={100}>100</Option>
+              </Select>
+            </FormControl>
           </Box>
         </CardContent>
       </Card>
@@ -5337,11 +5792,13 @@ function PropPredictionsFullView({
                 </thead>
                 <tbody>
                   {paginatedProps.map((prop: any, index: number) => {
+                    // Handle both raw props (with player_props_games) and cleaned props (with nba_game_id directly)
                     const propsGame = Array.isArray(prop.player_props_games) 
                       ? prop.player_props_games[0] 
                       : prop.player_props_games;
                     const propsGameId = propsGame?.id;
-                    const nbaGameId = propsGame?.nba_game_id;
+                    // Cleaned props have nba_game_id directly, raw props have it nested in player_props_games
+                    const nbaGameId = prop.nba_game_id || propsGame?.nba_game_id;
                     const game = allGames.find((g: any) => (g.gameId || g.game_id) === nbaGameId);
                     
                     let homeTeam = game?.homeTeam?.abbreviation || game?.home_team_tricode || game?.homeTeam?.tricode || '';
@@ -5397,7 +5854,12 @@ function PropPredictionsFullView({
                         </td>
                         <td>
                           <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
-                            {prop.line ? prop.line.toFixed(1) : 'N/A'}
+                            {(() => {
+                              const lineValue = prop.currentLine || prop.line;
+                              if (lineValue == null) return 'N/A';
+                              const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                              return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                            })()}
                           </Typography>
                         </td>
                         {isPast && (
@@ -5432,7 +5894,17 @@ function PropPredictionsFullView({
                         )}
                         <td>
                           <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                            {prop.american_odds || prop.price || 'N/A'}
+                            {(() => {
+                              // Handle cleaned props (odds in over/under) vs raw props (odds directly)
+                              if (prop.over || prop.under) {
+                                // Cleaned prop - use over/under based on activeTab
+                                const oddsData = activeTab === 'hottest' ? prop.over : prop.under;
+                                return oddsData?.american_odds || oddsData?.price || 'N/A';
+                              } else {
+                                // Raw prop - odds directly on prop
+                                return prop.american_odds || prop.price || 'N/A';
+                              }
+                            })()}
                           </Typography>
                         </td>
                       </tr>
@@ -5484,55 +5956,30 @@ function PropPredictionsFullView({
   );
 }
 
-// Prop Predictions Module - Algorithmically predicted best props
-export function PropPredictionsModule({ 
+// Prop Performance Module - Historical prop performance for past dates
+export function PropPerformanceModule({ 
   selectedDate, 
   navigate,
   onOpen
 }: { 
   selectedDate: Dayjs; 
   navigate: (path: string) => void;
-  onOpen?: () => void;
+  onOpen?: (propsData: { pastProps?: any[]; futureProps?: any[]; isLoading: boolean; activeTab: 'hottest' | 'coldest' }) => void;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
   const todayEST = getTodayEST();
-  const isToday = dateString === todayEST;
   const isPast = selectedDate.isBefore(todayEST, 'day');
+  
+  // Only show for past dates
+  if (!isPast) {
+    return null;
+  }
+  
   const [activeTab, setActiveTab] = useState<'hottest' | 'coldest'>('hottest');
   
-  // Fetch games - always fetch database games, even for today (as fallback)
+  // Fetch games
   const { data: games } = useGamesByDate(dateString);
-  const { data: nbaScoreboard } = useNBAScoreboard(isToday ? dateString : undefined);
-  
-  const allGames = useMemo(() => {
-    if (isToday && nbaScoreboard?.games) {
-      // For today, filter scoreboard games to ensure they're actually on the selected EST date
-      const filteredScoreboardGames = nbaScoreboard.games.filter((game: any) => {
-        const gameDate = game.gameDate || game.game_date;
-        if (!gameDate) return false;
-        
-        try {
-          // If it's a full timestamp, use isDateInEST directly
-          if (gameDate.includes('T') || gameDate.includes(' ')) {
-            return isDateInEST(gameDate, dateString);
-          } else {
-            // Date string only - treat as UTC midnight and convert to EST
-            const utcDate = new Date(gameDate + 'T00:00:00Z');
-            const estDateString = utcToESTDate(utcDate);
-            return estDateString === dateString;
-          }
-        } catch (e) {
-          console.warn('Error filtering game date in PropPredictionsModule:', gameDate, e);
-          return false;
-        }
-      });
-      
-      // If we have filtered scoreboard games, use them; otherwise fall back to database games
-      return filteredScoreboardGames.length > 0 ? filteredScoreboardGames : (games || []);
-    }
-    // For past/future dates, games from useGamesByDate are already filtered by EST date
-    return games || [];
-  }, [isToday, nbaScoreboard, games, dateString]);
+  const allGames = games || [];
   
   // Helper function to format bet type for display
   const formatBetType = (betType: string): string => {
@@ -5639,14 +6086,13 @@ export function PropPredictionsModule({
     return betTypeMap[singleStatNormalized] || betType.toUpperCase();
   };
 
-  // For past dates: calculate individual props with results, filtered by over/under
+  // Calculate individual props with results, filtered by over/under
   const { data: pastPropsWithResults, isLoading: hitRatesLoading } = useQuery({
-    queryKey: ['past-props-with-results', dateString, activeTab, allGames?.map(g => g.game_id).join(',')],
+    queryKey: ['past-props-with-results', dateString, activeTab, allGames?.map(g => g.game_id || g.gameId).join(',')],
     queryFn: async () => {
-      if (!isPast) return null;
       
-      // Get game IDs from the carousel
-      const gameIds = (allGames || []).map(g => g.game_id).filter(Boolean);
+      // Get game IDs from the carousel (handle both game_id and gameId formats)
+      const gameIds = (allGames || []).map(g => g.game_id || g.gameId).filter(Boolean);
       
       if (gameIds.length === 0) {
         console.log('⚠️ No games in carousel for past date:', dateString);
@@ -5655,28 +6101,53 @@ export function PropPredictionsModule({
       
       console.log('🔍 Calculating hit rates for past date:', dateString, 'for', gameIds.length, 'games');
       
-      // Step 1: Find player_props_games entries where nba_game_id matches carousel games
-      const { data: propsGames, error: propsGamesError } = await supabase
+      // Step 1: Fetch all player_props_games for this date and the day after
+      // Props are stored with the game's date, which is often the next day in EST
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
+      const { data: allPropsGames, error: propsGamesError } = await supabase
         .from('player_props_games')
-        .select('id, nba_game_id, game_date, event_id')
-        .in('nba_game_id', gameIds)
-        .eq('game_date', dateString);
+        .select('id, nba_game_id, game_date, event_id, home_team, away_team, home_team_tricode, away_team_tricode')
+        .in('game_date', [dateString, nextDay]);
       
       if (propsGamesError) {
         console.error('❌ Error fetching player_props_games:', propsGamesError);
         return null;
       }
       
-      if (!propsGames || propsGames.length === 0) {
-        console.log('⚠️ No player_props_games found for carousel games');
+      if (!allPropsGames || allPropsGames.length === 0) {
+        console.log('⚠️ No player_props_games found for date:', dateString);
         return null;
       }
       
-      // Get the UUIDs (player_props_games.id) to filter props
-      const propsGameIds = propsGames.map(pg => pg.id).filter(Boolean);
-      console.log(`✅ Found ${propsGameIds.length} player_props_games entries for ${gameIds.length} carousel games`);
+      // Match props games to nba games using our utility
+      const nbaGamesForMatching = (allGames || []).map((g: any) => ({
+        game_id: g.game_id || g.gameId,
+        game_date: g.game_date || g.gameDate || dateString,
+        home_team_tricode: g.home_team_tricode || g.homeTeam?.abbreviation || g.homeTeam?.tricode,
+        away_team_tricode: g.away_team_tricode || g.awayTeam?.abbreviation || g.awayTeam?.tricode,
+        home_team_name: g.home_team_name || g.homeTeam?.name,
+        away_team_name: g.away_team_name || g.awayTeam?.name,
+        home_team_city: g.home_team_city || g.homeTeam?.city,
+        away_team_city: g.away_team_city || g.awayTeam?.city,
+      }));
+      
+      const propsGameMatches = matchPropsGamesToNbaGames(allPropsGames, nbaGamesForMatching);
+      
+      // Filter to only props games that match carousel games
+      const matchedPropsGameIds = Array.from(propsGameMatches.entries())
+        .filter(([propsGameId, nbaGame]) => gameIds.includes(nbaGame.game_id))
+        .map(([propsGameId]) => propsGameId);
+      
+      if (matchedPropsGameIds.length === 0) {
+        console.log('⚠️ No player_props_games matched to carousel games');
+        return null;
+      }
+      
+      const propsGameIds = matchedPropsGameIds;
+      console.log(`✅ Matched ${propsGameIds.length} player_props_games entries to ${gameIds.length} carousel games`);
       
       // Step 2: Fetch props for the date filtered by carousel games
+      // Also check next day since props might be stored with game's date
       const { data: props, error: propsError } = await supabase
         .from('player_props')
         .select(`
@@ -5688,7 +6159,7 @@ export function PropPredictionsModule({
           )
         `)
         .in('game_id', propsGameIds)
-        .eq('game_date', dateString)
+        .in('game_date', [dateString, nextDay])
         .limit(1000);
       
       if (propsError) {
@@ -5732,7 +6203,7 @@ export function PropPredictionsModule({
       
       console.log(`✅ Found ${filteredProps.length} props (after filtering)`);
       
-      // Get unique player IDs
+      // Get unique player IDs (before cleaning, so we can fetch boxscores)
       const playerIds = [...new Set(filteredProps.map((p: any) => p.nba_player_id).filter(Boolean))];
       
       if (playerIds.length === 0) {
@@ -5740,13 +6211,15 @@ export function PropPredictionsModule({
         return null;
       }
       
-      // Fetch boxscores for all players on this date (query by game_date, not game_id)
+      // Fetch boxscores for all players on this date and next day
+      // Boxscores are stored with the game's date, which is often the next day in EST
       // The game_id in player_props is a UUID reference, not the NBA game_id
+      // Note: nextDay is already declared above
       const { data: boxscores, error: boxscoreError } = await supabase
         .from('nba_boxscores')
         .select('nba_player_id, game_id, pts, reb, ast, stl, blk, tov, fg3m, ftm, fg3a, fta, fgm, fga')
         .in('nba_player_id', playerIds)
-        .eq('game_date', dateString);
+        .in('game_date', [dateString, nextDay]);
       
       if (boxscoreError || !boxscores || boxscores.length === 0) {
         console.log('⚠️ No boxscores found for date:', dateString);
@@ -5768,12 +6241,25 @@ export function PropPredictionsModule({
       // Process each prop and calculate results
       const propsWithResults: any[] = [];
       
+      // Create a map of propsGame.id -> matched nba_game for quick lookup
+      const propsGameToNbaGameMap = new Map<string, string>();
+      propsGameMatches.forEach((nbaGame, propsGameId) => {
+        if (gameIds.includes(nbaGame.game_id)) {
+          propsGameToNbaGameMap.set(propsGameId, nbaGame.game_id);
+        }
+      });
+      
       filteredProps.forEach((prop: any) => {
-        // Get nba_game_id from the joined player_props_games data
+        // Get nba_game_id from the joined player_props_games data or from our matching
         const propsGame = Array.isArray(prop.player_props_games) 
           ? prop.player_props_games[0] 
           : prop.player_props_games;
-        const nbaGameId = propsGame?.nba_game_id;
+        let nbaGameId = propsGame?.nba_game_id;
+        
+        // If nba_game_id is null, try to get it from our matching
+        if (!nbaGameId && propsGame?.id) {
+          nbaGameId = propsGameToNbaGameMap.get(propsGame.id) || null;
+        }
         
         let boxscore: any = null;
         
@@ -5848,30 +6334,263 @@ export function PropPredictionsModule({
       
       console.log(`✅ Found ${sorted.length} ${activeTab === 'hottest' ? 'over' : 'under'} props that hit`);
       
-      // Notify parent of data change
-      if (onDataChange) {
-        onDataChange({
-          pastProps: sorted,
-          futureProps: undefined,
-          isLoading: false,
-          activeTab,
-        });
-      }
+      // Clean and combine props (combine over/under pairs, extract raw_odd_data)
+      console.log('🧹 Cleaning and combining past props...');
+      const cleanedProps = cleanPlayerProps(sorted);
+      console.log(`✅ Cleaned: ${sorted.length} -> ${cleanedProps.length} props (combined over/under pairs)`);
       
-      return sorted;
+      // Filter to game-level props only (exclude quarters/halves)
+      const gamePropsOnly = filterGamePropsOnly(cleanedProps);
+      console.log(`✅ Filtered to game props: ${cleanedProps.length} -> ${gamePropsOnly.length} props`);
+      
+      // Add result data back to cleaned props by matching IDs
+      const propsWithResultsMap = new Map(sorted.map((p: any) => [p.id, p]));
+      const finalProps = gamePropsOnly.map((cleanedProp: CleanedPlayerProp) => {
+        // Try to find the original prop with results
+        // Match by checking if the cleaned prop's over/under IDs match
+        let originalProp: any = null;
+        
+        if (cleanedProp.over?.id) {
+          originalProp = propsWithResultsMap.get(cleanedProp.over.id);
+        }
+        if (!originalProp && cleanedProp.under?.id) {
+          originalProp = propsWithResultsMap.get(cleanedProp.under.id);
+        }
+        
+        if (originalProp) {
+          return {
+            ...cleanedProp,
+            result: originalProp.result,
+            actualValue: originalProp.actualValue,
+            hit: originalProp.hit,
+            nba_game_id: originalProp.nba_game_id,
+          };
+        }
+        return cleanedProp;
+      });
+      
+      return finalProps;
     },
-    enabled: isPast,
+    enabled: true, // Always enabled for PropPerformanceModule (only called for past dates)
   });
   
-  // For future/today dates: show predicted props with last 10 games hit rate
-  // Filter props to only include games from the carousel
-  const { data: predictedProps, isLoading: propsLoading } = useQuery({
-    queryKey: ['predicted-props', dateString, activeTab, allGames?.map(g => g.game_id).join(',')],
+  const isLoading = hitRatesLoading;
+  
+  // Return JSX for PropPerformanceModule
+  // This module shows past prop performance
+  return (
+    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <CardContent>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography 
+            level="h4" 
+            sx={{ 
+              fontWeight: 'bold', 
+              color: '#FFFFFF',
+              cursor: 'pointer',
+              '&:hover': {
+                opacity: 0.8,
+                textDecoration: 'underline'
+              }
+            }}
+            onClick={() => {
+              if (onOpen) {
+                const propsData = {
+                  pastProps: pastPropsWithResults || [],
+                  isLoading: isLoading,
+                  activeTab: activeTab,
+                };
+                onOpen(propsData);
+              } else {
+                navigate(`/prop-predictions/${dateString}`);
+              }
+            }}
+          >
+            Prop Performance
+          </Typography>
+          <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val as 'hottest' | 'coldest')}>
+            <TabList>
+              <Tab value="hottest">Hottest</Tab>
+              <Tab value="coldest">Coldest</Tab>
+            </TabList>
+          </Tabs>
+        </Box>
+        
+        {isLoading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress />
+          </Box>
+        ) : pastPropsWithResults && pastPropsWithResults.length > 0 ? (
+          <Table hoverRow size="sm">
+            <thead>
+              <tr>
+                <th style={{ color: '#FFFFFF' }}>Player</th>
+                <th style={{ color: '#FFFFFF' }}>Prop</th>
+                <th style={{ color: '#FFFFFF' }}>Line</th>
+                <th style={{ color: '#FFFFFF' }}>Actual</th>
+                <th style={{ color: '#FFFFFF' }}>Odds</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pastPropsWithResults.slice(0, 10).map((prop: any, index: number) => (
+                <tr 
+                  key={prop.id || index}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    if (prop.player_id) {
+                      navigate(`/player/${prop.player_id}`);
+                    }
+                  }}
+                >
+                  <td>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar 
+                        src={prop.nba_player_id && prop.nba_player_id > 0
+                          ? `https://cdn.nba.com/headshots/nba/latest/260x190/${prop.nba_player_id}.png`
+                          : undefined
+                        }
+                        alt={prop.player_name}
+                        sx={{ width: 24, height: 24 }}
+                      >
+                        {(!prop.nba_player_id || prop.nba_player_id === 0) && (
+                          <Typography sx={{ fontSize: '0.6rem', color: '#FFFFFF' }}>
+                            {prop.player_name?.charAt(0) || '?'}
+                          </Typography>
+                        )}
+                      </Avatar>
+                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                        {prop.player_name || 'N/A'}
+                      </Typography>
+                    </Box>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                      {formatBetType(prop.bet_type)}
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                      {(() => {
+                        const lineValue = prop.currentLine || prop.line;
+                        if (lineValue == null) return 'N/A';
+                        const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                        return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                      })()}
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography 
+                      level="body-sm" 
+                      sx={{ 
+                        color: prop.hit ? '#10B981' : '#EF4444',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {prop.actualValue !== undefined ? prop.actualValue.toFixed(1) : 'N/A'}
+                    </Typography>
+                  </td>
+                  <td>
+                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                      {(() => {
+                        if (prop.over || prop.under) {
+                          const oddsData = activeTab === 'hottest' ? prop.over : prop.under;
+                          return oddsData?.american_odds || oddsData?.price || 'N/A';
+                        } else {
+                          return prop.american_odds || prop.price || 'N/A';
+                        }
+                      })()}
+                    </Typography>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        ) : (
+          <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+            <Typography sx={{ color: '#FFFFFF' }}>
+              No prop performance available for this date.
+            </Typography>
+          </Alert>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Prop Predictions Module - For present/today dates
+export function PropPredictionsModule({ 
+  selectedDate, 
+  navigate,
+  onOpen
+}: { 
+  selectedDate: Dayjs; 
+  navigate: (path: string) => void;
+  onOpen?: (propsData: { pastProps?: any[]; futureProps?: any[]; isLoading: boolean; activeTab: 'hottest' | 'coldest' }) => void;
+}) {
+  const dateString = selectedDate.format('YYYY-MM-DD');
+  const todayEST = getTodayEST();
+  const isPast = selectedDate.isBefore(todayEST, 'day');
+  const isToday = selectedDate.isSame(todayEST, 'day');
+  
+  // Only show for present/today dates
+  if (isPast || !isToday) {
+    return null;
+  }
+  
+  const [activeTab, setActiveTab] = useState<'hottest' | 'coldest'>('hottest');
+  
+  // Fetch games
+  const { data: games } = useGamesByDate(dateString);
+  const allGames = games || [];
+  
+  // Helper function to format bet type for display
+  const formatBetType = (betType: string): string => {
+    const normalized = betType.toLowerCase().replace(/\s+/g, '').replace(/_/g, '+').replace(/-/g, '+');
+    
+    if (normalized.includes('points+rebounds+assists') || normalized === 'par' || normalized.includes('par')) {
+      return 'P+A+R';
+    }
+    if (normalized.includes('points+rebounds') || normalized.includes('pts+reb')) {
+      return 'P+R';
+    }
+    if (normalized.includes('points+assists') || normalized.includes('pts+ast')) {
+      return 'P+A';
+    }
+    if (normalized.includes('rebounds+assists') || normalized.includes('reb+ast') || normalized.includes('assists+rebounds')) {
+      return 'R+A';
+    }
+    if (normalized.includes('blocks+steals') || normalized === 'stocks' || normalized.includes('stocks') || normalized.includes('steals+blocks')) {
+      return 'STL+BLK';
+    }
+    
+    const singleStatNormalized = normalized.replace(/\+/g, '');
+    const betTypeMap: Record<string, string> = {
+      'points': 'PTS', 'point': 'PTS', 'pts': 'PTS',
+      'rebounds': 'REB', 'rebound': 'REB', 'reb': 'REB',
+      'assists': 'AST', 'assist': 'AST', 'ast': 'AST',
+      'steals': 'STL', 'steal': 'STL', 'stl': 'STL',
+      'blocks': 'BLK', 'block': 'BLK', 'blk': 'BLK',
+      'turnovers': 'TOV', 'turnover': 'TOV', 'tov': 'TOV',
+      'threes': '3PM', 'three': '3PM', '3pt': '3PM', '3-pointer': '3PM', '3pm': '3PM',
+      'threepointersmade': '3PM', 'three_pointers_made': '3PM', 'three-pointers-made': '3PM',
+      'threepointersattempted': '3PA', 'three_pointers_attempted': '3PA', 'three-pointers-attempted': '3PA', '3pa': '3PA',
+      'twopointersmade': '2PM', 'two_pointers_made': '2PM', 'two-pointers-made': '2PM', '2pm': '2PM',
+      'twopointersattempted': '2PA', 'two_pointers_attempted': '2PA', 'two-pointers-attempted': '2PA', '2pa': '2PA',
+      'fieldgoalsmade': 'FGM', 'field_goals_made': 'FGM', 'field-goals-made': 'FGM', 'fgm': 'FGM', 'fieldgoals': 'FGM',
+      'fieldgoalsattempted': 'FGA', 'field_goals_attempted': 'FGA', 'field-goals-attempted': 'FGA', 'fga': 'FGA', 'fieldgoalattempts': 'FGA',
+      'freethrowsmade': 'FTM', 'free_throws_made': 'FTM', 'free-throws-made': 'FTM', 'ftm': 'FTM', 'freethrows': 'FTM',
+      'freethrowsattempted': 'FTA', 'free_throws_attempted': 'FTA', 'free-throws-attempted': 'FTA', 'fta': 'FTA',
+    };
+    
+    return betTypeMap[singleStatNormalized] || betType.toUpperCase();
+  };
+
+  // Fetch predicted props with hit rates for present/today dates
+  const { data: predictedPropsData, isLoading: predictedPropsLoading } = useQuery({
+    queryKey: ['predicted-props', dateString, allGames?.map(g => g.game_id || g.gameId).join(',')],
     queryFn: async () => {
-      if (isPast) return null; // Skip for past dates
-      
-      // Get game IDs from the carousel
-      const gameIds = (allGames || []).map(g => g.game_id).filter(Boolean);
+      // Get game IDs from the carousel (handle both game_id and gameId formats)
+      const gameIds = (allGames || []).map(g => g.game_id || g.gameId).filter(Boolean);
       
       if (gameIds.length === 0) {
         console.log('⚠️ No games in carousel for date:', dateString);
@@ -5906,201 +6625,64 @@ export function PropPredictionsModule({
         away: { tricode: teams.awayTricode, name: teams.awayName }
       })));
       
-      // Step 1: Try to find player_props_games entries where nba_game_id matches carousel games
-      let propsGames: any[] = [];
-      let propsGamesError: any = null;
+      // Step 1: Match props games to nba games using our utility
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
       
-      // First try: Match by nba_game_id
-      const { data: propsGamesByNbaId, error: nbaIdError } = await supabase
+      // Prepare nba games for matching
+      const nbaGamesForMatching = (allGames || []).map((g: any) => ({
+        game_id: g.game_id || g.gameId,
+        game_date: g.game_date || g.gameDate || dateString,
+        home_team_tricode: g.home_team_tricode || g.homeTeam?.abbreviation || g.homeTeam?.tricode,
+        away_team_tricode: g.away_team_tricode || g.awayTeam?.abbreviation || g.awayTeam?.tricode,
+        home_team_name: g.home_team_name || g.homeTeam?.name,
+        away_team_name: g.away_team_name || g.awayTeam?.name,
+        home_team_city: g.home_team_city || g.homeTeam?.city,
+        away_team_city: g.away_team_city || g.awayTeam?.city,
+      }));
+      
+      // Fetch all player_props_games for this date and the day after
+      const { data: allPropsGames, error: propsGamesError } = await supabase
         .from('player_props_games')
-        .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
-        .in('nba_game_id', gameIds)
-        .eq('game_date', dateString);
-      
-      if (nbaIdError) {
-        console.error('❌ Error fetching player_props_games by nba_game_id:', nbaIdError);
-      } else if (propsGamesByNbaId && propsGamesByNbaId.length > 0) {
-        propsGames = propsGamesByNbaId;
-        console.log(`✅ Found ${propsGames.length} player_props_games by nba_game_id`);
-      } else {
-        console.log('⚠️ No player_props_games found by nba_game_id, trying fallback by team codes...');
-        
-        // Fallback: Match by team codes and date
-        // Build OR conditions for each game's team combination
-        const teamConditions: string[] = [];
-        gameTeamMap.forEach((teams, gameId) => {
-          // Match if home/away teams match (in either order since we don't know which is which in props)
-          teamConditions.push(`(home_team_tricode.eq.${teams.home},away_team_tricode.eq.${teams.away})`);
-          teamConditions.push(`(home_team_tricode.eq.${teams.away},away_team_tricode.eq.${teams.home})`);
-        });
-        
-        // Query all props games for this date first
-        const { data: allPropsGamesForDate, error: dateError } = await supabase
-          .from('player_props_games')
-          .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
-          .eq('game_date', dateString);
-        
-        if (dateError) {
-          console.error('❌ Error fetching player_props_games by date:', dateError);
-          propsGamesError = dateError;
-        } else if (allPropsGamesForDate) {
-          console.log(`🔍 Found ${allPropsGamesForDate.length} props games for date ${dateString}`);
-          console.log(`🔍 Trying to match against ${gameTeamMap.size} carousel games`);
-          
-          // Helper function to extract team name parts
-          const getTeamParts = (name: string): { city: string; team: string; full: string } => {
-            if (!name) return { city: '', team: '', full: '' };
-            const normalized = name.toLowerCase().trim();
-            
-            // Common team name patterns
-            const teamNames = [
-              'bulls', 'lakers', 'warriors', 'heat', 'celtics', 'knicks', 'nets', '76ers', 'sixers',
-              'raptors', 'wizards', 'hawks', 'hornets', 'cavaliers', 'cavs', 'pistons', 'pacers',
-              'bucks', 'magic', 'pelicans', 'thunder', 'mavericks', 'mavs', 'rockets', 'spurs',
-              'grizzlies', 'jazz', 'trail blazers', 'blazers', 'nuggets', 'timberwolves', 'wolves',
-              'kings', 'suns', 'clippers'
-            ];
-            
-            // Try to extract city and team name
-            for (const teamName of teamNames) {
-              if (normalized.includes(teamName)) {
-                const teamIndex = normalized.indexOf(teamName);
-                const city = normalized.substring(0, teamIndex).trim();
-                const team = teamName;
-                return { city, team, full: normalized };
-              }
-            }
-            
-            // If no pattern found, return as-is
-            return { city: '', team: normalized, full: normalized };
-          };
-          
-          // Helper function to check if team names match (handles variations)
-          const teamsMatch = (name1: string, name2: string): boolean => {
-            if (!name1 || !name2) return false;
-            
-            const n1 = name1.toLowerCase().trim();
-            const n2 = name2.toLowerCase().trim();
-            
-            // Exact match
-            if (n1 === n2) return true;
-            
-            // Check if one contains the other (for "Chicago Bulls" vs "Bulls" or "Bulls" vs "Chicago Bulls")
-            if (n1.includes(n2) || n2.includes(n1)) return true;
-            
-            // Extract parts and compare
-            const parts1 = getTeamParts(n1);
-            const parts2 = getTeamParts(n2);
-            
-            // Match by team name (e.g., "Bulls" matches "Chicago Bulls")
-            if (parts1.team && parts2.team && parts1.team === parts2.team) return true;
-            
-            // Match if one team name contains the other
-            if (parts1.team && parts2.team && (parts1.team.includes(parts2.team) || parts2.team.includes(parts1.team))) {
-              return true;
-            }
-            
-            // Match by full name containing team name
-            if (parts1.team && n2.includes(parts1.team)) return true;
-            if (parts2.team && n1.includes(parts2.team)) return true;
-            
-            return false;
-          };
-          
-          // Filter in JavaScript to match team combinations
-          // Try matching by tricodes first, then fall back to full team names
-          propsGames = allPropsGamesForDate.filter(pg => {
-            const matched = Array.from(gameTeamMap.entries()).some(([gameId, gameTeams]) => {
-              // Strategy 1: Match by tricodes (if both have them)
-              if (pg.home_team_tricode && pg.away_team_tricode && 
-                  gameTeams.homeTricode && gameTeams.awayTricode) {
-                const match = (
-                  (pg.home_team_tricode === gameTeams.homeTricode && pg.away_team_tricode === gameTeams.awayTricode) ||
-                  (pg.home_team_tricode === gameTeams.awayTricode && pg.away_team_tricode === gameTeams.homeTricode)
-                );
-                if (match) {
-                  console.log(`✅ Matched props game ${pg.id} to carousel game ${gameId} by tricodes`);
-                }
-                return match;
-              }
-              
-              // Strategy 2: Match by full team names (if tricodes are missing)
-              if (pg.home_team && pg.away_team && 
-                  gameTeams.homeName && gameTeams.awayName) {
-                const homeMatch = teamsMatch(pg.home_team, gameTeams.homeName);
-                const awayMatch = teamsMatch(pg.away_team, gameTeams.awayName);
-                const swappedHomeMatch = teamsMatch(pg.home_team, gameTeams.awayName);
-                const swappedAwayMatch = teamsMatch(pg.away_team, gameTeams.homeName);
-                
-                const match = (homeMatch && awayMatch) || (swappedHomeMatch && swappedAwayMatch);
-                if (match) {
-                  console.log(`✅ Matched props game ${pg.id} (${pg.away_team} @ ${pg.home_team}) to carousel game ${gameId} (${gameTeams.awayName} @ ${gameTeams.homeName}) by team names`);
-                }
-                return match;
-              }
-              
-              return false;
-            });
-            
-            if (!matched) {
-              console.log(`❌ No match for props game ${pg.id}: ${pg.away_team || 'null'} @ ${pg.home_team || 'null'}`);
-            }
-            
-            return matched;
-          });
-          
-          if (propsGames.length > 0) {
-            console.log(`✅ Found ${propsGames.length} player_props_games by team matching`);
-          } else {
-            console.log('⚠️ No player_props_games found by team matching');
-            console.log('📊 Available props games for date:', allPropsGamesForDate.map(pg => ({
-              id: pg.id,
-              nba_game_id: pg.nba_game_id,
-              tricodes: `${pg.away_team_tricode || 'null'} @ ${pg.home_team_tricode || 'null'}`,
-              names: `${pg.away_team || 'null'} @ ${pg.home_team || 'null'}`
-            })));
-            console.log('📊 Carousel games:', Array.from(gameTeamMap.entries()).map(([id, teams]) => ({
-              game_id: id,
-              tricodes: `${teams.awayTricode || 'null'} @ ${teams.homeTricode || 'null'}`,
-              names: `${teams.awayName || 'null'} @ ${teams.homeName || 'null'}`
-            })));
-          }
-        }
-      }
+        .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team, event_id')
+        .in('game_date', [dateString, nextDay]);
       
       if (propsGamesError) {
         console.error('❌ Error fetching player_props_games:', propsGamesError);
         return [];
       }
       
-      if (!propsGames || propsGames.length === 0) {
-        console.log('⚠️ No player_props_games found for carousel games');
-        console.log('🔄 Fallback: Using ALL props games for this date');
-        
-        // Final fallback: Get all props games for this date
-        const { data: allPropsGamesFallback, error: fallbackError } = await supabase
-          .from('player_props_games')
-          .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
-          .eq('game_date', dateString);
-        
-        if (!fallbackError && allPropsGamesFallback && allPropsGamesFallback.length > 0) {
-          propsGames = allPropsGamesFallback;
-          console.log(`✅ Using ${propsGames.length} props games as fallback (all games for date)`);
-        } else {
-          console.log('❌ No props games found even with fallback');
-          return [];
-        }
+      if (!allPropsGames || allPropsGames.length === 0) {
+        console.log('⚠️ No player_props_games found for date:', dateString, 'or next day:', nextDay);
+        return [];
       }
       
-      // Get the UUIDs (player_props_games.id) to filter props
+      // Match props games to nba games using our utility
+      const propsGameMatches = matchPropsGamesToNbaGames(allPropsGames, nbaGamesForMatching);
+      
+      // Filter to only props games that match carousel games
+      const matchedPropsGameIds = Array.from(propsGameMatches.entries())
+        .filter(([propsGameId, nbaGame]) => {
+          return gameIds.includes(nbaGame.game_id);
+        })
+        .map(([propsGameId]) => propsGameId);
+      
+      if (matchedPropsGameIds.length === 0) {
+        console.log('⚠️ No player_props_games matched to carousel games for date:', dateString);
+        console.log('📊 Carousel game IDs:', gameIds);
+        console.log('📊 Props games found:', allPropsGames.length, 'but none matched');
+        return [];
+      }
+      
+      const propsGames = allPropsGames.filter(pg => matchedPropsGameIds.includes(pg.id));
+      console.log(`✅ Matched ${propsGames.length} player_props_games to ${gameIds.length} carousel games for date: ${dateString}`);
+      
       const propsGameIds = propsGames.map(pg => pg.id).filter(Boolean);
       console.log(`✅ Found ${propsGameIds.length} player_props_games entries for ${gameIds.length} carousel games`);
       
-      // Step 2: Query player_props where game_id matches the player_props_games.id values
-      // Use pagination to get ALL props (Supabase has a default limit)
+      // Step 2: Query player_props with pagination
       let allProps: any[] = [];
       let offset = 0;
-      const pageSize = 1000; // Fetch in batches of 1000
+      const pageSize = 1000;
       let hasMore = true;
       
       while (hasMore) {
@@ -6117,7 +6699,7 @@ export function PropPredictionsModule({
             )
           `)
           .in('game_id', propsGameIds)
-          .eq('game_date', dateString)
+          .in('game_date', [dateString, nextDay])
           .order('player_name')
           .order('bet_type')
           .range(offset, offset + pageSize - 1);
@@ -6135,7 +6717,6 @@ export function PropPredictionsModule({
         allProps = [...allProps, ...pageProps];
         console.log(`📊 Loaded ${allProps.length} props so far...`);
         
-        // If we got fewer than pageSize, we've reached the end
         if (pageProps.length < pageSize) {
           hasMore = false;
         } else {
@@ -6150,7 +6731,7 @@ export function PropPredictionsModule({
       
       console.log(`✅ Loaded ${allProps.length} total props for date ${dateString}`);
       
-      // Step 4: Use player name matcher to enhance props with player_id/nba_player_id
+      // Step 3: Use player name matcher
       const unmatchedNames = [...new Set(
         allProps
           .filter((p: any) => !p.player_id && p.player_name)
@@ -6164,24 +6745,34 @@ export function PropPredictionsModule({
         console.log(`✅ Matched ${Array.from(playerNameMatches.values()).filter(m => m !== null).length} players`);
       }
       
-      // Step 5: Enhance props with matched player info
-      // Preserve player_props_games data (including UUID) in all props
+      // Step 4: Enhance props with matched player info
+      const propsGameToNbaGameMap = new Map<string, string>();
+      propsGameMatches.forEach((nbaGame, propsGameId) => {
+        if (gameIds.includes(nbaGame.game_id)) {
+          propsGameToNbaGameMap.set(propsGameId, nbaGame.game_id);
+        }
+      });
+      
       const enhancedProps = allProps.map((prop: any) => {
-        // Preserve player_props_games data
         const propsGame = Array.isArray(prop.player_props_games) 
           ? prop.player_props_games[0] 
           : prop.player_props_games;
         
-        // If prop already has player_id, use it as-is but ensure player_props_games is preserved
+        let nbaGameId = propsGame?.nba_game_id;
+        if (!nbaGameId && propsGame?.id) {
+          nbaGameId = propsGameToNbaGameMap.get(propsGame.id) || null;
+        }
+        
+        const updatedPropsGame = nbaGameId ? { ...propsGame, nba_game_id: nbaGameId } : propsGame;
+        
         if (prop.player_id && prop.nba_player_id) {
           return {
             ...prop,
-            player_props_games: propsGame, // Ensure player_props_games is preserved
-            props_game_id: propsGame?.id, // Add props_game_id for easy access
+            player_props_games: updatedPropsGame,
+            props_game_id: updatedPropsGame?.id,
           };
         }
         
-        // Try to match using player name matcher
         if (prop.player_name && playerNameMatches) {
           const match = playerNameMatches.get(prop.player_name);
           if (match) {
@@ -6189,106 +6780,134 @@ export function PropPredictionsModule({
               ...prop,
               player_id: match.player_id,
               nba_player_id: match.nba_player_id,
-              player_props_games: propsGame, // Ensure player_props_games is preserved
-              props_game_id: propsGame?.id, // Add props_game_id for easy access
+              player_props_games: updatedPropsGame,
+              props_game_id: updatedPropsGame?.id,
             };
           }
         }
         
-        // Return prop with preserved player_props_games
         return {
           ...prop,
-          player_props_games: propsGame, // Ensure player_props_games is preserved
-          props_game_id: propsGame?.id, // Add props_game_id for easy access
+          player_props_games: updatedPropsGame,
+          props_game_id: updatedPropsGame?.id,
         };
       });
       
       console.log(`✅ Enhanced ${enhancedProps.length} props with player matching`);
       
-      // NO FILTERING - Return all props as-is
-      // Step 6: Calculate hit rates for all props (using matched nba_player_id)
+      // Step 5: Clean and combine props
+      console.log('🧹 Cleaning and combining props...');
+      const cleanedProps = cleanPlayerProps(enhancedProps);
+      console.log(`✅ Cleaned: ${enhancedProps.length} -> ${cleanedProps.length} props (combined over/under pairs)`);
+      
+      // Step 6: Filter to game-level props only
+      const gamePropsOnly = filterGamePropsOnly(cleanedProps);
+      console.log(`✅ Filtered to game props: ${cleanedProps.length} -> ${gamePropsOnly.length} props`);
+      
+      // Step 7: Calculate hit rates for all props
       const { calculatePropResult } = await import('../utils/playerPropsCalculator');
       
-      const propsWithHitRates = await Promise.all(
-        enhancedProps.map(async (prop: any) => {
-          // Use matched nba_player_id if available
-          const nbaPlayerId = prop.nba_player_id;
-          
-          // If no nba_player_id, skip hit rate calculation
-          if (!nbaPlayerId) {
-            return {
-              ...prop,
-              last10HitRate: null,
-              last10Hits: 0,
-              last10Total: 0,
-            };
+      const propsByPlayer = new Map<number, CleanedPlayerProp[]>();
+      gamePropsOnly.forEach((prop: CleanedPlayerProp) => {
+        const nbaPlayerId = prop.nba_player_id;
+        if (nbaPlayerId) {
+          if (!propsByPlayer.has(nbaPlayerId)) {
+            propsByPlayer.set(nbaPlayerId, []);
           }
-          
-          // Fetch player's last 10 games (excluding today)
-          const { data: recentBoxscores, error: boxscoreError } = await supabase
-            .from('nba_boxscores')
-            .select('game_id, game_date, pts, reb, ast, stl, blk, tov, fg3m, ftm, fg3a, fta, fgm, fga')
-            .eq('nba_player_id', nbaPlayerId)
-            .lt('game_date', dateString) // Only games before today
-            .order('game_date', { ascending: false })
-            .limit(10);
-          
-          if (boxscoreError || !recentBoxscores || recentBoxscores.length === 0) {
-            return {
-              ...prop,
-              last10HitRate: null,
-              last10Hits: 0,
-              last10Total: 0,
-            };
-          }
-          
-          // Determine if this is an over or under prop
-          const betTypeId = prop.bet_type_id || '';
-          const isOver = betTypeId.includes('-over') || betTypeId.endsWith('over') || 
-                        betTypeId.toLowerCase().includes('over');
-          const isUnder = betTypeId.includes('-under') || betTypeId.endsWith('under') || 
-                         betTypeId.toLowerCase().includes('under');
-          
-          // Check each of the last 10 games to see if player hit this prop
-          let hits = 0;
-          let total = 0;
-          
-          for (const boxscore of recentBoxscores) {
-            const result = calculatePropResult(prop.bet_type, prop.line || 0, boxscore);
-            if (!result) continue;
+          propsByPlayer.get(nbaPlayerId)!.push(prop);
+        }
+      });
+      
+      const boxscoreCache = new Map<number, any[]>();
+      const uniquePlayerIds = Array.from(propsByPlayer.keys());
+      const batchSize = 20;
+      
+      for (let i = 0; i < uniquePlayerIds.length; i += batchSize) {
+        const batch = uniquePlayerIds.slice(i, i + batchSize);
+        await Promise.all(
+          batch.map(async (nbaPlayerId) => {
+            const { data: recentBoxscores, error: boxscoreError } = await supabase
+              .from('nba_boxscores')
+              .select('game_id, game_date, pts, reb, ast, stl, blk, tov, fg3m, ftm, fg3a, fta, fgm, fga')
+              .eq('nba_player_id', nbaPlayerId)
+              .lt('game_date', dateString)
+              .order('game_date', { ascending: false })
+              .limit(10);
             
-            total++;
-            
-            // Determine if this was a hit
-            let hit = false;
-            if (isOver && result.result === 'over') {
-              hit = true;
-            } else if (isUnder && result.result === 'under') {
-              hit = true;
+            if (!boxscoreError && recentBoxscores) {
+              boxscoreCache.set(nbaPlayerId, recentBoxscores);
             }
-            
-            if (hit) {
-              hits++;
-            }
-          }
-          
-          const hitRate = total > 0 ? (hits / total) * 100 : null;
-          
+          })
+        );
+      }
+      
+      const propsWithHitRates = gamePropsOnly.map((prop: CleanedPlayerProp) => {
+        const nbaPlayerId = prop.nba_player_id;
+        
+        if (!nbaPlayerId) {
           return {
             ...prop,
-            last10HitRate: hitRate,
-            last10Hits: hits,
-            last10Total: total,
+            last10HitRate: null,
+            last10Hits: 0,
+            last10Total: 0,
+            overHitRate: null,
+            underHitRate: null,
           };
-        })
-      );
+        }
+        
+        const recentBoxscores = boxscoreCache.get(nbaPlayerId);
+        
+        if (!recentBoxscores || recentBoxscores.length === 0) {
+          return {
+            ...prop,
+            last10HitRate: null,
+            last10Hits: 0,
+            last10Total: 0,
+            overHitRate: null,
+            underHitRate: null,
+          };
+        }
+        
+        let overHits = 0;
+        let underHits = 0;
+        let total = 0;
+        
+        const lineValue = prop.currentLine || prop.line || 0;
+        
+        for (const boxscore of recentBoxscores) {
+          const result = calculatePropResult(prop.bet_type, lineValue, boxscore);
+          if (!result) continue;
+          
+          total++;
+          
+          if (result.result === 'over') {
+            overHits++;
+          }
+          if (result.result === 'under') {
+            underHits++;
+          }
+        }
+        
+        const overHitRate = total > 0 ? (overHits / total) * 100 : null;
+        const underHitRate = total > 0 ? (underHits / total) * 100 : null;
+        
+        return {
+          ...prop,
+          last10HitRate: prop.over ? overHitRate : (prop.under ? underHitRate : null),
+          last10Hits: prop.over ? overHits : underHits,
+          last10Total: total,
+          overHitRate,
+          underHitRate,
+          overHits,
+          underHits,
+        };
+      });
       
       console.log(`✅ Calculated hit rates for ${propsWithHitRates.length} props`);
       
-      // Deduplicate: For each player + bet_type combination, always take the one with the HIGHEST line value
-      // Group props by player and bet_type
-      const propsByPlayerAndType = new Map<string, any[]>();
-      propsWithHitRates.forEach((prop: any) => {
+      // Deduplicate by taking highest line for each player+bet_type
+      const propsByPlayerAndType = new Map<string, typeof propsWithHitRates>();
+      propsWithHitRates.forEach((prop) => {
         const key = `${prop.nba_player_id || prop.player_name}_${prop.bet_type}`;
         if (!propsByPlayerAndType.has(key)) {
           propsByPlayerAndType.set(key, []);
@@ -6296,17 +6915,14 @@ export function PropPredictionsModule({
         propsByPlayerAndType.get(key)!.push(prop);
       });
       
-      // For each group, take the one with the highest line value
-      const deduplicatedProps: any[] = [];
+      const deduplicatedProps: typeof propsWithHitRates = [];
       propsByPlayerAndType.forEach((props) => {
-        // Sort by line value (descending - highest first)
-        props.sort((a: any, b: any) => {
-          const lineA = parseFloat(a.line?.toString() || '0');
-          const lineB = parseFloat(b.line?.toString() || '0');
-          return lineB - lineA; // Descending order - highest first
+        props.sort((a, b) => {
+          const lineA = a.currentLine || a.line || 0;
+          const lineB = b.currentLine || b.line || 0;
+          return lineB - lineA;
         });
         
-        // Take the first one (highest line)
         if (props[0]) {
           deduplicatedProps.push(props[0]);
         }
@@ -6316,115 +6932,39 @@ export function PropPredictionsModule({
       
       return deduplicatedProps;
     },
-    enabled: !isPast,
+    enabled: true, // Always enabled for PropPredictionsModule (only called for present dates)
   });
   
-  const isLoading = isPast ? hitRatesLoading : propsLoading;
+  const isLoading = predictedPropsLoading;
+  const predictedProps = predictedPropsData;
   
-  // For past dates: show hottest/coldest players
-  if (isPast) {
-    const sortedPlayers = playerHitRates 
-      ? (activeTab === 'hottest' 
-          ? [...playerHitRates].sort((a, b) => b.hitRate - a.hitRate).slice(0, 10)
-          : [...playerHitRates].sort((a, b) => a.hitRate - b.hitRate).slice(0, 10))
-      : [];
-    
-    return (
-      <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
-              Prop Performance
-            </Typography>
-            <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val as 'hottest' | 'coldest')}>
-              <TabList>
-                <Tab value="hottest">Hottest</Tab>
-                <Tab value="coldest">Coldest</Tab>
-              </TabList>
-            </Tabs>
-          </Box>
-          
-          {isLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-              <CircularProgress />
-            </Box>
-          ) : sortedPlayers && sortedPlayers.length > 0 ? (
-            <Table hoverRow size="sm">
-              <thead>
-                <tr>
-                  <th style={{ color: '#FFFFFF' }}>Player</th>
-                  <th style={{ color: '#FFFFFF' }}>Hit Rate</th>
-                  <th style={{ color: '#FFFFFF' }}>Hits</th>
-                  <th style={{ color: '#FFFFFF' }}>Total Props</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedPlayers.map((player: any, index: number) => (
-                  <tr 
-                    key={player.nbaPlayerId || index}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      if (player.playerId) {
-                        navigate(`/player/${player.playerId}`);
-                      }
-                    }}
-                  >
-                    <td>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Avatar 
-                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nbaPlayerId}.png`}
-                          alt={player.playerName}
-                          sx={{ width: 24, height: 24 }}
-                        />
-                        <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                          {player.playerName || 'N/A'}
-                        </Typography>
-                      </Box>
-                    </td>
-                    <td>
-                      <Typography 
-                        level="body-sm" 
-                        sx={{ 
-                          color: activeTab === 'hottest' 
-                            ? (player.hitRate >= 70 ? '#10B981' : player.hitRate >= 50 ? '#FFC72C' : '#CCCCCC')
-                            : (player.hitRate <= 30 ? '#EF4444' : player.hitRate <= 50 ? '#FFC72C' : '#CCCCCC'),
-                          fontWeight: 600,
-                        }}
-                      >
-                        {player.hitRate.toFixed(1)}%
-                      </Typography>
-                    </td>
-                    <td>
-                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                        {player.hits}
-                      </Typography>
-                    </td>
-                    <td>
-                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                        {player.totalProps}
-                      </Typography>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </Table>
-          ) : (
-            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
-              <Typography sx={{ color: '#FFFFFF' }}>
-                No prop data available for this date.
-              </Typography>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-    );
-  }
-  
-  // For future/today dates: show hottest/coldest props based on last 10 games
+  // For present/today dates: show hottest/coldest props based on last 10 games
+  // Hottest: Show OVER props sorted by overHitRate (descending) - players consistently going over
+  // Coldest: Show UNDER props sorted by underHitRate (descending) - players consistently going under
   const sortedProps = predictedProps 
     ? (activeTab === 'hottest' 
-        ? [...predictedProps].sort((a: any, b: any) => (b.last10HitRate || 0) - (a.last10HitRate || 0)).slice(0, 10)
-        : [...predictedProps].sort((a: any, b: any) => (a.last10HitRate || 0) - (b.last10HitRate || 0)).slice(0, 10))
+        ? [...predictedProps]
+            .filter((p: any) => p.over && p.overHitRate !== null && p.overHitRate !== undefined) // Only show props with over side and valid hit rate
+            .map((p: any) => ({ 
+              ...p, 
+              displayHitRate: p.overHitRate, 
+              displayHits: p.overHits || 0, 
+              displaySide: 'over',
+              displayOdds: p.over?.american_odds || p.over?.price || 'N/A'
+            }))
+            .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0)) // Highest hit rate first
+            .slice(0, 10)
+        : [...predictedProps]
+            .filter((p: any) => p.under && p.underHitRate !== null && p.underHitRate !== undefined) // Only show props with under side and valid hit rate
+            .map((p: any) => ({ 
+              ...p, 
+              displayHitRate: p.underHitRate, 
+              displayHits: p.underHits || 0, 
+              displaySide: 'under',
+              displayOdds: p.under?.american_odds || p.under?.price || 'N/A'
+            }))
+            .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0)) // Highest hit rate first (players consistently going under)
+            .slice(0, 10))
     : [];
   
   return (
@@ -6444,7 +6984,21 @@ export function PropPredictionsModule({
             }}
             onClick={() => {
               if (onOpen) {
-                onOpen();
+                // Pass the props data to the parent
+                // For present dates, use predictedProps (cleaned props with hit rates)
+                let propsToPass: any[] = [];
+                
+                if (predictedProps) {
+                  // predictedProps are already cleaned
+                  propsToPass = predictedProps;
+                }
+                
+                const propsData = {
+                  futureProps: propsToPass,
+                  isLoading: isLoading,
+                  activeTab: activeTab,
+                };
+                onOpen(propsData);
               } else {
                 // Fallback to navigation if onOpen not provided
                 navigate(`/prop-predictions/${dateString}`);
@@ -6514,27 +7068,77 @@ export function PropPredictionsModule({
                         </Typography>
                       </td>
                   <td>
-                    <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
-                      {prop.line ? prop.line.toFixed(1) : 'N/A'}
-                    </Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                        {(() => {
+                          const lineValue = prop.currentLine || prop.line;
+                          if (lineValue == null) return 'N/A';
+                          const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                          return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                        })()}
+                      </Typography>
+                      {prop.lineMovement !== undefined && prop.lineMovement !== 0 && (
+                        <Chip 
+                          size="sm" 
+                          variant="soft"
+                          color={prop.lineMovement > 0 ? 'success' : 'danger'}
+                          sx={{ height: '16px', fontSize: '0.65rem' }}
+                        >
+                          {prop.lineMovement > 0 ? '↑' : '↓'} {Math.abs(prop.lineMovement).toFixed(1)}
+                        </Chip>
+                      )}
+                    </Stack>
                   </td>
                   <td>
                     <Typography 
                       level="body-sm" 
                       sx={{ 
                         color: activeTab === 'hottest' 
-                          ? (prop.last10HitRate >= 70 ? '#10B981' : prop.last10HitRate >= 50 ? '#FFC72C' : '#CCCCCC')
-                          : (prop.last10HitRate <= 30 ? '#EF4444' : prop.last10HitRate <= 50 ? '#FFC72C' : '#CCCCCC'),
+                          ? ((prop.displayHitRate || prop.last10HitRate) >= 70 ? '#10B981' : (prop.displayHitRate || prop.last10HitRate) >= 50 ? '#FFC72C' : '#CCCCCC')
+                          : ((prop.displayHitRate || prop.last10HitRate) <= 30 ? '#EF4444' : (prop.displayHitRate || prop.last10HitRate) <= 50 ? '#FFC72C' : '#CCCCCC'),
                         fontWeight: 600,
                       }}
                     >
-                      {prop.last10HitRate !== null ? `${prop.last10HitRate.toFixed(1)}%` : 'N/A'} ({prop.last10Hits}/{prop.last10Total})
+                      {(prop.displayHitRate !== null && prop.displayHitRate !== undefined) 
+                        ? `${prop.displayHitRate.toFixed(1)}%` 
+                        : (prop.last10HitRate !== null ? `${prop.last10HitRate.toFixed(1)}%` : 'N/A')} 
+                      ({prop.displayHits || prop.last10Hits}/{prop.last10Total})
                     </Typography>
                   </td>
                   <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      {prop.american_odds || prop.price || 'N/A'}
-                    </Typography>
+                    <Stack direction="row" spacing={0.5} alignItems="center">
+                      {prop.displaySide === 'over' && prop.over ? (
+                        <>
+                          <Chip size="sm" variant="soft" color="success" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                            O {prop.displayOdds || prop.over.american_odds || prop.over.price || 'N/A'}
+                          </Chip>
+                          {prop.bestOverOdds && prop.bestOverOdds.bookmaker !== prop.over.bookmaker && (
+                            <Tooltip title={`Best: ${prop.bestOverOdds.bookmaker} ${prop.bestOverOdds.odds}`}>
+                              <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                ⭐
+                              </Typography>
+                            </Tooltip>
+                          )}
+                        </>
+                      ) : prop.displaySide === 'under' && prop.under ? (
+                        <>
+                          <Chip size="sm" variant="soft" color="danger" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                            U {prop.displayOdds || prop.under.american_odds || prop.under.price || 'N/A'}
+                          </Chip>
+                          {prop.bestUnderOdds && prop.bestUnderOdds.bookmaker !== prop.under.bookmaker && (
+                            <Tooltip title={`Best: ${prop.bestUnderOdds.bookmaker} ${prop.bestUnderOdds.odds}`}>
+                              <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                ⭐
+                              </Typography>
+                            </Tooltip>
+                          )}
+                        </>
+                      ) : (
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                          {prop.displayOdds || prop.over?.american_odds || prop.under?.american_odds || prop.american_odds || prop.price || 'N/A'}
+                        </Typography>
+                      )}
+                    </Stack>
                   </td>
                 </tr>
               ))}
@@ -7000,7 +7604,12 @@ function PropPredictionsModal({
                       </td>
                       <td>
                         <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
-                          {prop.line ? prop.line.toFixed(1) : 'N/A'}
+                          {(() => {
+                            const lineValue = prop.currentLine || prop.line;
+                            if (lineValue == null) return 'N/A';
+                            const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                            return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                          })()}
                         </Typography>
                       </td>
                       <td>
@@ -7353,6 +7962,150 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
   );
 }
 
+// Helper function to calculate season injury progress bar
+function calculateInjuryProgress(injuryHistory: any[]): Array<{
+  status: string;
+  startPercent: number;
+  widthPercent: number;
+}> {
+  if (!injuryHistory || injuryHistory.length === 0) {
+    return [{ status: 'Healthy', startPercent: 0, widthPercent: 100 }];
+  }
+
+  // Season start: October 21, 2025
+  const firstDate = new Date('2025-10-21');
+  firstDate.setHours(0, 0, 0, 0);
+  const lastDate = new Date(); // Today
+  lastDate.setHours(23, 59, 59, 999);
+  const totalDays = Math.ceil((lastDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+  // Sort injuries by date (oldest first)
+  const sorted = [...injuryHistory].sort((a, b) => 
+    new Date(a.date_updated).getTime() - new Date(b.date_updated).getTime()
+  );
+
+  // Group consecutive injuries by status
+  const injurySegments: Array<{
+    status: string;
+    startDate: Date;
+    endDate: Date;
+  }> = [];
+
+  let currentSegment: any = null;
+  sorted.forEach((injury) => {
+    const injuryDate = new Date(injury.date_updated);
+    injuryDate.setHours(0, 0, 0, 0);
+    const status = injury.injury_status || 'Healthy';
+    
+    // Normalize status
+    const normalizedStatus = 
+      status === 'Day-to-Day' ? 'Questionable' :
+      status === 'Out' ? 'Out' :
+      status === 'Questionable' ? 'Questionable' :
+      status === 'Probable' ? 'Probable' :
+      'Healthy';
+    
+    if (!currentSegment || currentSegment.status !== normalizedStatus) {
+      if (currentSegment) {
+        injurySegments.push(currentSegment);
+      }
+      currentSegment = {
+        status: normalizedStatus,
+        startDate: injuryDate,
+        endDate: injuryDate,
+      };
+    } else {
+      currentSegment.endDate = injuryDate;
+    }
+  });
+
+  if (currentSegment) {
+    injurySegments.push(currentSegment);
+  }
+
+  // Fill gaps with Healthy segments
+  const allSegments: Array<{
+    status: string;
+    startPercent: number;
+    widthPercent: number;
+  }> = [];
+
+  injurySegments.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+  let currentDate = new Date(firstDate);
+
+  injurySegments.forEach((segment) => {
+    const segmentStart = new Date(segment.startDate);
+    segmentStart.setHours(0, 0, 0, 0);
+
+    // Fill gap before this segment
+    if (currentDate.getTime() < segmentStart.getTime()) {
+      const gapEnd = new Date(segmentStart);
+      gapEnd.setDate(gapEnd.getDate() - 1);
+      
+      if (currentDate.getTime() <= gapEnd.getTime()) {
+        const gapDays = Math.ceil((gapEnd.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const gapStartDays = Math.ceil((currentDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        allSegments.push({
+          status: 'Healthy',
+          startPercent: (gapStartDays / totalDays) * 100,
+          widthPercent: (gapDays / totalDays) * 100,
+        });
+      }
+    }
+
+    // Add injury segment
+    const segmentStartDays = Math.ceil((segmentStart.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+    const segmentEnd = new Date(segment.endDate);
+    segmentEnd.setHours(23, 59, 59, 999);
+    const segmentEndDays = Math.ceil((segmentEnd.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+    const segmentDays = segmentEndDays - segmentStartDays + 1;
+
+    allSegments.push({
+      status: segment.status,
+      startPercent: (segmentStartDays / totalDays) * 100,
+      widthPercent: (segmentDays / totalDays) * 100,
+    });
+
+    currentDate = new Date(segmentEnd);
+    currentDate.setDate(currentDate.getDate() + 1);
+    currentDate.setHours(0, 0, 0, 0);
+  });
+
+  // Fill gap from last injury to today
+  if (currentDate.getTime() <= lastDate.getTime()) {
+    const gapStartDays = Math.ceil((currentDate.getTime() - firstDate.getTime()) / (1000 * 60 * 60 * 24));
+    const gapDays = Math.ceil((lastDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    allSegments.push({
+      status: 'Healthy',
+      startPercent: (gapStartDays / totalDays) * 100,
+      widthPercent: (gapDays / totalDays) * 100,
+    });
+  }
+
+  // If no injuries, fill entire timeline
+  if (allSegments.length === 0) {
+    allSegments.push({
+      status: 'Healthy',
+      startPercent: 0,
+      widthPercent: 100,
+    });
+  }
+
+  return allSegments.sort((a, b) => a.startPercent - b.startPercent);
+}
+
+function getStatusColorForProgress(status: string): string {
+  switch (status) {
+    case 'Healthy': return '#10B981'; // Green
+    case 'Out': return '#EF4444'; // Red
+    case 'Probable': return '#FFC72C'; // Yellow
+    case 'Questionable': return '#FF6B35'; // Orange
+    default: return '#666666'; // Gray
+  }
+}
+
 // Injuries Module - Shows current NBA injuries (or historical for past dates)
 export function InjuriesModule({ 
   navigate, 
@@ -7361,17 +8114,62 @@ export function InjuriesModule({
   navigate: (path: string) => void;
   selectedDate?: Dayjs;
 }) {
+  const [selectedStatus, setSelectedStatus] = useState<string>('Out');
+  const [page, setPage] = useState<Record<string, number>>({ Out: 1, Questionable: 1, 'Day-to-Day': 1 });
+  const [gameFilter, setGameFilter] = useState<string>('');
+  const ITEMS_PER_PAGE = 5;
+
   // Determine if we should show current injuries or historical injuries
   const isPastDate = selectedDate && selectedDate.isBefore(dayjs(), 'day');
   const targetDate = selectedDate ? selectedDate.format('YYYY-MM-DD') : dayjs().format('YYYY-MM-DD');
+  const isToday = !selectedDate || selectedDate.isSame(dayjs(), 'day');
+  
+  // Fetch games for the date
+  const { data: games } = useGamesByDate(targetDate);
+  const { data: nbaScoreboard } = useNBAScoreboard(isToday ? targetDate : undefined);
+  
+  const allGames = useMemo(() => {
+    if (isToday && nbaScoreboard?.games) {
+      const filteredScoreboardGames = nbaScoreboard.games.filter((game: any) => {
+        const gameDate = game.gameDate || game.game_date;
+        if (!gameDate) return false;
+        try {
+          if (gameDate.includes('T') || gameDate.includes(' ')) {
+            return isDateInEST(gameDate, targetDate);
+          } else {
+            const utcDate = new Date(gameDate + 'T00:00:00Z');
+            const estDateString = utcToESTDate(utcDate);
+            return estDateString === targetDate;
+          }
+        } catch (e) {
+          return false;
+        }
+      });
+      return filteredScoreboardGames.length > 0 ? filteredScoreboardGames : (games || []);
+    }
+    return games || [];
+  }, [isToday, nbaScoreboard, games, targetDate]);
+  
+  // Get unique games for filter
+  const uniqueGames = useMemo(() => {
+    const gamesMap = new Map<string, { id: string; label: string }>();
+    allGames.forEach((game: any) => {
+      const gameId = game.gameId || game.game_id;
+      const homeTeam = game.homeTeam?.abbreviation || game.home_team_tricode || game.homeTeam?.tricode || '';
+      const awayTeam = game.awayTeam?.abbreviation || game.away_team_tricode || game.awayTeam?.tricode || '';
+      if (homeTeam && awayTeam && gameId) {
+        const label = `${awayTeam} @ ${homeTeam}`;
+        gamesMap.set(gameId, { id: gameId, label });
+      }
+    });
+    return Array.from(gamesMap.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [allGames]);
   
   const { data: injuries, isLoading } = useQuery({
     queryKey: ['injuries', targetDate, isPastDate],
     queryFn: async () => {
       if (isPastDate) {
         // For past dates, show injuries that were current on that date
-        // Find injuries where date_updated <= targetDate and is_current was true at that time
-        // We'll use a query that gets the latest injury per player as of that date
         const { data, error } = await supabase
           .from('nba_injuries')
           .select(`
@@ -7382,7 +8180,7 @@ export function InjuriesModule({
             injury_status,
             date_updated,
             report_timestamp,
-            nba_players!inner (
+            nba_players!nba_player_id (
               id,
               name,
               team_abbreviation,
@@ -7392,7 +8190,7 @@ export function InjuriesModule({
           .lte('date_updated', `${targetDate}T23:59:59Z`)
           .in('injury_status', ['Out', 'Questionable', 'Day-to-Day'])
           .order('date_updated', { ascending: false })
-          .limit(100); // Get more to filter for latest per player
+          .limit(200);
         
         if (error) {
           console.error('Error fetching historical injuries:', error);
@@ -7410,7 +8208,7 @@ export function InjuriesModule({
           });
         }
         
-        return Array.from(playerMap.values()).slice(0, 20);
+        return Array.from(playerMap.values());
       } else {
         // For present/future dates, show current injuries
         const { data, error } = await supabase
@@ -7422,7 +8220,7 @@ export function InjuriesModule({
             injury_description,
             injury_status,
             date_updated,
-            nba_players!inner (
+            nba_players!nba_player_id (
               id,
               name,
               team_abbreviation,
@@ -7433,7 +8231,7 @@ export function InjuriesModule({
           .in('injury_status', ['Out', 'Questionable', 'Day-to-Day'])
           .order('injury_status', { ascending: false })
           .order('date_updated', { ascending: false })
-          .limit(20); // Show top 20 injuries
+          .limit(200);
         
         if (error) {
           console.error('Error fetching current injuries:', error);
@@ -7443,12 +8241,80 @@ export function InjuriesModule({
         return data || [];
       }
     },
-    refetchInterval: isPastDate ? false : 300000, // Only refetch for current injuries
+    refetchInterval: isPastDate ? false : 300000,
   });
 
-  // Group injuries by status
+  // Fetch season minutes for all injured players
+  const allPlayerIds = useMemo(() => {
+    if (!injuries) return [];
+    return injuries.map((injury: any) => injury.nba_player_id).filter(Boolean);
+  }, [injuries]);
+
+  const { data: minutesMap } = useQuery({
+    queryKey: ['injury-season-minutes', allPlayerIds],
+    queryFn: async () => {
+      if (allPlayerIds.length === 0) return new Map<number, number>();
+
+      const { data, error } = await supabase
+        .from('nba_boxscores')
+        .select('nba_player_id, min')
+        .in('nba_player_id', allPlayerIds)
+        .eq('season_year', '2025-26')
+        .gte('game_date', '2025-10-21')
+        .lte('game_date', '2026-04-12');
+
+      if (error) {
+        console.error('Error fetching season minutes:', error);
+        return new Map<number, number>();
+      }
+
+      // Calculate total minutes per player
+      const map = new Map<number, number>();
+      if (data) {
+        data.forEach((boxscore: any) => {
+          const playerId = boxscore.nba_player_id;
+          let minutes = 0;
+          
+          // Handle minutes format: could be "36:00" string or number
+          if (typeof boxscore.min === 'string' && boxscore.min.includes(':')) {
+            const [mins, secs] = boxscore.min.split(':').map(Number);
+            minutes = mins + (secs / 60);
+          } else {
+            minutes = parseFloat(String(boxscore.min || 0));
+          }
+          
+          map.set(playerId, (map.get(playerId) || 0) + minutes);
+        });
+      }
+
+      return map;
+    },
+    enabled: allPlayerIds.length > 0,
+  });
+
+  // Group injuries by status, filter by game, and sort by minutes played
   const injuriesByStatus = useMemo(() => {
     if (!injuries) return { Out: [], Questionable: [], 'Day-to-Day': [] };
+    
+    let filteredInjuries = injuries;
+    
+    // Filter by game if selected
+    if (gameFilter) {
+      const selectedGame = allGames.find((g: any) => {
+        const gId = g.gameId || g.game_id;
+        return String(gId) === String(gameFilter);
+      });
+      
+      if (selectedGame) {
+        const homeTeam = selectedGame.homeTeam?.abbreviation || selectedGame.home_team_tricode || selectedGame.homeTeam?.tricode || '';
+        const awayTeam = selectedGame.awayTeam?.abbreviation || selectedGame.away_team_tricode || selectedGame.awayTeam?.tricode || '';
+        
+        filteredInjuries = injuries.filter((injury: any) => {
+          const playerTeam = injury.nba_players?.team_abbreviation;
+          return playerTeam === homeTeam || playerTeam === awayTeam;
+        });
+      }
+    }
     
     const grouped: Record<string, any[]> = {
       Out: [],
@@ -7456,15 +8322,72 @@ export function InjuriesModule({
       'Day-to-Day': [],
     };
     
-    injuries.forEach((injury: any) => {
+    filteredInjuries.forEach((injury: any) => {
       const status = injury.injury_status;
       if (grouped[status]) {
         grouped[status].push(injury);
       }
     });
     
+    // Sort each status group by minutes played (descending)
+    Object.keys(grouped).forEach((status) => {
+      grouped[status].sort((a, b) => {
+        const minutesA = minutesMap?.get(a.nba_player_id) || 0;
+        const minutesB = minutesMap?.get(b.nba_player_id) || 0;
+        return minutesB - minutesA; // Descending order
+      });
+    });
+    
     return grouped;
-  }, [injuries]);
+  }, [injuries, minutesMap, gameFilter, allGames]);
+
+  // Fetch injury history for visible players
+  const visibleInjuries = useMemo(() => {
+    const statusInjuries = injuriesByStatus[selectedStatus] || [];
+    const startIdx = (page[selectedStatus] - 1) * ITEMS_PER_PAGE;
+    return statusInjuries.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+  }, [injuriesByStatus, selectedStatus, page]);
+
+  const playerIds = useMemo(() => 
+    visibleInjuries.map((injury: any) => injury.nba_player_id).filter(Boolean),
+    [visibleInjuries]
+  );
+
+  // Fetch injury history for all visible players
+  const { data: injuryHistoryMap } = useQuery({
+    queryKey: ['injury-history', playerIds],
+    queryFn: async () => {
+      if (playerIds.length === 0) return new Map();
+
+      const { data, error } = await supabase
+        .from('nba_injuries')
+        .select('*')
+        .in('nba_player_id', playerIds)
+        .in('injury_status', ['Out', 'Questionable', 'Day-to-Day', 'Probable', 'Healthy'])
+        .order('date_updated', { ascending: false })
+        .limit(1000);
+
+      if (error) {
+        console.error('Error fetching injury history:', error);
+        return new Map();
+      }
+
+      // Group by player_id
+      const map = new Map<number, any[]>();
+      if (data) {
+        data.forEach((injury: any) => {
+          const playerId = injury.nba_player_id;
+          if (!map.has(playerId)) {
+            map.set(playerId, []);
+          }
+          map.get(playerId)!.push(injury);
+        });
+      }
+
+      return map;
+    },
+    enabled: playerIds.length > 0,
+  });
 
   const getStatusColor = (status: string) => {
     if (status === 'Out') return 'danger';
@@ -7473,9 +8396,43 @@ export function InjuriesModule({
     return 'neutral';
   };
 
+  const totalPages = useMemo(() => {
+    const count = injuriesByStatus[selectedStatus]?.length || 0;
+    return Math.ceil(count / ITEMS_PER_PAGE);
+  }, [injuriesByStatus, selectedStatus]);
+
+  const handleStatusChange = (status: string) => {
+    setSelectedStatus(status);
+    // Reset to page 1 when changing status
+    if (!page[status]) {
+      setPage({ ...page, [status]: 1 });
+    }
+  };
+
+  const handlePageChange = (newPage: number) => {
+    setPage({ ...page, [selectedStatus]: newPage });
+  };
+
+  // Determine available statuses (only show chips for statuses that have injuries)
+  const availableStatuses = useMemo(() => {
+    const statuses: string[] = [];
+    if (injuriesByStatus.Out.length > 0) statuses.push('Out');
+    if (injuriesByStatus.Questionable.length > 0) statuses.push('Questionable');
+    if (injuriesByStatus['Day-to-Day'].length > 0) statuses.push('Day-to-Day');
+    return statuses;
+  }, [injuriesByStatus]);
+
+  // Set initial status to first available
+  useEffect(() => {
+    if (availableStatuses.length > 0 && !availableStatuses.includes(selectedStatus)) {
+      setSelectedStatus(availableStatuses[0]);
+    }
+  }, [availableStatuses, selectedStatus]);
+
   return (
     <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
       <CardContent>
+        {/* Header Row 1: Title */}
         <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 2 }}>
           Injuries
           {isPastDate && (
@@ -7485,11 +8442,61 @@ export function InjuriesModule({
           )}
         </Typography>
         
+        {/* Header Row 2: Status Chips and Game Filter */}
+        {!isLoading && availableStatuses.length > 0 && (
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, flex: 1 }}>
+              {availableStatuses.map((status) => {
+                // Short labels for header
+                const statusLabel = status === 'Out' ? 'O' : status === 'Questionable' ? 'Q' : status;
+                return (
+                  <Chip
+                    key={status}
+                    size="md"
+                    color={getStatusColor(status)}
+                    variant={selectedStatus === status ? 'solid' : 'soft'}
+                    onClick={() => handleStatusChange(status)}
+                    sx={{
+                      cursor: 'pointer',
+                      fontWeight: selectedStatus === status ? 'bold' : 'normal',
+                    }}
+                  >
+                    {statusLabel} ({injuriesByStatus[status]?.length || 0})
+                  </Chip>
+                );
+              })}
+            </Stack>
+            
+            {/* Game Filter */}
+            {uniqueGames.length > 0 && (
+              <FormControl size="sm" sx={{ minWidth: 200 }}>
+                <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Game</FormLabel>
+                <Select
+                  value={gameFilter}
+                  onChange={(e, val) => {
+                    setGameFilter(val || '');
+                    setPage({ ...page, [selectedStatus]: 1 }); // Reset to page 1 when filter changes
+                  }}
+                  placeholder="All Games"
+                  sx={{ minHeight: '32px' }}
+                >
+                  <Option value="">All Games</Option>
+                  {uniqueGames.map((game) => (
+                    <Option key={game.id} value={game.id}>
+                      {game.label}
+                    </Option>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
+          </Box>
+        )}
+        
         {isLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
             <CircularProgress />
           </Box>
-        ) : !injuries || injuries.length === 0 ? (
+        ) : availableStatuses.length === 0 ? (
           <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
             <Typography sx={{ color: '#FFFFFF' }}>
               {isPastDate ? 'No injuries reported for this date.' : 'No current injuries reported.'}
@@ -7497,154 +8504,106 @@ export function InjuriesModule({
           </Alert>
         ) : (
           <Stack spacing={2}>
-            {/* Out */}
-            {injuriesByStatus.Out.length > 0 && (
-              <Box>
-                <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 1, fontWeight: 'bold' }}>
-                  Out ({injuriesByStatus.Out.length})
-                </Typography>
+            {/* Injuries Table */}
+            {visibleInjuries.length > 0 && (
+              <>
                 <Table hoverRow size="sm">
                   <tbody>
-                    {injuriesByStatus.Out.slice(0, 5).map((injury: any) => (
-                      <tr
-                        key={injury.id}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => {
-                          if (injury.nba_players?.id) {
-                            navigate(`/player/${injury.nba_players.id}`);
-                          }
-                        }}
-                      >
-                        <td>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                              {injury.nba_players?.name || 'Unknown'}
-                            </Typography>
-                            <Chip size="sm" color={getStatusColor(injury.injury_status)} variant="soft">
-                              {injury.injury_status}
-                            </Chip>
-                          </Stack>
-                          {injury.injury_type && (
-                            <Typography level="body-xs" sx={{ color: '#CCCCCC', mt: 0.5 }}>
-                              {injury.injury_type.replace(/^Injury\/Illness\s*-\s*/i, '')}
-                            </Typography>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', width: '60px' }}>
-                          <Typography level="body-xs" sx={{ color: '#999999' }}>
-                            {injury.nba_players?.team_abbreviation || ''}
-                          </Typography>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-                {injuriesByStatus.Out.length > 5 && (
-                  <Typography level="body-xs" sx={{ color: '#999999', mt: 1, textAlign: 'center' }}>
-                    +{injuriesByStatus.Out.length - 5} more
-                  </Typography>
-                )}
-              </Box>
-            )}
+                    {visibleInjuries.map((injury: any) => {
+                      const playerId = injury.nba_player_id;
+                      const history = injuryHistoryMap?.get(playerId) || [];
+                      const progressSegments = calculateInjuryProgress(history);
 
-            {/* Questionable */}
-            {injuriesByStatus.Questionable.length > 0 && (
-              <Box>
-                <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 1, fontWeight: 'bold' }}>
-                  Questionable ({injuriesByStatus.Questionable.length})
-                </Typography>
-                <Table hoverRow size="sm">
-                  <tbody>
-                    {injuriesByStatus.Questionable.slice(0, 5).map((injury: any) => (
-                      <tr
-                        key={injury.id}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => {
-                          if (injury.nba_players?.id) {
-                            navigate(`/player/${injury.nba_players.id}`);
-                          }
-                        }}
-                      >
-                        <td>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                              {injury.nba_players?.name || 'Unknown'}
-                            </Typography>
-                            <Chip size="sm" color={getStatusColor(injury.injury_status)} variant="soft">
-                              {injury.injury_status}
-                            </Chip>
-                          </Stack>
-                          {injury.injury_type && (
-                            <Typography level="body-xs" sx={{ color: '#CCCCCC', mt: 0.5 }}>
-                              {injury.injury_type.replace(/^Injury\/Illness\s*-\s*/i, '')}
-                            </Typography>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', width: '60px' }}>
-                          <Typography level="body-xs" sx={{ color: '#999999' }}>
-                            {injury.nba_players?.team_abbreviation || ''}
-                          </Typography>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-                {injuriesByStatus.Questionable.length > 5 && (
-                  <Typography level="body-xs" sx={{ color: '#999999', mt: 1, textAlign: 'center' }}>
-                    +{injuriesByStatus.Questionable.length - 5} more
-                  </Typography>
-                )}
-              </Box>
-            )}
+                      return (
+                        <tr
+                          key={injury.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            if (injury.nba_players?.id) {
+                              navigate(`/player/${injury.nba_players.id}`);
+                            }
+                          }}
+                        >
+                          <td style={{ width: '100%' }}>
+                            <Stack spacing={1}>
+                              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                  <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                                    {injury.nba_players?.name || 'Unknown'}
+                                  </Typography>
+                                  <Chip size="sm" color={getStatusColor(injury.injury_status)} variant="soft">
+                                    {injury.injury_status}
+                                  </Chip>
+                                  {injury.nba_players?.team_abbreviation && (
+                                    <Avatar
+                                      src={getTeamLogoUrl(injury.nba_players.team_abbreviation)}
+                                      alt={injury.nba_players.team_abbreviation}
+                                      sx={{ width: 20, height: 20 }}
+                                    >
+                                      {injury.nba_players.team_abbreviation.charAt(0)}
+                                    </Avatar>
+                                  )}
+                                </Stack>
+                              </Stack>
+                              
+                              {/* Season Progress Bar */}
+                              {progressSegments.length > 0 && (
+                                <Box sx={{ position: 'relative', width: '100%', height: 20, borderRadius: '4px', overflow: 'hidden' }}>
+                                  {progressSegments.map((segment, idx) => (
+                                    <Box
+                                      key={`segment-${idx}`}
+                                      sx={{
+                                        position: 'absolute',
+                                        left: `${segment.startPercent}%`,
+                                        width: `${segment.widthPercent}%`,
+                                        height: '100%',
+                                        bgcolor: getStatusColorForProgress(segment.status),
+                                        borderRadius: idx === 0 ? '4px 0 0 4px' : idx === progressSegments.length - 1 ? '0 4px 4px 0' : '0',
+                                      }}
+                                      title={`${segment.status}: ${segment.startPercent.toFixed(1)}% - ${(segment.startPercent + segment.widthPercent).toFixed(1)}%`}
+                                    />
+                                  ))}
+                                </Box>
+                              )}
 
-            {/* Day-to-Day */}
-            {injuriesByStatus['Day-to-Day'].length > 0 && (
-              <Box>
-                <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 1, fontWeight: 'bold' }}>
-                  Day-to-Day ({injuriesByStatus['Day-to-Day'].length})
-                </Typography>
-                <Table hoverRow size="sm">
-                  <tbody>
-                    {injuriesByStatus['Day-to-Day'].slice(0, 5).map((injury: any) => (
-                      <tr
-                        key={injury.id}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => {
-                          if (injury.nba_players?.id) {
-                            navigate(`/player/${injury.nba_players.id}`);
-                          }
-                        }}
-                      >
-                        <td>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                              {injury.nba_players?.name || 'Unknown'}
-                            </Typography>
-                            <Chip size="sm" color={getStatusColor(injury.injury_status)} variant="soft">
-                              {injury.injury_status}
-                            </Chip>
-                          </Stack>
-                          {injury.injury_type && (
-                            <Typography level="body-xs" sx={{ color: '#CCCCCC', mt: 0.5 }}>
-                              {injury.injury_type.replace(/^Injury\/Illness\s*-\s*/i, '')}
-                            </Typography>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', width: '60px' }}>
-                          <Typography level="body-xs" sx={{ color: '#999999' }}>
-                            {injury.nba_players?.team_abbreviation || ''}
-                          </Typography>
-                        </td>
-                      </tr>
-                    ))}
+                              {injury.injury_type && (
+                                <Typography level="body-xs" sx={{ color: '#CCCCCC' }}>
+                                  {injury.injury_type.replace(/^Injury\/Illness\s*-\s*/i, '')}
+                                </Typography>
+                              )}
+                            </Stack>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </Table>
-                {injuriesByStatus['Day-to-Day'].length > 5 && (
-                  <Typography level="body-xs" sx={{ color: '#999999', mt: 1, textAlign: 'center' }}>
-                    +{injuriesByStatus['Day-to-Day'].length - 5} more
-                  </Typography>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <Stack direction="row" spacing={1} alignItems="center" justifyContent="center">
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      disabled={page[selectedStatus] <= 1}
+                      onClick={() => handlePageChange(page[selectedStatus] - 1)}
+                    >
+                      <NavigateBefore />
+                    </IconButton>
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', minWidth: '80px', textAlign: 'center' }}>
+                      Page {page[selectedStatus]} of {totalPages}
+                    </Typography>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      disabled={page[selectedStatus] >= totalPages}
+                      onClick={() => handlePageChange(page[selectedStatus] + 1)}
+                    >
+                      <NavigateNext />
+                    </IconButton>
+                  </Stack>
                 )}
-              </Box>
+              </>
             )}
           </Stack>
         )}
@@ -7842,7 +8801,21 @@ export function LiveTeamOfNightModule({
   }
   
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+    <Card 
+      variant="outlined" 
+      onClick={() => navigate(`/today/totn?date=${dateString}`)}
+      sx={{ 
+        bgcolor: '#1a1a1a', 
+        borderColor: '#333333', 
+        height: '100%',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        '&:hover': {
+          borderColor: '#FFC72C',
+          boxShadow: '0 4px 12px rgba(255, 199, 44, 0.2)',
+        },
+      }}
+    >
       <CardContent>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
           <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
@@ -7850,7 +8823,7 @@ export function LiveTeamOfNightModule({
           </Typography>
           {totalSalary > 0 && (
             <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
-              {(totalSalary / 1000000).toFixed(1)}M salary
+              ${(totalSalary / 1000000).toFixed(2)}M salary
             </Typography>
           )}
         </Box>
@@ -7874,7 +8847,8 @@ export function LiveTeamOfNightModule({
                 <tr 
                   key={player.player_id || player.nba_player_id || index}
                   style={{ cursor: 'pointer' }}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
                     if (player.player_id) {
                       navigate(`/player/${player.player_id}`);
                     }
@@ -7905,7 +8879,7 @@ export function LiveTeamOfNightModule({
                         fontWeight: 500,
                       }}
                     >
-                      {player.salary ? `${(player.salary / 1000000).toFixed(1)}M` : 'N/A'}
+                      {player.salary ? `$${(player.salary / 1000000).toFixed(2)}M` : 'N/A'}
                     </Typography>
                   </td>
                   <td>
@@ -7943,10 +8917,26 @@ export function TeamOfNightModule({
   navigate: (path: string) => void; 
   selectedDate: Dayjs;
 }) {
+  const dateString = selectedDate.format('YYYY-MM-DD');
+
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+    <Card 
+      variant="outlined" 
+      onClick={() => navigate(`/today/totn?date=${dateString}`)}
+      sx={{ 
+        bgcolor: '#1a1a1a', 
+        borderColor: '#333333', 
+        height: '100%',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        '&:hover': {
+          borderColor: '#FFC72C',
+          boxShadow: '0 4px 12px rgba(255, 199, 44, 0.2)',
+        },
+      }}
+    >
       <CardContent>
-        <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} />
+        <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} compact={true} />
       </CardContent>
     </Card>
   );

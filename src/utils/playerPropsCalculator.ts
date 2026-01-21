@@ -65,6 +65,16 @@ export function calculatePropResult(
     actualValue = (boxscore.reb || 0) + (boxscore.ast || 0);
   } else if (normalizedBetType.includes('blocks+steals') || normalizedBetType.includes('stocks')) {
     actualValue = (boxscore.blk || 0) + (boxscore.stl || 0);
+  } else if (normalizedBetType.includes('twopointersmade') || normalizedBetType.includes('two-pointers-made') || normalizedBetType === '2pm') {
+    // Two pointers made = total FGM minus 3PM
+    const fgm = boxscore.fgm ?? 0;
+    const fg3m = boxscore.fg3m ?? 0;
+    actualValue = Math.max(0, fgm - fg3m);
+  } else if (normalizedBetType.includes('twopointersattempted') || normalizedBetType.includes('two-pointers-attempted') || normalizedBetType === '2pa') {
+    // Two pointers attempted = total FGA minus 3PA
+    const fga = boxscore.fga ?? 0;
+    const fg3a = boxscore.fg3a ?? 0;
+    actualValue = Math.max(0, fga - fg3a);
   } else {
     // Single stat props - map bet types to boxscore fields
     const betTypeMap: Record<string, keyof typeof boxscore> = {
@@ -112,10 +122,14 @@ export function calculatePropResult(
       'field-goals-attempted': 'fga',
       fgm: 'fgm',
       fga: 'fga',
+      // Two pointers = total FGM/FGA minus three pointers
+      // Note: We'll calculate this separately below
       twopointersmade: 'fgm',
       twopointersattempted: 'fga',
       'two-pointers-made': 'fgm',
       'two-pointers-attempted': 'fga',
+      '2pm': 'fgm',
+      '2pa': 'fga',
     };
 
     // Find matching field

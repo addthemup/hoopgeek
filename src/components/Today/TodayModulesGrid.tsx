@@ -5,7 +5,7 @@ import { useTodayModuleVisibility } from '../../hooks/useTodayModuleVisibility';
 
 // Import all module components - these will be passed as props or imported
 import { TeamOfNightModule, LiveTeamOfNightModule } from '../../pages/Today';
-import { PropPredictionsModule } from '../../pages/Today';
+import { PropPredictionsModule, PropPerformanceModule } from '../../pages/Today';
 import { StandingsModule } from '../../pages/Today';
 import { FavoritePlayersModule } from '../../pages/Today';
 import { LeadersModule } from '../../pages/Today';
@@ -18,6 +18,7 @@ interface TodayModulesGridProps {
   nbaScoreboard?: any;
   standings?: any;
   standingsLoading?: boolean;
+  onOpenPropPredictions?: (propsData: { pastProps?: any[]; futureProps?: any[]; isLoading: boolean; activeTab: 'hottest' | 'coldest' }) => void;
 }
 
 export default function TodayModulesGrid({
@@ -55,23 +56,79 @@ export default function TodayModulesGrid({
     shouldRender: boolean;
   }> = [];
 
+  // Track which modules we've already processed to avoid duplicates
+  const processedModules = new Set<string>();
+  
   // Check each module
-  Object.entries(moduleVisibility).forEach(([moduleName, config]) => {
-    if (!config.is_visible) return;
+  Object.entries(moduleVisibility).forEach(([originalModuleName, config]) => {
+    // Check per-tab visibility based on dateState
+    const visibilityByTab = config.visibility_by_tab || {
+      past: config.is_visible,
+      present: config.is_visible,
+      future: config.is_visible,
+      weekly: config.is_visible,
+    };
+    
+    // Determine if this module should be visible for the current dateState
+    let isVisibleForCurrentTab = config.is_visible; // Fallback to old field
+    if (dateState === 'past') {
+      isVisibleForCurrentTab = visibilityByTab.past ?? config.is_visible;
+    } else if (dateState === 'present') {
+      isVisibleForCurrentTab = visibilityByTab.present ?? config.is_visible;
+    } else if (dateState === 'future') {
+      isVisibleForCurrentTab = visibilityByTab.future ?? config.is_visible;
+    }
+    
+    if (!isVisibleForCurrentTab) return;
     
     // Skip team_of_week - it's only shown on week summary pages, not daily view
-    if (moduleName === 'team_of_week') return;
+    if (originalModuleName === 'team_of_week') return;
+    
+    let moduleName = originalModuleName;
+    
+    // Handle legacy team_of_night name for backward compatibility
+    // But skip it if the new modules already exist to avoid duplicates
+    if (originalModuleName === 'team_of_night') {
+      // Only use legacy if the new modules don't exist
+      if (dateState === 'past' && moduleVisibility['team_of_night_past']) {
+        return; // Skip legacy, use team_of_night_past instead
+      }
+      if (dateState === 'present' && moduleVisibility['team_of_night_live']) {
+        return; // Skip legacy, use team_of_night_live instead
+      }
+      
+      // Map to the appropriate module based on dateState
+      if (dateState === 'past') {
+        moduleName = 'team_of_night_past';
+      } else if (dateState === 'present') {
+        moduleName = 'team_of_night_live';
+      } else {
+        return; // Don't show on future dates
+      }
+    }
+    
+    // Skip if we've already processed this module (prevents duplicates)
+    // Use the mapped moduleName to check for duplicates
+    if (processedModules.has(moduleName)) {
+      return;
+    }
+    processedModules.add(moduleName);
 
     let shouldRender = false;
 
     // Date state logic
-    if (moduleName === 'team_of_night') {
-      // Past: show Team of Night (jersey format)
-      // Present: show Live Team of Night (table format) if games are live
-      shouldRender = dateState === 'past' || dateState === 'present';
+    if (moduleName === 'team_of_night_live') {
+      // Live: only show on present date when games are live
+      shouldRender = dateState === 'present' && hasLiveGames;
+    } else if (moduleName === 'team_of_night_past') {
+      // Past: only show on past dates
+      shouldRender = dateState === 'past';
     } else if (moduleName === 'prop_predictions') {
-      // Show for all states, but only if no live games for present
-      shouldRender = true;
+      // Only show for present/today dates
+      shouldRender = dateState === 'present';
+    } else if (moduleName === 'prop_performance') {
+      // Only show for past dates
+      shouldRender = dateState === 'past';
     } else {
       // All other modules show for all states
       shouldRender = true;
@@ -97,13 +154,9 @@ export default function TodayModulesGrid({
       return dateState === 'past' ? 4 : 8;
     }
     
-    // Team of the Night: different sizes based on dateState
-    if (moduleName === 'team_of_night') {
-      if (dateState === 'past') {
-        return 8; // Jersey format, larger
-      } else if (dateState === 'present') {
-        return 4; // Table format, smaller (top right)
-      }
+    // Team of the Night modules: use the baseSize from config (respects admin settings)
+    if (moduleName === 'team_of_night_live' || moduleName === 'team_of_night_past') {
+      return baseSize; // Use the configured size, don't override
     }
     
     // For all other modules, use the database value
@@ -116,46 +169,63 @@ export default function TodayModulesGrid({
         {modulesToRender.map(({ name, gridSize }) => {
           const effectiveGridSize = getEffectiveGridSize(name, gridSize);
 
-          // Special handling for Live Team of the Night (present date)
-          // Only show if there are actually live games
-          if (name === 'team_of_night' && dateState === 'present' && hasLiveGames) {
-            return (
-              <Grid key={`live-${name}`} xs={12} md={effectiveGridSize}>
-                <LiveTeamOfNightModule 
-                  navigate={navigate}
-                  selectedDate={selectedDate}
-                  nbaScoreboard={nbaScoreboard}
-                />
-              </Grid>
-            );
-          }
-          
-          // If team_of_night on present date but no live games, skip it (props predictions will show instead)
-          if (name === 'team_of_night' && dateState === 'present' && !hasLiveGames) {
-            return null;
-          }
-
           // Regular module rendering
           switch (name) {
-            case 'team_of_night':
-              return (
-                <Grid key={name} xs={12} md={effectiveGridSize}>
-                  <TeamOfNightModule 
-                    navigate={navigate}
-                    selectedDate={selectedDate}
-                  />
-                </Grid>
-              );
+            case 'team_of_night_live':
+              // Only show if there are actually live games
+              if (dateState === 'present' && hasLiveGames) {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <LiveTeamOfNightModule 
+                      navigate={navigate}
+                      selectedDate={selectedDate}
+                      nbaScoreboard={nbaScoreboard}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'team_of_night_past':
+              // Only show on past dates
+              if (dateState === 'past') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <TeamOfNightModule 
+                      navigate={navigate}
+                      selectedDate={selectedDate}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
             case 'prop_predictions':
-              return (
-                <Grid key={name} xs={12} md={effectiveGridSize}>
-                  <PropPredictionsModule 
-                    selectedDate={selectedDate}
-                    navigate={navigate}
-                    onOpen={onOpenPropPredictions}
-                  />
-                </Grid>
-              );
+              // Only show for present dates
+              if (dateState === 'present') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPredictionsModule 
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'prop_performance':
+              // Only show for past dates
+              if (dateState === 'past') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPerformanceModule 
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
             case 'standings':
               return (
                 <Grid key={name} xs={12} md={effectiveGridSize}>

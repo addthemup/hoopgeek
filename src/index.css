@@ -62,7 +62,9 @@ body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
+  overflow-y: visible; /* Allow content to flow naturally, let body handle scrolling */
   position: relative;
+  min-height: 100vh; /* Ensure root takes at least full height */
 }
 
 /* Ensure no white line at top */

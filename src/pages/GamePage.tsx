@@ -29,6 +29,7 @@ import { hexToRgba } from '../components/MarginBars';
 import BoxScore from '../components/BoxScore';
 import { FeedPost } from '../utils/feedAlgorithm';
 import { matchPlayerNames } from '../utils/playerNameMatcher';
+import { loadGameJson, getScoreData, getFunScore, getLeadChanges, getDunkStats, getScoringMilestones, getTeamStats, getStoryData, getQuarterScores, type GameJsonData } from '../utils/gameJsonLoader';
 
 interface GameData {
   game_id: string;
@@ -1408,6 +1409,17 @@ export default function GamePage() {
     enabled: !!currentTeamTricode && !!currentSeason && !!gameId && (gameState === 'upcoming' ? !!currentRoster : !!liveStats),
   });
 
+  // Load JSON game data for completed games (contains rich stats, fun score, play-by-play, etc.)
+  const { data: gameJsonData, isLoading: gameJsonLoading } = useQuery<GameJsonData | null>({
+    queryKey: ['game-json-data', gameId],
+    queryFn: async () => {
+      if (!gameId || gameState !== 'completed') return null;
+      return await loadGameJson(gameId);
+    },
+    enabled: !!gameId && gameState === 'completed',
+    staleTime: 1000 * 60 * 60, // Cache for 1 hour
+  });
+
   // NOW we can have conditional returns - ALL hooks (including useMemo) are called above
   if (gameLoading) {
     return (
@@ -1778,6 +1790,279 @@ export default function GamePage() {
                 </Box>
               </Box>
             </Box>
+          </Box>
+        )}
+
+        {/* Enhanced Game Data Sections for Completed Games */}
+        {gameState === 'completed' && gameJsonData && (
+          <Box sx={{ px: { xs: 2, sm: 0 }, mb: 3 }}>
+            {/* Fun Score Section */}
+            {getFunScore(gameJsonData) !== null && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Box>
+                      <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 0.5 }}>
+                        Fun Score
+                      </Typography>
+                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                        How exciting was this game?
+                      </Typography>
+                    </Box>
+                    <Typography 
+                      level="h1" 
+                      sx={{ 
+                        color: '#FFC72C', 
+                        fontSize: { xs: '2rem', md: '3rem' },
+                        fontWeight: 'bold'
+                      }}
+                    >
+                      {getFunScore(gameJsonData)?.toFixed(1)}
+                    </Typography>
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Lead Changes & Excitement Metrics */}
+            {getLeadChanges(gameJsonData) && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    Game Excitement
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Box>
+                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Total Lead Changes</Typography>
+                      <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                        {getLeadChanges(gameJsonData)?.total || 0}
+                      </Typography>
+                    </Box>
+                    {getLeadChanges(gameJsonData)?.last_5_minutes !== undefined && (
+                      <Box>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Last 5 Minutes</Typography>
+                        <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                          {getLeadChanges(gameJsonData)?.last_5_minutes || 0}
+                        </Typography>
+                      </Box>
+                    )}
+                    {getLeadChanges(gameJsonData)?.buzzer_beater !== undefined && getLeadChanges(gameJsonData)?.buzzer_beater! > 0 && (
+                      <Box>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Buzzer Beaters</Typography>
+                        <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                          {getLeadChanges(gameJsonData)?.buzzer_beater || 0}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Scoring Milestones */}
+            {getScoringMilestones(gameJsonData) && (() => {
+              const milestones = getScoringMilestones(gameJsonData);
+              const hasMilestones = milestones && (
+                (milestones['70 Ball'] && milestones['70 Ball'].length > 0) ||
+                (milestones['60 Ball'] && milestones['60 Ball'].length > 0) ||
+                (milestones['50 Ball'] && milestones['50 Ball'].length > 0) ||
+                (milestones['40 Ball'] && milestones['40 Ball'].length > 0) ||
+                (milestones['Triple Double'] && milestones['Triple Double'].length > 0)
+              );
+              
+              if (!hasMilestones) return null;
+              
+              return (
+                <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                  <CardContent>
+                    <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                      Scoring Milestones
+                    </Typography>
+                    <Stack spacing={1}>
+                      {milestones['70 Ball'] && milestones['70 Ball'].length > 0 && milestones['70 Ball'].map(([name, points]: [string, number], idx: number) => (
+                        <Chip key={`70-${idx}`} color="danger" variant="solid" sx={{ alignSelf: 'flex-start' }}>
+                          🔥 {name}: {points} points
+                        </Chip>
+                      ))}
+                      {milestones['60 Ball'] && milestones['60 Ball'].length > 0 && milestones['60 Ball'].map(([name, points]: [string, number], idx: number) => (
+                        <Chip key={`60-${idx}`} color="danger" variant="solid" sx={{ alignSelf: 'flex-start' }}>
+                          🔥 {name}: {points} points
+                        </Chip>
+                      ))}
+                      {milestones['50 Ball'] && milestones['50 Ball'].length > 0 && milestones['50 Ball'].map(([name, points]: [string, number], idx: number) => (
+                        <Chip key={`50-${idx}`} color="warning" variant="solid" sx={{ alignSelf: 'flex-start' }}>
+                          ⭐ {name}: {points} points
+                        </Chip>
+                      ))}
+                      {milestones['40 Ball'] && milestones['40 Ball'].length > 0 && milestones['40 Ball'].map(([name, points]: [string, number], idx: number) => (
+                        <Chip key={`40-${idx}`} color="primary" variant="solid" sx={{ alignSelf: 'flex-start' }}>
+                          {name}: {points} points
+                        </Chip>
+                      ))}
+                      {milestones['Triple Double'] && milestones['Triple Double'].length > 0 && milestones['Triple Double'].map(([name, stats]: [string, string], idx: number) => (
+                        <Chip key={`td-${idx}`} color="success" variant="solid" sx={{ alignSelf: 'flex-start' }}>
+                          🎯 {name}: {stats}
+                        </Chip>
+                      ))}
+                    </Stack>
+                  </CardContent>
+                </Card>
+              );
+            })()}
+
+            {/* Dunk Stats */}
+            {getDunkStats(gameJsonData) && getDunkStats(gameJsonData)?.['Total Dunks']! > 0 && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    Dunk Stats
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Box>
+                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Total Dunks</Typography>
+                      <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                        {getDunkStats(gameJsonData)?.['Total Dunks'] || 0}
+                      </Typography>
+                    </Box>
+                    {getDunkStats(gameJsonData)?.['Alley Oop']! > 0 && (
+                      <Box>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Alley Oops</Typography>
+                        <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                          {getDunkStats(gameJsonData)?.['Alley Oop'] || 0}
+                        </Typography>
+                      </Box>
+                    )}
+                    {getDunkStats(gameJsonData)?.['Putback']! > 0 && (
+                      <Box>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Putback Dunks</Typography>
+                        <Typography level="h4" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                          {getDunkStats(gameJsonData)?.['Putback'] || 0}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Team Advantages */}
+            {getStoryData(gameJsonData)?.advantages && getStoryData(gameJsonData)!.advantages.length > 0 && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    Key Advantages
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    {getStoryData(gameJsonData)!.advantages.slice(0, 4).map((advantage, idx) => (
+                      <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box>
+                          <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                            {advantage.stat_name}
+                          </Typography>
+                          <Typography level="body-xs" sx={{ color: '#CCCCCC' }}>
+                            {advantage.team} advantage
+                          </Typography>
+                        </Box>
+                        <Typography level="body-md" sx={{ color: '#FFC72C', fontWeight: 'bold' }}>
+                          +{advantage.diff.toFixed(advantage.diff % 1 === 0 ? 0 : 1)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Advanced Team Stats */}
+            {getTeamStats(gameJsonData) && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    Advanced Stats
+                  </Typography>
+                  <Stack spacing={1.5}>
+                    {getTeamStats(gameJsonData)?.['Pace'] !== undefined && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Pace</Typography>
+                        <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                          {getTeamStats(gameJsonData)?.['Pace']?.toFixed(1)}
+                        </Typography>
+                      </Box>
+                    )}
+                    {getTeamStats(gameJsonData)?.['Combined Fast Break Points'] !== undefined && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Fast Break Points</Typography>
+                        <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                          {getTeamStats(gameJsonData)?.['Combined Fast Break Points']}
+                        </Typography>
+                      </Box>
+                    )}
+                    {getTeamStats(gameJsonData)?.['Combined Threes'] !== undefined && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Total 3-Pointers</Typography>
+                        <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                          {getTeamStats(gameJsonData)?.['Combined Threes']}
+                        </Typography>
+                      </Box>
+                    )}
+                    {getTeamStats(gameJsonData)?.['Combined Contested Shots'] !== undefined && (
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>Contested Shots</Typography>
+                        <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                          {getTeamStats(gameJsonData)?.['Combined Contested Shots']} ({getTeamStats(gameJsonData)?.['Combined Contested Shot %']?.toFixed(1)}%)
+                        </Typography>
+                      </Box>
+                    )}
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Quarter-by-Quarter Scores */}
+            {getQuarterScores(gameJsonData) && (
+              <Card sx={{ mb: 2, bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+                <CardContent>
+                  <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    Quarter Scores
+                  </Typography>
+                  <Table sx={{ bgcolor: 'transparent' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ color: '#CCCCCC', fontSize: '0.75rem', textAlign: 'left', padding: '8px' }}>Quarter</th>
+                        <th style={{ color: '#CCCCCC', fontSize: '0.75rem', textAlign: 'right', padding: '8px' }}>{gameData.away_team_tricode}</th>
+                        <th style={{ color: '#CCCCCC', fontSize: '0.75rem', textAlign: 'right', padding: '8px' }}>{gameData.home_team_tricode}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getQuarterScores(gameJsonData)!.map((q) => (
+                        <tr key={q.quarter}>
+                          <td style={{ color: '#FFFFFF', fontSize: '0.875rem', padding: '8px' }}>
+                            Q{q.quarter}
+                          </td>
+                          <td style={{ color: '#FFFFFF', fontSize: '0.875rem', textAlign: 'right', padding: '8px' }}>
+                            {q.away}
+                          </td>
+                          <td style={{ color: '#FFFFFF', fontSize: '0.875rem', textAlign: 'right', padding: '8px' }}>
+                            {q.home}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr style={{ borderTop: '1px solid #333333' }}>
+                        <td style={{ color: '#FFC72C', fontSize: '0.875rem', fontWeight: 'bold', padding: '8px' }}>
+                          Final
+                        </td>
+                        <td style={{ color: '#FFC72C', fontSize: '0.875rem', fontWeight: 'bold', textAlign: 'right', padding: '8px' }}>
+                          {gameData.away_team_score}
+                        </td>
+                        <td style={{ color: '#FFC72C', fontSize: '0.875rem', fontWeight: 'bold', textAlign: 'right', padding: '8px' }}>
+                          {gameData.home_team_score}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </Table>
+                </CardContent>
+              </Card>
+            )}
           </Box>
         )}
 

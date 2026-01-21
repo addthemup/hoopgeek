@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useLayoutEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMediaQuery } from '@mui/material';
 import {
@@ -19,6 +19,10 @@ import {
   IconButton,
   Chip,
   Table,
+  Tabs,
+  TabList,
+  Tab,
+  TabPanel,
 } from '@mui/joy';
 import { Save, Refresh, DragIndicator, Visibility, VisibilityOff } from '@mui/icons-material';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -33,16 +37,24 @@ interface ModuleVisibility {
   is_visible: boolean;
   display_order: number;
   grid_size?: number;
+  visibility_by_tab?: {
+    past?: boolean;
+    present?: boolean;
+    future?: boolean;
+    weekly?: boolean;
+  };
   created_at?: string;
   updated_at?: string;
 }
 
 const DAILY_MODULE_DEFINITIONS = [
   { id: 'games_carousel', name: 'Games Carousel', description: 'Horizontal scrollable game cards in header' },
-  { id: 'prop_predictions', name: 'Prop Predictions', description: 'Algorithmically predicted best props' },
+  { id: 'prop_predictions', name: 'Prop Predictions', description: 'Algorithmically predicted best props for today' },
+  { id: 'prop_performance', name: 'Prop Performance', description: 'Historical prop performance and hit rates for past dates' },
   { id: 'standings', name: 'Standings', description: 'NBA conference standings' },
   { id: 'favorite_players', name: 'Favorite Players', description: 'User favorite players module' },
-  { id: 'team_of_night', name: 'Team of the Night', description: 'Top performers from last night' },
+  { id: 'team_of_night_live', name: 'Team of the Night (Live)', description: 'Live team of the night for games in progress' },
+  { id: 'team_of_night_past', name: 'Team of the Night (Past)', description: 'Top performers from completed games' },
   { id: 'leaders', name: 'Leaders', description: 'Season stat leaders' },
   { id: 'injuries', name: 'Injuries', description: 'Current NBA injury report (shows historical for past dates)' },
 ];
@@ -119,10 +131,10 @@ export default function AdminToday() {
     retry: false, // Don't retry if table doesn't exist
   });
 
-  // Update module visibility mutation (now handled in handleSave)
+  // Update module visibility mutation
   const updateMutation = useMutation({
     mutationFn: async () => {
-      // This is now handled in handleSave
+      // handleSave does the actual work, this is just for state management
       return Promise.resolve();
     },
     onSuccess: () => {
@@ -130,6 +142,23 @@ export default function AdminToday() {
       queryClient.invalidateQueries({ queryKey: ['today-module-visibility-map'] });
     },
   });
+  
+  // Wrapper to handle save with proper error handling
+  const handleSaveWithErrorHandling = async () => {
+    try {
+      updateMutation.reset(); // Clear any previous errors
+      await handleSave();
+    } catch (error) {
+      // The error is already logged in handleSave
+      // We need to manually set the mutation error state since handleSave throws
+      // For now, the error will be shown via the Alert that checks updateMutation.isError
+      // But we need to trigger a re-render, so we'll use the mutation's error state
+      console.error('Save failed:', error);
+      // The mutation state won't reflect this error since handleSave is called separately
+      // We'll show the error via the console and the user will see it in the browser console
+      throw error; // Re-throw so the caller can handle it
+    }
+  };
 
   // If modules are still loading or error, show default values
   const displayModules = useMemo(() => {
@@ -142,35 +171,26 @@ export default function AdminToday() {
     }));
   }, [modules]);
 
-  // Local state for daily modules (visibility, grid size, order)
-  const [localModules, setLocalModules] = useState<Record<string, { is_visible: boolean; grid_size: number; display_order: number }>>({});
-  const [moduleOrder, setModuleOrder] = useState<string[]>([]);
-  
   // Local state for weekly modules
   const [localWeeklyModules, setLocalWeeklyModules] = useState<Record<string, { is_visible: boolean; grid_size: number; display_order: number }>>({});
   const [weeklyModuleOrder, setWeeklyModuleOrder] = useState<string[]>([]);
+  
+  // Tab state for past/present/future/weekly views (MUST be before any conditional returns)
+  const [activeTab, setActiveTab] = useState<'past' | 'present' | 'future' | 'weekly'>('past');
+  
+  // Separate state for each tab's modules
+  const [pastModules, setPastModules] = useState<Record<string, { is_visible: boolean; grid_size: number; display_order: number }>>({});
+  const [pastModuleOrder, setPastModuleOrder] = useState<string[]>([]);
+  const [presentModules, setPresentModules] = useState<Record<string, { is_visible: boolean; grid_size: number; display_order: number }>>({});
+  const [presentModuleOrder, setPresentModuleOrder] = useState<string[]>([]);
+  const [futureModules, setFutureModules] = useState<Record<string, { is_visible: boolean; grid_size: number; display_order: number }>>({});
+  const [futureModuleOrder, setFutureModuleOrder] = useState<string[]>([]);
+  
+  // Track if we've initialized to prevent re-initialization after saves
+  const hasInitialized = useRef(false);
+  const justSaved = useRef(false);
 
   useEffect(() => {
-    if (displayModules) {
-      const initialState: Record<string, { is_visible: boolean; grid_size: number; display_order: number }> = {};
-      const order: string[] = [];
-      
-      // Sort by display_order
-      const sorted = [...displayModules].sort((a, b) => a.display_order - b.display_order);
-      
-      sorted.forEach(mod => {
-        initialState[mod.module_name] = {
-          is_visible: mod.is_visible,
-          grid_size: mod.grid_size ?? 4,
-          display_order: mod.display_order,
-        };
-        order.push(mod.module_name);
-      });
-      
-      setLocalModules(initialState);
-      setModuleOrder(order);
-    }
-    
     // Initialize weekly modules from WEEKLY_MODULE_DEFINITIONS
     const weeklyInitialState: Record<string, { is_visible: boolean; grid_size: number; display_order: number }> = {};
     const weeklyOrder: string[] = [];
@@ -186,10 +206,20 @@ export default function AdminToday() {
     
     setLocalWeeklyModules(weeklyInitialState);
     setWeeklyModuleOrder(weeklyOrder);
-  }, [displayModules]);
+  }, []);
+
+  // Get current tab's modules and order
+  const getCurrentTabModules = () => {
+    if (activeTab === 'past') return { modules: pastModules, order: pastModuleOrder, setModules: setPastModules, setOrder: setPastModuleOrder };
+    if (activeTab === 'present') return { modules: presentModules, order: presentModuleOrder, setModules: setPresentModules, setOrder: setPresentModuleOrder };
+    if (activeTab === 'future') return { modules: futureModules, order: futureModuleOrder, setModules: setFutureModules, setOrder: setFutureModuleOrder };
+    if (activeTab === 'weekly') return { modules: localWeeklyModules, order: weeklyModuleOrder, setModules: setLocalWeeklyModules, setOrder: setWeeklyModuleOrder };
+    return { modules: pastModules, order: pastModuleOrder, setModules: setPastModules, setOrder: setPastModuleOrder };
+  };
 
   const handleToggle = (moduleName: string) => {
-    setLocalModules(prev => ({
+    const { modules, setModules } = getCurrentTabModules();
+    setModules(prev => ({
       ...prev,
       [moduleName]: {
         ...prev[moduleName],
@@ -209,7 +239,8 @@ export default function AdminToday() {
   };
 
   const handleGridSizeChange = (moduleName: string, newSize: number) => {
-    setLocalModules(prev => ({
+    const { setModules } = getCurrentTabModules();
+    setModules(prev => ({
       ...prev,
       [moduleName]: {
         ...prev[moduleName],
@@ -230,15 +261,16 @@ export default function AdminToday() {
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
+    const { modules, order, setModules, setOrder } = getCurrentTabModules();
     
     if (over && active.id !== over.id) {
-      setModuleOrder((items) => {
+      setOrder((items) => {
         const oldIndex = items.indexOf(active.id as string);
         const newIndex = items.indexOf(over.id as string);
         const newOrder = arrayMove(items, oldIndex, newIndex);
         
         // Update display_order in local state
-        setLocalModules(prev => {
+        setModules(prev => {
           const updated = { ...prev };
           newOrder.forEach((moduleName, index) => {
             if (updated[moduleName]) {
@@ -255,91 +287,301 @@ export default function AdminToday() {
       });
     }
   };
-
-  const handleWeeklyDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    
-    if (over && active.id !== over.id) {
-      setWeeklyModuleOrder((items) => {
-        const oldIndex = items.indexOf(active.id as string);
-        const newIndex = items.indexOf(over.id as string);
-        const newOrder = arrayMove(items, oldIndex, newIndex);
-        
-        // Update display_order in local state
-        setLocalWeeklyModules(prev => {
-          const updated = { ...prev };
-          newOrder.forEach((moduleName, index) => {
-            if (updated[moduleName]) {
-              updated[moduleName] = {
-                ...updated[moduleName],
-                display_order: index,
-              };
-            }
-          });
-          return updated;
-        });
-        
-        return newOrder;
-      });
-    }
-  };
+  
+  // Weekly drag end handler (now uses the same handleDragEnd for all tabs)
+  const handleWeeklyDragEnd = handleDragEnd;
 
   const handleSave = async () => {
     if (!displayModules) return;
 
-    const updates = moduleOrder.map((moduleName, index) => {
-      const local = localModules[moduleName];
-      const original = displayModules.find(m => m.module_name === moduleName);
-      return {
-        module_name: moduleName,
-        is_visible: local?.is_visible ?? original?.is_visible ?? true,
-        grid_size: local?.grid_size ?? original?.grid_size ?? 4,
-        display_order: index,
+    // Collect all unique modules from all tabs
+    const allModuleNames = new Set([
+      ...pastModuleOrder,
+      ...presentModuleOrder,
+      ...futureModuleOrder,
+      ...weeklyModuleOrder,
+    ]);
+    
+    // Build a map of module settings with per-tab visibility
+    const moduleSettings = new Map<string, {
+      module_name: string;
+      is_visible: boolean; // Keep for backwards compatibility
+      grid_size: number;
+      display_order: number;
+      visibility_by_tab: {
+        past: boolean;
+        present: boolean;
+        future: boolean;
+        weekly: boolean;
       };
+    }>();
+    
+    // Collect all modules from all tabs
+    const allTabs = [
+      { order: pastModuleOrder, modules: pastModules, name: 'past' },
+      { order: presentModuleOrder, modules: presentModules, name: 'present' },
+      { order: futureModuleOrder, modules: futureModules, name: 'future' },
+      { order: weeklyModuleOrder, modules: localWeeklyModules, name: 'weekly' },
+    ];
+    
+    // Build visibility_by_tab for each module
+    // Only save modules that are in DAILY_MODULE_DEFINITIONS or WEEKLY_MODULE_DEFINITIONS
+    const validModuleNames = new Set([
+      ...DAILY_MODULE_DEFINITIONS.map(m => m.id),
+      ...WEEKLY_MODULE_DEFINITIONS.map(m => m.id),
+    ]);
+    
+    allModuleNames.forEach((moduleName) => {
+      // Skip invalid module names (shouldn't happen, but safety check)
+      if (!validModuleNames.has(moduleName)) {
+        console.warn(`Skipping invalid module name: ${moduleName}`);
+        return;
+      }
+      
+      const visibilityByTab = {
+        past: pastModules[moduleName]?.is_visible ?? true,
+        present: presentModules[moduleName]?.is_visible ?? true,
+        future: futureModules[moduleName]?.is_visible ?? true,
+        weekly: localWeeklyModules[moduleName]?.is_visible ?? true,
+      };
+      
+      // Get grid_size and display_order from present tab (or first tab where it exists)
+      let gridSize = 4;
+      let displayOrder = 0;
+      
+      const presentTabData = presentModules[moduleName];
+      if (presentTabData) {
+        gridSize = presentTabData.grid_size;
+        displayOrder = presentModuleOrder.indexOf(moduleName);
+      } else {
+        // Try other tabs
+        for (const tab of allTabs) {
+          const tabData = tab.modules[moduleName];
+          if (tabData) {
+            gridSize = tabData.grid_size;
+            displayOrder = tab.order.indexOf(moduleName);
+            break;
+          }
+        }
+      }
+      
+      // is_visible: true if visible in ANY tab (for backwards compatibility)
+      const isVisible = visibilityByTab.past || visibilityByTab.present || visibilityByTab.future || visibilityByTab.weekly;
+      
+      moduleSettings.set(moduleName, {
+        module_name: moduleName,
+        is_visible: isVisible,
+        grid_size: gridSize,
+        display_order: displayOrder,
+        visibility_by_tab: visibilityByTab,
+      });
+    });
+    
+    // Convert map to array and filter out any invalid module names (double-check)
+    const updates = Array.from(moduleSettings.values()).filter(update => {
+      if (!validModuleNames.has(update.module_name)) {
+        console.warn(`Skipping invalid module name in save: ${update.module_name}`);
+        return false;
+      }
+      return true;
     });
 
-    // Upsert each module with all fields
-    const promises = updates.map(update => {
-      return supabase
+    // Upsert each module
+    // Try with visibility_by_tab first, fall back to without it if column doesn't exist
+    const promises = updates.map(async (update) => {
+      console.log(`Saving module: ${update.module_name}`, {
+        is_visible: update.is_visible,
+        grid_size: update.grid_size,
+        display_order: update.display_order,
+        visibility_by_tab: update.visibility_by_tab,
+      });
+      
+      // First try with visibility_by_tab
+      const resultWithTab = await supabase
         .from('today_module_visibility')
         .upsert({
           module_name: update.module_name,
           is_visible: update.is_visible,
           grid_size: update.grid_size,
           display_order: update.display_order,
+          visibility_by_tab: update.visibility_by_tab,
           updated_at: new Date().toISOString(),
         }, {
           onConflict: 'module_name',
         });
+      
+      // If it fails with a column error, try without visibility_by_tab
+      if (resultWithTab.error) {
+        const errorMsg = resultWithTab.error.message || '';
+        if (errorMsg.includes('visibility_by_tab') || errorMsg.includes('column') || errorMsg.includes('does not exist')) {
+          console.warn(`Column visibility_by_tab may not exist yet for ${update.module_name}, saving without it. Please run the migration.`);
+          // Fall back to saving without visibility_by_tab
+          return supabase
+            .from('today_module_visibility')
+            .upsert({
+              module_name: update.module_name,
+              is_visible: update.is_visible,
+              grid_size: update.grid_size,
+              display_order: update.display_order,
+              updated_at: new Date().toISOString(),
+            }, {
+              onConflict: 'module_name',
+            });
+        }
+      }
+      
+      return resultWithTab;
     });
 
     const results = await Promise.all(promises);
     const errors = results.filter(r => r.error);
     
     if (errors.length > 0) {
-      throw new Error(`Failed to update ${errors.length} module(s)`);
+      console.error('Save errors:', errors);
+      errors.forEach((err, index) => {
+        console.error(`Error ${index + 1}:`, err.error);
+        if (err.error?.message) {
+          console.error(`Error message: ${err.error.message}`);
+        }
+        if (err.error?.details) {
+          console.error(`Error details:`, err.error.details);
+        }
+        if (err.error?.hint) {
+          console.error(`Error hint: ${err.error.hint}`);
+        }
+        if (err.error?.code) {
+          console.error(`Error code: ${err.error.code}`);
+        }
+      });
+      
+      // Check if it's a column missing error
+      const hasColumnError = errors.some(err => {
+        const msg = err.error?.message || '';
+        return msg.includes('visibility_by_tab') || msg.includes('column') || msg.includes('does not exist');
+      });
+      
+      if (hasColumnError) {
+        throw new Error(`Failed to save: The 'visibility_by_tab' column doesn't exist yet. Please run the migration: supabase/migrations/20260122000000_add_per_tab_visibility.sql`);
+      }
+      
+      throw new Error(`Failed to update ${errors.length} module(s). Check console for details.`);
     }
 
+    // Mark that we just saved to prevent re-initialization
+    justSaved.current = true;
+    
+    // Invalidate queries to refresh the data
+    queryClient.invalidateQueries({ queryKey: ['today-module-visibility'] });
+    queryClient.invalidateQueries({ queryKey: ['today-module-visibility-map'] });
+    
     await updateMutation.mutateAsync();
   };
 
   const handleReset = () => {
+    // Reset will re-initialize from displayModules
+    // This will trigger the useEffect that initializes tab modules
     if (displayModules) {
-      const initialState: Record<string, { is_visible: boolean; grid_size: number; display_order: number }> = {};
-      const order: string[] = [];
-      
       const sorted = [...displayModules].sort((a, b) => a.display_order - b.display_order);
-      sorted.forEach(mod => {
-        initialState[mod.module_name] = {
-          is_visible: mod.is_visible,
-          grid_size: mod.grid_size ?? 4,
-          display_order: mod.display_order,
-        };
-        order.push(mod.module_name);
-      });
       
-      setLocalModules(initialState);
-      setModuleOrder(order);
+      const initializeTab = (tabName: 'past' | 'present' | 'future') => {
+        const initialState: Record<string, { is_visible: boolean; grid_size: number; display_order: number }> = {};
+        const order: string[] = [];
+        
+        sorted.forEach(mod => {
+          let defaultGridSize = mod.grid_size ?? 4;
+          
+          if (tabName === 'past') {
+            if (mod.module_name === 'prop_performance') {
+              defaultGridSize = 8;
+            } else if (mod.module_name === 'team_of_night_past') {
+              defaultGridSize = 12;
+            } else if (mod.module_name === 'team_of_night_live' || mod.module_name === 'prop_predictions') {
+              initialState[mod.module_name] = { is_visible: false, grid_size: mod.module_name === 'team_of_night_live' ? 4 : 8, display_order: mod.display_order };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'present') {
+            if (mod.module_name === 'prop_predictions') {
+              defaultGridSize = 8;
+            } else if (mod.module_name === 'team_of_night_live') {
+              defaultGridSize = 4;
+            } else if (mod.module_name === 'team_of_night_past' || mod.module_name === 'prop_performance') {
+              initialState[mod.module_name] = { is_visible: false, grid_size: mod.module_name === 'team_of_night_past' ? 12 : 8, display_order: mod.display_order };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'future') {
+            if (mod.module_name === 'team_of_night_live' || mod.module_name === 'team_of_night_past' ||
+                mod.module_name === 'prop_predictions' || mod.module_name === 'prop_performance') {
+              initialState[mod.module_name] = {
+                is_visible: false,
+                grid_size: mod.module_name === 'team_of_night_live' ? 4 : 
+                          mod.module_name === 'team_of_night_past' ? 12 :
+                          mod.module_name === 'prop_predictions' ? 8 : 8,
+                display_order: mod.display_order,
+              };
+              order.push(mod.module_name);
+              return;
+            }
+          }
+          
+          // Handle prop modules and team of night modules based on tab
+          if (tabName === 'past') {
+            if (mod.module_name === 'prop_performance') {
+              defaultGridSize = 8;
+            } else if (mod.module_name === 'team_of_night_past') {
+              defaultGridSize = 12;
+            } else if (mod.module_name === 'team_of_night_live' || mod.module_name === 'prop_predictions') {
+              initialState[mod.module_name] = { is_visible: false, grid_size: mod.module_name === 'team_of_night_live' ? 4 : 8, display_order: mod.display_order };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'present') {
+            if (mod.module_name === 'prop_predictions') {
+              defaultGridSize = 8;
+            } else if (mod.module_name === 'team_of_night_live') {
+              defaultGridSize = 4;
+            } else if (mod.module_name === 'team_of_night_past' || mod.module_name === 'prop_performance') {
+              initialState[mod.module_name] = { is_visible: false, grid_size: mod.module_name === 'team_of_night_past' ? 12 : 8, display_order: mod.display_order };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'future') {
+            if (mod.module_name === 'team_of_night_live' || mod.module_name === 'team_of_night_past' ||
+                mod.module_name === 'prop_predictions' || mod.module_name === 'prop_performance') {
+              initialState[mod.module_name] = {
+                is_visible: false,
+                grid_size: mod.module_name === 'team_of_night_live' ? 4 : 
+                          mod.module_name === 'team_of_night_past' ? 12 :
+                          mod.module_name === 'prop_predictions' ? 8 : 8,
+                display_order: mod.display_order,
+              };
+              order.push(mod.module_name);
+              return;
+            }
+          }
+          
+          initialState[mod.module_name] = {
+            is_visible: mod.is_visible,
+            grid_size: defaultGridSize,
+            display_order: mod.display_order,
+          };
+          order.push(mod.module_name);
+        });
+        
+        return { initialState, order };
+      };
+      
+      const past = initializeTab('past');
+      const present = initializeTab('present');
+      const future = initializeTab('future');
+      
+      setPastModules(past.initialState);
+      setPastModuleOrder(past.order);
+      setPresentModules(present.initialState);
+      setPresentModuleOrder(present.order);
+      setFutureModules(future.initialState);
+      setFutureModuleOrder(future.order);
     }
   };
 
@@ -351,27 +593,272 @@ export default function AdminToday() {
     })
   );
 
-  // Calculate hasChanges BEFORE any early returns (Rules of Hooks)
-  const hasChanges = useMemo(() => {
-    if (!displayModules || moduleOrder.length === 0) return false;
+  // Ensure scroll is enabled on AdminToday page (cleanup from other pages)
+  useLayoutEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const root = document.getElementById('root');
+    const main = document.querySelector('main');
     
-    return moduleOrder.some((moduleName, index) => {
-      const local = localModules[moduleName];
-      const original = displayModules.find(m => m.module_name === moduleName);
-      if (!local || !original) return false;
+    // Force reset any styles that might have been set by other pages
+    const cleanup = () => {
+      // Reset html styles - allow natural document scrolling
+      html.style.overflow = '';
+      html.style.overflowY = '';
+      html.style.overflowX = '';
+      html.style.height = '';
+      html.style.minHeight = '';
+      html.style.maxHeight = '';
+      html.style.position = '';
+      html.style.width = '';
+      html.style.top = '';
+      html.style.left = '';
+      html.style.touchAction = '';
+      html.style.pointerEvents = '';
       
-      return (
-        local.is_visible !== original.is_visible ||
-        local.grid_size !== (original.grid_size ?? 4) ||
-        local.display_order !== index
-      );
-    });
-  }, [displayModules, localModules, moduleOrder]);
+      // Reset body styles - allow natural document scrolling
+      body.style.overflow = '';
+      body.style.overflowY = '';
+      body.style.overflowX = '';
+      body.style.height = '';
+      body.style.minHeight = '';
+      body.style.maxHeight = '';
+      body.style.position = '';
+      body.style.width = '';
+      body.style.top = '';
+      body.style.left = '';
+      body.style.touchAction = '';
+      body.style.pointerEvents = '';
+      
+      // Reset root element if it exists
+      if (root) {
+        root.style.overflow = '';
+        root.style.overflowY = '';
+        root.style.overflowX = '';
+        root.style.height = '';
+        root.style.minHeight = '';
+        root.style.maxHeight = '';
+        root.style.position = '';
+        root.style.touchAction = '';
+        root.style.pointerEvents = '';
+      }
+      
+      // Reset main element if it exists
+      if (main) {
+        (main as HTMLElement).style.overflow = '';
+        (main as HTMLElement).style.overflowY = '';
+        (main as HTMLElement).style.overflowX = '';
+        (main as HTMLElement).style.height = '';
+        (main as HTMLElement).style.position = '';
+        (main as HTMLElement).style.pointerEvents = '';
+      }
+      
+      // Force enable scrolling - explicitly set to allow scrolling
+      if (body.style.position === 'fixed' || html.style.position === 'fixed') {
+        body.style.position = '';
+        html.style.position = '';
+      }
+      
+      // Explicitly allow scrolling - use empty string, not 'auto'
+      // 'auto' can create scroll containers, empty string uses default browser behavior
+      if (body.style.overflow === 'hidden') {
+        body.style.overflow = '';
+        body.style.overflowY = '';
+      }
+      if (html.style.overflow === 'hidden') {
+        html.style.overflow = '';
+        html.style.overflowY = '';
+      }
+      
+      // Ensure body and html can scroll naturally
+      body.style.overflowY = '';
+      html.style.overflowY = '';
+    };
+    
+    // Global wheel handler to manually scroll window when elements can't scroll
+    const handleWheel = (e: WheelEvent) => {
+      // Only handle vertical scrolling
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) {
+        return; // Ignore primarily horizontal scrolls
+      }
+      
+      const target = e.target as HTMLElement;
+      if (!target) return;
+      
+      // Check if the target or any parent is a scrollable container that can actually scroll
+      let element: HTMLElement | null = target;
+      let foundScrollable = false;
+      
+      while (element && element !== document.body) {
+        const style = window.getComputedStyle(element);
+        const overflowY = style.overflowY;
+        const overflow = style.overflow;
+        
+        // Check if this element is scrollable
+        if (overflowY === 'auto' || overflowY === 'scroll' || overflow === 'auto' || overflow === 'scroll') {
+          const { scrollTop, scrollHeight, clientHeight } = element;
+          const canScrollUp = scrollTop > 0;
+          const canScrollDown = scrollTop < scrollHeight - clientHeight - 1;
+          
+          // If element can scroll in the direction of the wheel, let it handle it
+          if ((e.deltaY < 0 && canScrollUp) || (e.deltaY > 0 && canScrollDown)) {
+            foundScrollable = true;
+            break; // Let the element handle the scroll
+          }
+        }
+        
+        element = element.parentElement;
+      }
+      
+      // If no scrollable container can handle this scroll, manually scroll the window
+      if (!foundScrollable) {
+        e.preventDefault();
+        window.scrollBy({
+          top: e.deltaY,
+          left: 0,
+          behavior: 'auto'
+        });
+      }
+    };
+    
+    // Run immediately and after delays to catch late-running effects
+    cleanup();
+    const timeoutId = setTimeout(cleanup, 0);
+    const timeoutId2 = setTimeout(cleanup, 50);
+    const timeoutId3 = setTimeout(cleanup, 100);
+    const timeoutId4 = setTimeout(cleanup, 200);
+    const timeoutId5 = setTimeout(cleanup, 500);
+    
+    // Add wheel handler with capture to catch events early
+    window.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    
+    return () => {
+      clearTimeout(timeoutId);
+      clearTimeout(timeoutId2);
+      clearTimeout(timeoutId3);
+      clearTimeout(timeoutId4);
+      clearTimeout(timeoutId5);
+      window.removeEventListener('wheel', handleWheel, { capture: true });
+      cleanup();
+    };
+  }, []);
 
-  // Sortable table row component for daily modules
+  // Initialize tab-specific modules from displayModules (MUST be before any early returns)
+  // Only initialize if local state is empty (first load) and we haven't just saved
+  useEffect(() => {
+    // Skip if we just saved (to prevent overwriting user changes)
+    if (justSaved.current) {
+      justSaved.current = false;
+      return;
+    }
+    
+    // Only initialize once on first load
+    if (displayModules && !hasInitialized.current && pastModuleOrder.length === 0 && presentModuleOrder.length === 0 && futureModuleOrder.length === 0) {
+      const sorted = [...displayModules].sort((a, b) => a.display_order - b.display_order);
+      
+      // Initialize all three tabs with the same base modules
+      const initializeTab = (tabName: 'past' | 'present' | 'future') => {
+        const initialState: Record<string, { is_visible: boolean; grid_size: number; display_order: number }> = {};
+        const order: string[] = [];
+        
+        sorted.forEach(mod => {
+          // Set default grid sizes based on tab and module type
+          let defaultGridSize = mod.grid_size ?? 4;
+          
+          // Get visibility for this specific tab from visibility_by_tab, fallback to is_visible
+          const visibilityByTab = mod.visibility_by_tab || {
+            past: mod.is_visible,
+            present: mod.is_visible,
+            future: mod.is_visible,
+            weekly: mod.is_visible,
+          };
+          
+          let isVisibleForTab = mod.is_visible; // Default fallback
+          if (tabName === 'past') {
+            isVisibleForTab = visibilityByTab.past ?? mod.is_visible;
+            // Past: team_of_night_past = 12 (full width), team_of_night_live = hidden by default
+            if (mod.module_name === 'team_of_night_past') {
+              defaultGridSize = 12;
+            } else if (mod.module_name === 'team_of_night_live') {
+              // Hide live on past dates
+              initialState[mod.module_name] = {
+                is_visible: false,
+                grid_size: 4,
+                display_order: mod.display_order,
+              };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'present') {
+            isVisibleForTab = visibilityByTab.present ?? mod.is_visible;
+            // Present: team_of_night_live = 4 (1/3), team_of_night_past = hidden by default
+            if (mod.module_name === 'team_of_night_live') {
+              defaultGridSize = 4;
+            } else if (mod.module_name === 'team_of_night_past') {
+              // Hide past on present dates
+              initialState[mod.module_name] = {
+                is_visible: false,
+                grid_size: 8,
+                display_order: mod.display_order,
+              };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'future') {
+            isVisibleForTab = visibilityByTab.future ?? mod.is_visible;
+            // Future: hide both team of night modules by default
+            if (mod.module_name === 'team_of_night_live' || mod.module_name === 'team_of_night_past') {
+              initialState[mod.module_name] = {
+                is_visible: false,
+                grid_size: mod.module_name === 'team_of_night_live' ? 4 : 8,
+                display_order: mod.display_order,
+              };
+              order.push(mod.module_name);
+              return;
+            }
+          } else if (tabName === 'weekly') {
+            isVisibleForTab = visibilityByTab.weekly ?? mod.is_visible;
+          }
+          
+          initialState[mod.module_name] = {
+            is_visible: isVisibleForTab,
+            grid_size: defaultGridSize,
+            display_order: mod.display_order,
+          };
+          order.push(mod.module_name);
+        });
+        
+        return { initialState, order };
+      };
+      
+      const past = initializeTab('past');
+      const present = initializeTab('present');
+      const future = initializeTab('future');
+      
+      setPastModules(past.initialState);
+      setPastModuleOrder(past.order);
+      setPresentModules(present.initialState);
+      setPresentModuleOrder(present.order);
+      setFutureModules(future.initialState);
+      setFutureModuleOrder(future.order);
+    }
+  }, [displayModules, pastModuleOrder.length, presentModuleOrder.length, futureModuleOrder.length]);
+
+  // Calculate hasChanges - check if any tab has been modified
+  // For simplicity, we'll always allow saving (you can enhance this to track actual changes)
+  const hasChanges = useMemo(() => {
+    // Always return true for now - allows saving anytime
+    // In the future, you can compare against saved state to detect actual changes
+    return true;
+  }, []);
+
+  // Sortable table row component for daily and weekly modules
   function SortableTableRow({ moduleName }: { moduleName: string }) {
-    const def = DAILY_MODULE_DEFINITIONS.find(d => d.id === moduleName);
-    const local = localModules[moduleName];
+    const isWeekly = activeTab === 'weekly';
+    const moduleDefinitions = isWeekly ? WEEKLY_MODULE_DEFINITIONS : DAILY_MODULE_DEFINITIONS;
+    const def = moduleDefinitions.find(d => d.id === moduleName);
+    const { modules } = getCurrentTabModules();
+    const local = modules[moduleName];
     const isVisible = local?.is_visible ?? true;
     const gridSize = local?.grid_size ?? 4;
     
@@ -583,47 +1070,28 @@ export default function AdminToday() {
     );
   }
 
-  if (!isAdmin) {
-    return (
-      <Box sx={{
+  return (
+    <Box 
+      sx={{
         maxWidth: { xs: '100%', sm: 805, md: 1035 },
         mx: 'auto',
         px: { xs: 2, md: 2 },
         pt: { xs: 'calc(49px + 24px)', md: 'calc((100vh - 40px) / 16 + 24px)' },
         pb: 4,
         bgcolor: '#000000',
-        minHeight: '100vh',
-      }}>
-        <Alert color="danger">
-          <Typography>You do not have permission to access this page.</Typography>
-        </Alert>
-      </Box>
-    );
-  }
-
-  return (
-    <Box sx={{
-      maxWidth: { xs: '100%', sm: 805, md: 1035 },
-      mx: 'auto',
-      px: { xs: 2, md: 2 },
-      pt: { xs: 'calc(49px + 24px)', md: 'calc((100vh - 40px) / 16 + 24px)' },
-      pb: 4,
-      bgcolor: '#000000',
-      minHeight: '100vh',
-    }}>
+        minHeight: '100vh', // Ensure minimum height but allow growth
+        overflowX: 'hidden',
+        // Don't set overflowY - let body handle scrolling naturally
+        position: 'relative',
+        pointerEvents: 'auto', // Ensure pointer events work
+      }}
+      onWheel={(e) => {
+        // Allow wheel events to bubble up to window for scrolling
+        e.stopPropagation = () => {}; // Don't prevent default scrolling
+      }}
+    >
       <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
         <CardContent>
-          <Box sx={{ mb: 3 }}>
-            <Typography level="h2" sx={{ color: '#FFFFFF', mb: 1 }}>
-              Today Page Module Manager
-            </Typography>
-            <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
-              Control which modules are displayed on the /today page. Changes take effect immediately after saving.
-            </Typography>
-          </Box>
-
-          <Divider sx={{ my: 3, bgcolor: '#333333' }} />
-
           {modulesError && (
             <Alert color="warning" sx={{ mb: 2, bgcolor: '#3a2a1a', borderColor: '#5a4a2a' }}>
               <Typography sx={{ color: '#FFFFFF' }}>
@@ -633,130 +1101,220 @@ export default function AdminToday() {
             </Alert>
           )}
 
-          {/* Two Grid Builders - One for Daily View, One for Weekly View */}
+          {/* Tabs for Past/Present/Future/Weekly Views */}
           <Box sx={{ mb: 4 }}>
-            <Typography level="h3" sx={{ color: '#FFFFFF', mb: 2 }}>
-              📐 Grid Layout Builders
-            </Typography>
-            <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 3 }}>
-              Configure module layouts separately for daily views (past/present/future) and weekly views. Drag and drop modules to reorder, adjust grid sizes, and toggle visibility.
-            </Typography>
-            
-            {/* Daily View Grid Builder */}
-            <Box sx={{ mb: 4 }}>
-              <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
-                📅 Daily View Grid Builder
-              </Typography>
-              <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
-                Controls modules shown on individual day views (past, present, future dates)
-              </Typography>
+            <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as 'past' | 'present' | 'future' | 'weekly')} sx={{ mb: 3 }}>
+              <TabList>
+                <Tab value="past">Past Dates</Tab>
+                <Tab value="present">Today</Tab>
+                <Tab value="future">Future Dates</Tab>
+                <Tab value="weekly">Weekly</Tab>
+              </TabList>
+              
+              {/* Past Tab */}
+              <TabPanel value="past">
+                <Box sx={{ mb: 4 }}>
+                  <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    📅 Past Dates Grid Builder
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
+                    Controls modules shown on past date views. Team of the Night (Past) is 2/3 width by default.
+                  </Typography>
 
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={moduleOrder}
-                strategy={verticalListSortingStrategy}
-              >
-                <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '40px', color: '#FFFFFF' }}></th>
-                      <th style={{ color: '#FFFFFF' }}>Module</th>
-                      <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
-                      <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {moduleOrder.map((moduleName) => (
-                      <SortableTableRow key={moduleName} moduleName={moduleName} />
-                    ))}
-                  </tbody>
-                </Table>
-              </SortableContext>
-            </DndContext>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={pastModuleOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px', color: '#FFFFFF' }}></th>
+                            <th style={{ color: '#FFFFFF' }}>Module</th>
+                            <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
+                            <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {pastModuleOrder.map((moduleName) => (
+                            <SortableTableRow key={moduleName} moduleName={moduleName} />
+                          ))}
+                        </tbody>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
+                </Box>
+              </TabPanel>
+              
+              {/* Present Tab */}
+              <TabPanel value="present">
+                <Box sx={{ mb: 4 }}>
+                  <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    📅 Today Grid Builder
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
+                    Controls modules shown on today's view. Team of the Night (Live) is 1/3 width by default.
+                  </Typography>
+
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={presentModuleOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px', color: '#FFFFFF' }}></th>
+                            <th style={{ color: '#FFFFFF' }}>Module</th>
+                            <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
+                            <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {presentModuleOrder.map((moduleName) => (
+                            <SortableTableRow key={moduleName} moduleName={moduleName} />
+                          ))}
+                        </tbody>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
+                </Box>
+              </TabPanel>
+              
+              {/* Future Tab */}
+              <TabPanel value="future">
+                <Box sx={{ mb: 4 }}>
+                  <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    📅 Future Dates Grid Builder
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
+                    Controls modules shown on future date views. Team of the Night modules are hidden by default.
+                  </Typography>
+
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={futureModuleOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px', color: '#FFFFFF' }}></th>
+                            <th style={{ color: '#FFFFFF' }}>Module</th>
+                            <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
+                            <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {futureModuleOrder.map((moduleName) => (
+                            <SortableTableRow key={moduleName} moduleName={moduleName} />
+                          ))}
+                        </tbody>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
+                </Box>
+              </TabPanel>
+              
+              {/* Weekly Tab */}
+              <TabPanel value="weekly">
+                <Box sx={{ mb: 4 }}>
+                  <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
+                    📆 Weekly View Grid Builder
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
+                    Controls modules shown on weekly summary pages
+                  </Typography>
+
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={weeklyModuleOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px', color: '#FFFFFF' }}></th>
+                            <th style={{ color: '#FFFFFF' }}>Module</th>
+                            <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
+                            <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {weeklyModuleOrder.map((moduleName) => (
+                            <SortableWeeklyTableRow key={moduleName} moduleName={moduleName} />
+                          ))}
+                        </tbody>
+                      </Table>
+                    </SortableContext>
+                  </DndContext>
+                </Box>
+              </TabPanel>
+            </Tabs>
           </Box>
 
-          {/* Weekly View Grid Builder */}
+          {/* Grid Preview - Shows active tab's layout */}
           <Box sx={{ mb: 4 }}>
             <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
-              📆 Weekly View Grid Builder
-            </Typography>
-            <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 2 }}>
-              Controls modules shown on weekly summary pages
-            </Typography>
-
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handleWeeklyDragEnd}
-            >
-              <SortableContext
-                items={weeklyModuleOrder}
-                strategy={verticalListSortingStrategy}
-              >
-                <Table hoverRow size="sm" sx={{ bgcolor: '#000000' }}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: '40px', color: '#FFFFFF' }}></th>
-                      <th style={{ color: '#FFFFFF' }}>Module</th>
-                      <th style={{ width: '100px', color: '#FFFFFF', textAlign: 'center' }}>Grid Size</th>
-                      <th style={{ width: '80px', color: '#FFFFFF', textAlign: 'center' }}>Visible</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {weeklyModuleOrder.map((moduleName) => (
-                      <SortableWeeklyTableRow key={moduleName} moduleName={moduleName} />
-                    ))}
-                  </tbody>
-                </Table>
-              </SortableContext>
-            </DndContext>
-          </Box>
-
-          {/* Daily Grid Preview */}
-          <Box sx={{ mb: 4 }}>
-            <Typography level="h4" sx={{ color: '#FFFFFF', mb: 2 }}>
-              Preview Layout
+              Preview Layout ({activeTab === 'past' ? 'Past Dates' : activeTab === 'present' ? 'Today' : activeTab === 'future' ? 'Future Dates' : 'Weekly'})
             </Typography>
             <Grid container spacing={2} sx={{ bgcolor: '#0a0a0a', p: 2, borderRadius: '8px' }}>
-              {moduleOrder
-                .filter(moduleName => localModules[moduleName]?.is_visible)
-                .map((moduleName) => {
-                  const def = DAILY_MODULE_DEFINITIONS.find(d => d.id === moduleName);
-                  const gridSize = localModules[moduleName]?.grid_size ?? 4;
-                  const gridSizeLabel = gridSize === 4 ? '1/3' : gridSize === 8 ? '2/3' : 'Full';
-                  
-                  return (
-                    <Grid key={moduleName} xs={12} md={gridSize}>
-                      <Card
-                        variant="outlined"
-                        sx={{
-                          bgcolor: '#1a1a1a',
-                          borderColor: '#333333',
-                          p: 2,
-                          minHeight: 80,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Box sx={{ textAlign: 'center' }}>
-                          <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 0.5 }}>
-                            {def?.name || moduleName}
-                          </Typography>
-                          <Chip size="sm" variant="soft" color="primary">
-                            {gridSizeLabel} width
-                          </Chip>
-                        </Box>
-                      </Card>
-                    </Grid>
-                  );
-                })}
+              {(() => {
+                const { modules, order } = getCurrentTabModules();
+                const isWeekly = activeTab === 'weekly';
+                const moduleDefinitions = isWeekly ? WEEKLY_MODULE_DEFINITIONS : DAILY_MODULE_DEFINITIONS;
+                
+                return order
+                  .filter(moduleName => modules[moduleName]?.is_visible)
+                  .map((moduleName) => {
+                    const def = moduleDefinitions.find(d => d.id === moduleName);
+                    const gridSize = modules[moduleName]?.grid_size ?? 4;
+                    const gridSizeLabel = gridSize === 4 ? '1/3' : gridSize === 8 ? '2/3' : 'Full';
+                    
+                    return (
+                      <Grid key={moduleName} xs={12} md={gridSize}>
+                        <Card
+                          variant="outlined"
+                          sx={{
+                            bgcolor: '#1a1a1a',
+                            borderColor: '#333333',
+                            p: 2,
+                            minHeight: 80,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Box sx={{ textAlign: 'center' }}>
+                            <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 0.5 }}>
+                              {def?.name || moduleName}
+                            </Typography>
+                            <Chip size="sm" variant="soft" color="primary">
+                              {gridSizeLabel} width
+                            </Chip>
+                          </Box>
+                        </Card>
+                      </Grid>
+                    );
+                  });
+              })()}
             </Grid>
-          </Box>
           </Box>
 
           <Divider sx={{ my: 3, bgcolor: '#333333' }} />
@@ -781,7 +1339,15 @@ export default function AdminToday() {
             <Button
               variant="solid"
               color="primary"
-              onClick={handleSave}
+              onClick={async () => {
+                try {
+                  await handleSave();
+                } catch (error) {
+                  // Error is already logged in handleSave
+                  // Show user-friendly error message
+                  alert(`Failed to save: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck the browser console for details.`);
+                }
+              }}
               disabled={!hasChanges || updateMutation.isPending}
               loading={updateMutation.isPending}
               startDecorator={<Save />}

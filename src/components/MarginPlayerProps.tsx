@@ -89,13 +89,9 @@ export default function MarginPlayerProps({ playerId, playerName, position }: Ma
       'steals_blocks': 'STOCKS',
       'stocks': 'STOCKS',
       'points+assists': 'PTS+AST',
-      'points_assists': 'PTS+AST',
       'points+rebounds': 'PTS+REB',
-      'points_rebounds': 'PTS+REB',
       'points+rebounds+assists': 'PAR',
-      'points_rebounds_assists': 'PAR',
       'rebounds+assists': 'REB+AST',
-      'rebounds_assists': 'REB+AST',
       // Handle uppercase versions from API
       'BLOCKS+STEALS': 'STOCKS',
       'POINTS+ASSISTS': 'PTS+AST',

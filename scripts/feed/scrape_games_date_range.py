@@ -19,6 +19,25 @@ import time
 import os
 from datetime import datetime, timedelta
 
+# Try to load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    from pathlib import Path
+    
+    # Get the project root (assuming script is in scripts/feed/)
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent.parent  # Go up from scripts/feed/ to project root
+    
+    # Try multiple common env file locations (project root first, then current directory)
+    load_dotenv(project_root / '.env.local')
+    load_dotenv(project_root / '.env')
+    load_dotenv('.env.local')  # Also try current directory
+    load_dotenv('.env')  # Also try current directory
+except ImportError:
+    pass  # dotenv not installed, skip
+except:
+    pass  # File not found, skip
+
 
 def validate_date(date_string):
     """
@@ -2436,6 +2455,115 @@ def get_complete_game_data(game_id, game_df):
                         'tov': team_stats[0].get('turnovers')
                     }
                 })
+        
+        # Populate quarters, lastMeeting, seriesStandings, and teamLeaders from box_score_summary
+        if box_score_summary:
+            # Populate quarters from LineScore
+            if box_score_summary.get('LineScore'):
+                line_scores = box_score_summary['LineScore']
+                # LineScore has entries for each team/period combination
+                # We need to group by team and extract quarters
+                home_quarters = [None] * 12
+                away_quarters = [None] * 12
+                home_team_id = game_data['gameMetadata']['homeTeam'].get('team_id')
+                away_team_id = game_data['gameMetadata']['awayTeam'].get('team_id')
+                
+                for line_score in line_scores:
+                    team_id = line_score.get('TEAM_ID')
+                    period = line_score.get('PERIOD')
+                    pts = line_score.get('PTS')
+                    
+                    if team_id == home_team_id and period and pts is not None:
+                        # Period is 1-indexed, array is 0-indexed
+                        if 1 <= period <= 12:
+                            home_quarters[period - 1] = int(pts) if pts is not None else None
+                    elif team_id == away_team_id and period and pts is not None:
+                        if 1 <= period <= 12:
+                            away_quarters[period - 1] = int(pts) if pts is not None else None
+                
+                game_data['gameMetadata']['homeTeam']['quarters'] = home_quarters
+                game_data['gameMetadata']['awayTeam']['quarters'] = away_quarters
+                
+                # Also update record if available
+                for line_score in line_scores:
+                    team_id = line_score.get('TEAM_ID')
+                    wins = line_score.get('W')
+                    losses = line_score.get('L')
+                    if team_id == home_team_id and wins is not None and losses is not None:
+                        game_data['gameMetadata']['homeTeam']['record'] = f"{wins}-{losses}"
+                    elif team_id == away_team_id and wins is not None and losses is not None:
+                        game_data['gameMetadata']['awayTeam']['record'] = f"{wins}-{losses}"
+            
+            # Populate lastMeeting
+            if box_score_summary.get('LastMeeting'):
+                last_meetings = box_score_summary['LastMeeting']
+                if last_meetings and len(last_meetings) > 0:
+                    game_data['gameMetadata']['lastMeeting'] = last_meetings[0]  # Usually just one entry
+            
+            # Populate seriesStandings from SeasonSeries
+            if box_score_summary.get('SeasonSeries'):
+                season_series = box_score_summary['SeasonSeries']
+                if season_series and len(season_series) > 0:
+                    game_data['gameMetadata']['seriesStandings'] = season_series[0]  # Usually just one entry
+            
+            # Populate arena and status from GameInfo
+            if box_score_summary.get('GameInfo'):
+                game_info = box_score_summary['GameInfo']
+                if game_info and len(game_info) > 0:
+                    info = game_info[0]
+                    if info.get('ARENA_NAME'):
+                        game_data['gameMetadata']['arena'] = info.get('ARENA_NAME')
+                    if info.get('GAME_STATUS_TEXT'):
+                        game_data['gameMetadata']['status'] = info.get('GAME_STATUS_TEXT')
+        
+        # Get team leaders from ScoreboardV2
+        try:
+            print("  Fetching team leaders from scoreboard...")
+            from nba_api.stats.endpoints.scoreboardv2 import ScoreboardV2
+            
+            # Extract game date from game_row (most reliable source)
+            game_date_str = None
+            if game_row is not None:
+                game_date_str = game_row.get('GAME_DATE', '')
+            
+            if not game_date_str:
+                game_date_str = game_data['gameMetadata'].get('date', '')
+            
+            if game_date_str:
+                # Convert from YYYY-MM-DD format to YYYYMMDD format for ScoreboardV2
+                if 'T' in game_date_str:
+                    game_date = game_date_str.split('T')[0].replace('-', '')
+                else:
+                    game_date = game_date_str.replace('-', '')
+                
+                scoreboard = ScoreboardV2(game_date=game_date, get_request=True)
+                time.sleep(1.0)  # Rate limiting
+                
+                if scoreboard.team_leaders:
+                    team_leaders_df = scoreboard.team_leaders.get_data_frame()
+                    if not team_leaders_df.empty:
+                        # Filter for this specific game
+                        game_leaders = team_leaders_df[team_leaders_df['GAME_ID'] == game_id]
+                        if not game_leaders.empty:
+                            # Convert to list of records grouped by team
+                            team_leaders_dict = {}
+                            for _, row in game_leaders.iterrows():
+                                team_id = row.get('TEAM_ID')
+                                if team_id not in team_leaders_dict:
+                                    team_leaders_dict[team_id] = []
+                                team_leaders_dict[team_id].append(row.to_dict())
+                            
+                            game_data['gameMetadata']['teamLeaders'] = team_leaders_dict
+                            print(f"    ✓ Found team leaders for {len(team_leaders_dict)} teams")
+                        else:
+                            print(f"    ⚠ No team leaders found for game {game_id} on date {game_date}")
+                else:
+                    print(f"    ⚠ ScoreboardV2 returned no team_leaders data")
+        except Exception as e:
+            print(f"    ⚠ Error fetching team leaders: {e}")
+            import traceback
+            traceback.print_exc()
+            # Continue without team leaders
         
         # Get videos and play-by-play
         print("  Fetching videos and play-by-play data...")

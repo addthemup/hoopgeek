@@ -17,9 +17,17 @@ import pandas as pd
 # Try to load environment variables from .env file
 try:
     from dotenv import load_dotenv
-    # Try multiple common env file locations
-    load_dotenv('.env.local')
-    load_dotenv('.env')
+    from pathlib import Path
+    
+    # Get the project root (assuming script is in scripts/setup/ or scripts/feed/)
+    script_dir = Path(__file__).parent
+    project_root = script_dir.parent.parent  # Go up from scripts/setup/ or scripts/feed/ to project root
+    
+    # Try multiple common env file locations (project root first, then current directory)
+    load_dotenv(project_root / '.env.local')
+    load_dotenv(project_root / '.env')
+    load_dotenv('.env.local')  # Also try current directory
+    load_dotenv('.env')  # Also try current directory
 except ImportError:
     pass  # dotenv not installed, skip
 except:

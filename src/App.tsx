@@ -36,6 +36,7 @@ import AdminDFSPoolDetails from './pages/AdminDFSPoolDetails'
 import AdminAnalytics from './pages/AdminAnalytics'
 import AdminToday from './pages/AdminToday'
 import AdminFeed from './pages/AdminFeed'
+import TeamOfNightPage from './pages/TeamOfNightPage'
 
 // Import Highlights and Post pages
 import Highlights from './pages/Highlights'
@@ -160,7 +161,8 @@ function App() {
           {/* Game Highlights Routes */}
           <Route path="game/:id" element={<GamePage />} />
           
-          {/* Today Route */}
+          {/* Today Route - more specific routes first */}
+          <Route path="today/totn" element={<TeamOfNightPage />} />
           <Route path="today" element={<Today />} />
           <Route path="prop-predictions/:date" element={<PropPredictions />} />
           

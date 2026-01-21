@@ -47,10 +47,11 @@ export default function Layout() {
         {/* MarginBars - Always rendered on desktop for all routes */}
         <MarginBarsWrapper />
         <Box component="main" sx={{ 
-          flex: 1,
+          flex: '1 1 auto', // Allow main to grow and shrink naturally
           width: '100%',
           maxWidth: '100%',
           overflowX: 'hidden',
+          overflowY: 'visible', // Don't create a scroll container - let body handle it
           marginTop: isLandscapeMobile ? '0px' : '0px', // No margin when nav bar is hidden in landscape mobile
           paddingBottom: { xs: '80px', md: 0 }, // Add bottom padding on mobile for bottom nav
         }}>
