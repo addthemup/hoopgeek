@@ -39,8 +39,10 @@ import {
   MoreVert,
   Share,
 } from '@mui/icons-material';
-import { FaChartBar, FaChartLine, FaStar, FaClipboardList } from 'react-icons/fa';
+import { FaChartBar, FaChartLine, FaStar, FaClipboardList, FaAt, FaMoon } from 'react-icons/fa';
 import { usePlayerComprehensive } from '../hooks/usePlayerComprehensive';
+import { usePlayerAwards } from '../hooks/usePlayerAwards';
+import TeamLineupModal from '../components/TeamLineupModal';
 import { useIsPlayerFavorite, usePlayerFavoriteCount, useAddToFavorites, useRemoveFromFavorites } from '../hooks/usePlayerFavorites';
 import { usePlayerGameStats } from '../hooks/usePlayerGameStats';
 import { useAuth } from '../hooks/useAuth';
@@ -61,6 +63,7 @@ import FantasyPointsProgressionChart from '../components/PlayerCharts/FantasyPoi
 import { usePlayerHighlights } from '../hooks/usePlayerHighlights';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { calculatePropResult } from '../utils/playerPropsCalculator';
+import { filterFullGameProps } from '../utils/playerPropsFilter';
 
 interface PlayerPageProps {
   playerId: string;
@@ -106,12 +109,55 @@ export default function PlayerPage({
   const [imageError, setImageError] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(0); // 0: Game Logs, 1: Props, 2: Stats, etc.
+  const [lineupModal, setLineupModal] = useState<{
+    open: boolean;
+    type: 'totn' | 'totw';
+    gameDate?: string;
+    weekStart?: string;
+    weekEnd?: string;
+    weekNumber?: number;
+  }>({ open: false, type: 'totn' });
   
   const { 
     data: playerData, 
     isLoading: loading, 
     error 
   } = usePlayerComprehensive(playerId, 1, 20);
+
+  // Fetch player awards (POW, POM, TOTN, TOTW)
+  const { data: awardsData, isLoading: awardsLoading } = usePlayerAwards(playerId);
+
+  // Build fast lookup sets for game log award icons
+  const awardLookups = useMemo(() => {
+    const totnDates = new Set<string>();
+    const totwRanges: { start: string; end: string }[] = [];
+    const powWeeks: { start: string; season: string }[] = [];
+    const pomMonths: { year: number; month: number }[] = [];
+
+    if (awardsData) {
+      for (const a of awardsData.totn) totnDates.add(a.game_date);
+      for (const a of awardsData.totw) totwRanges.push({ start: a.week_start, end: a.week_end });
+      for (const a of awardsData.pow) powWeeks.push({ start: a.week_start_date, season: a.season });
+      for (const a of awardsData.pom) pomMonths.push({ year: a.award_year, month: a.award_month });
+    }
+
+    return {
+      isTotn: (date: string) => totnDates.has(date),
+      isTotw: (date: string) => totwRanges.some(r => date >= r.start && date <= r.end),
+      isPow: (date: string) => {
+        // POW week_start_date is the Monday; the award covers Mon-Sun (7 days)
+        return powWeeks.some(w => {
+          const end = new Date(w.start + 'T00:00:00');
+          end.setDate(end.getDate() + 6);
+          return date >= w.start && date <= end.toISOString().slice(0, 10);
+        });
+      },
+      isPom: (date: string) => {
+        const d = new Date(date + 'T00:00:00');
+        return pomMonths.some(m => d.getFullYear() === m.year && d.getMonth() + 1 === m.month);
+      },
+    };
+  }, [awardsData]);
 
   // Fetch all team games and merge with player boxscores
   // Strategy: Get all unique games from boxscores for this team, then fetch game details from nba_games
@@ -447,7 +493,10 @@ export default function PlayerPage({
       if (propsError || !props || props.length === 0) {
         return [];
       }
-      
+
+      // Only full-game props (exclude 1q, 1h, etc.)
+      const fullGameProps = filterFullGameProps(props);
+
       // Group props by game (using event_id and game_date)
       const gameMap = new Map<string, {
         game_date: string;
@@ -457,7 +506,7 @@ export default function PlayerPage({
         boxscore: any | null;
       }>();
       
-      for (const prop of props) {
+      for (const prop of fullGameProps) {
         const game = prop.player_props_games;
         if (!game) continue;
         
@@ -957,7 +1006,7 @@ export default function PlayerPage({
         boxSizing: 'border-box',
         overflowX: 'hidden',
       }}>
-        {/* Player Header: Avatar left, details right (universal layout) */}
+        {/* Player Header: Back button + Avatar left, details right (match game page) */}
         <Box sx={{ 
           display: 'flex', 
           flexDirection: 'row',
@@ -966,6 +1015,28 @@ export default function PlayerPage({
           mb: 1, 
           px: { xs: 2, sm: 0 },
         }}>
+          {/* Back Button - same as game page header */}
+          <IconButton
+            size="sm"
+            variant="outlined"
+            color="neutral"
+            onClick={onBack}
+            sx={{
+              minWidth: 'auto',
+              width: { xs: 28, md: 32 },
+              height: { xs: 28, md: 32 },
+              borderColor: '#FFFFFF',
+              color: '#FFFFFF',
+              flexShrink: 0,
+              '&:hover': {
+                bgcolor: 'rgba(255, 255, 255, 0.1)',
+              },
+            }}
+            title="Back"
+          >
+            <ArrowBack sx={{ fontSize: { xs: '1rem', md: '1.125rem' } }} />
+          </IconButton>
+
           {/* Avatar Section - Left side, matching feed avatar bar size */}
           <Box sx={{ 
             display: 'flex', 
@@ -1232,12 +1303,46 @@ export default function PlayerPage({
         {/* Dashboard Section - Full Width Below with Tabs */}
         <Box sx={{ mt: 0, px: { xs: 2, sm: 0 } }}>
           <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as number)} sx={{ width: '100%' }}>
-            <TabList sx={{ mb: 2, overflowX: 'auto' }}>
+            <TabList
+              sx={{
+                mb: 2,
+                overflowX: 'auto',
+                bgcolor: '#000000',
+                borderRadius: '8px',
+                border: '1px solid #333333',
+                p: '4px',
+                gap: '4px',
+                '& .MuiTab-root': {
+                  color: '#999999',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  letterSpacing: '0.02em',
+                  borderRadius: '6px',
+                  py: 1,
+                  px: 2,
+                  minHeight: '36px',
+                  transition: 'all 0.15s ease',
+                  '&:hover': {
+                    color: '#FFFFFF',
+                    bgcolor: 'rgba(255,255,255,0.06)',
+                  },
+                  '&.Mui-selected': {
+                    color: '#FFFFFF',
+                    bgcolor: '#1a1a1a',
+                    border: '1px solid #333333',
+                  },
+                  '&::after': {
+                    display: 'none',
+                  },
+                },
+              }}
+            >
               <Tab>Game Logs</Tab>
               <Tab>Props</Tab>
               <Tab>Stats</Tab>
               <Tab>Info</Tab>
               <Tab>Injuries</Tab>
+              <Tab>Awards</Tab>
             </TabList>
             
             {/* Game Logs Tab */}
@@ -1333,8 +1438,9 @@ export default function PlayerPage({
                         <Table hoverRow size="sm" sx={{ minWidth: 600, bgcolor: '#000000' }}>
                           <thead>
                             <tr>
+                              <th style={{ color: '#FFFFFF', width: 28, minWidth: 28, padding: '6px 2px', textAlign: 'center' }} title="Awards"></th>
                               <th style={{ color: '#FFFFFF' }}>Date</th>
-                              <th style={{ color: '#FFFFFF' }}>Matchup</th>
+                              <th style={{ color: '#FFFFFF', width: 56, minWidth: 56 }}>Opponent</th>
                               <th style={{ color: '#FFFFFF' }}>Min</th>
                               <th style={{ color: '#FFFFFF' }}>Fantasy</th>
                               <th style={{ color: '#FFFFFF' }}>PTS</th>
@@ -1354,31 +1460,21 @@ export default function PlayerPage({
                               // Format date in EST (e.g., "11/2")
                               const formattedDate = formatESTDate(game.game_date, 'date');
                               
-                              // Simplify matchup display
-                              // Format: "AWAY @ HOME"
-                              // If player is away team, show "@ HOME"
-                              // If player is home team, show "AWAY"
-                              let simplifiedMatchup = game.matchup || '';
-                              if (game.matchup && game.team_abbreviation) {
-                                const [awayTeam, homeTeam] = game.matchup.split(' @ ');
-                                if (awayTeam && homeTeam) {
-                                  // If player's team is the away team, show "@ HOME"
-                                  if (game.team_abbreviation === awayTeam) {
-                                    simplifiedMatchup = `@ ${homeTeam}`;
-                                  }
-                                  // If player's team is the home team, show just "AWAY" (opponent)
-                                  else if (game.team_abbreviation === homeTeam) {
-                                    simplifiedMatchup = awayTeam;
-                                  }
-                                }
-                              }
-                              
+                              // Opponent tricode (team the player is playing against) — from game.opponent
+                              const opponentTricode = game.opponent || '';
+
                               // Check if player didn't play
                               const didNotPlay = !game.played;
                               const dnpReason = game.dnp_reason || (didNotPlay ? 'DNP' : null);
 
-                              return (
+                              const gameDate = game.game_date || '';
+                            const hasTotn = awardLookups.isTotn(gameDate);
+
+                            return (
                               <tr key={game.game_id || index}>
+                                <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>
+                                  {hasTotn && <FaMoon style={{ fontSize: 11, color: '#C0C0C0' }} title="Team of the Night" />}
+                                </td>
                                 <td>
                                   <Typography 
                                     level="body-sm" 
@@ -1395,23 +1491,30 @@ export default function PlayerPage({
                                     {formattedDate}
                                   </Typography>
                                 </td>
-                                <td>
-                                  <Stack direction="row" spacing={1} alignItems="center">
-                                    <Typography 
-                                      level="body-sm" 
-                                      sx={{ 
-                                        fontWeight: 'bold', 
-                                        color: didNotPlay ? '#666666' : '#FFFFFF',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                          color: didNotPlay ? '#888888' : '#FFD700',
-                                          textDecoration: 'underline',
-                                        },
-                                      }}
-                                      onClick={() => handleGameLogClick(game.game_id)}
-                                    >
-                                      {simplifiedMatchup}
-                                    </Typography>
+                                <td style={{ width: 56, minWidth: 56, verticalAlign: 'middle' }}>
+                                  <Stack direction="row" spacing={0.5} alignItems="center">
+                                    {!game.is_home && (
+                                      <FaAt style={{ fontSize: 14, color: '#888888', flexShrink: 0 }} title="Away" />
+                                    )}
+                                    {opponentTricode ? (
+                                      <Box
+                                        component="img"
+                                        src={getTeamLogoUrl(opponentTricode)}
+                                        alt={opponentTricode}
+                                        title={game.is_home ? `vs ${opponentTricode}` : `@ ${opponentTricode}`}
+                                        onClick={() => handleGameLogClick(game.game_id)}
+                                        sx={{
+                                          height: 40,
+                                          width: 'auto',
+                                          maxWidth: 40,
+                                          objectFit: 'contain',
+                                          cursor: 'pointer',
+                                          '&:hover': { opacity: 0.9 },
+                                        }}
+                                      />
+                                    ) : (
+                                      <Typography level="body-sm" sx={{ color: '#666666' }}>—</Typography>
+                                    )}
                                     {dnpReason && (
                                       <Chip 
                                         size="sm" 
@@ -1558,22 +1661,22 @@ export default function PlayerPage({
                     ) : playerPropsData && playerPropsData.length > 0 ? (
                       <>
                         <Box sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
-                          <Table hoverRow size="sm" sx={{ minWidth: 800, bgcolor: '#000000' }}>
+                          <Table hoverRow size="sm" sx={{ minWidth: 800, bgcolor: '#000000', tableLayout: 'fixed' }}>
                             <thead>
                               <tr>
-                                <th style={{ color: '#FFFFFF' }}>Date</th>
-                                <th style={{ color: '#FFFFFF' }}>Matchup</th>
-                                <th style={{ color: '#FFFFFF' }}>PTS</th>
-                                <th style={{ color: '#FFFFFF' }}>REB</th>
-                                <th style={{ color: '#FFFFFF' }}>AST</th>
-                                <th style={{ color: '#FFFFFF' }}>STL</th>
-                                <th style={{ color: '#FFFFFF' }}>BLK</th>
-                                <th style={{ color: '#FFFFFF' }}>3PM</th>
-                                <th style={{ color: '#FFFFFF' }}>PRA</th>
-                                <th style={{ color: '#FFFFFF' }}>PR</th>
-                                <th style={{ color: '#FFFFFF' }}>PA</th>
-                                <th style={{ color: '#FFFFFF' }}>RA</th>
-                                <th style={{ color: '#FFFFFF' }}>Hit Rate</th>
+                                <th style={{ color: '#FFFFFF', width: 56, minWidth: 56, textAlign: 'left' }}>Date</th>
+                                <th style={{ color: '#FFFFFF', width: 56, minWidth: 56 }}>Opponent</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>PTS</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>REB</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>AST</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>STL</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>BLK</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>3PM</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>PRA</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>PR</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>PA</th>
+                                <th style={{ color: '#FFFFFF', width: 52, minWidth: 52, textAlign: 'center' }}>RA</th>
+                                <th style={{ color: '#FFFFFF', width: 68, minWidth: 68, textAlign: 'center' }}>Hit %</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1582,30 +1685,26 @@ export default function PlayerPage({
                                 .map((game: any, index: number) => {
                                   // Format date in EST (e.g., "11/2")
                                   const formattedDate = formatESTDate(game.game_date, 'date');
-                                  
-                                  // Simplify matchup display
-                                  let simplifiedMatchup = game.matchup || '';
-                                  if (game.matchup && playerData?.player?.team_abbreviation) {
-                                    const [awayTeam, homeTeam] = game.matchup.split(' @ ');
-                                    if (awayTeam && homeTeam) {
-                                      if (playerData.player.team_abbreviation === awayTeam) {
-                                        simplifiedMatchup = `@ ${homeTeam}`;
-                                      } else if (playerData.player.team_abbreviation === homeTeam) {
-                                        simplifiedMatchup = awayTeam;
-                                      }
-                                    }
-                                  }
-                                  
-                                  // Helper function to find prop by bet type patterns
-                                  const findProp = (patterns: string[]) => {
+
+                                  // Opponent tricode (team the player is playing against) from matchup
+                                  const matchupParts = game.matchup?.split(' @ ') || [];
+                                  const awayTricode = matchupParts[0]?.trim();
+                                  const homeTricode = matchupParts[1]?.trim();
+                                  const opponentTricode = (playerData?.player?.team_abbreviation === awayTricode ? homeTricode : awayTricode) || '';
+                                  const isAwayGame = playerData?.player?.team_abbreviation === awayTricode;
+
+                                  // Helper: find prop by bet type. exactOnly = true for single-stat columns so
+                                  // "points" doesn't match "points+rebounds" and "rebounds" doesn't match "points+rebounds".
+                                  const findProp = (patterns: string[], exactOnly = false) => {
                                     for (const pattern of patterns) {
+                                      const normalizedPattern = pattern.toLowerCase().trim().replace(/[\s_+]/g, '');
                                       const propResult = game.propResults.find((pr: any) => {
-                                        // Normalize bet type: remove spaces, underscores, plus signs, and "over"/"under" suffixes
                                         let normalized = pr.prop.bet_type?.toLowerCase().trim().replace(/[\s_+]/g, '') || '';
                                         normalized = normalized.replace(/(over|under)$/i, '').trim();
-                                        
-                                        const normalizedPattern = pattern.toLowerCase().trim().replace(/[\s_+]/g, '');
-                                        return normalized === normalizedPattern || 
+                                        if (exactOnly) {
+                                          return normalized === normalizedPattern;
+                                        }
+                                        return normalized === normalizedPattern ||
                                                normalized.includes(normalizedPattern) ||
                                                normalizedPattern.includes(normalized);
                                       });
@@ -1613,50 +1712,42 @@ export default function PlayerPage({
                                     }
                                     return null;
                                   };
+
+                                  // Single-stat columns: exact match only so REB shows rebounds line, not PRA/PR
+                                  const ptsProp = findProp(['points', 'pts'], true);
+                                  const rebProp = findProp(['rebounds', 'reb'], true);
+                                  const astProp = findProp(['assists', 'ast'], true);
+                                  const stlProp = findProp(['steals', 'stl'], true);
+                                  const blkProp = findProp(['blocks', 'blk'], true);
+                                  const fg3mProp = findProp(['threepointersmade', 'three-pointers', '3pm', '3pt'], true);
+                                  // Composite columns: allow partial match for combined bet types
+                                  const praProp = findProp(['points+rebounds+assists', 'pointsreboundsassists']);
+                                  const prProp = findProp(['points+rebounds', 'pointsrebounds']);
+                                  const paProp = findProp(['points+assists', 'pointsassists']);
+                                  const raProp = findProp(['rebounds+assists', 'reboundsassists']);
                                   
-                                  // Get props for each stat - try multiple variations
-                                  const ptsProp = findProp(['points', 'pts', 'point']);
-                                  const rebProp = findProp(['rebounds', 'reb', 'rebound']);
-                                  const astProp = findProp(['assists', 'ast', 'assist']);
-                                  const stlProp = findProp(['steals', 'stl', 'steal']);
-                                  const blkProp = findProp(['blocks', 'blk', 'block']);
-                                  const fg3mProp = findProp(['three-pointers', '3pm', '3-pointers', 'threepointersmade', '3pt']);
-                                  const praProp = findProp(['points+rebounds+assists', 'par', 'pts+reb+ast', 'pointsreboundsassists']);
-                                  const prProp = findProp(['points+rebounds', 'pts+reb', 'pointsrebounds']);
-                                  const paProp = findProp(['points+assists', 'pts+ast', 'pointsassists']);
-                                  const raProp = findProp(['rebounds+assists', 'reb+ast', 'reboundsassists']);
-                                  
-                                  // Helper to render prop cell
+                                  // Helper to render prop cell (line + actual, centered)
                                   const renderPropCell = (propResult: any) => {
                                     if (!propResult || !propResult.prop) return (
-                                      <Typography level="body-sm" sx={{ color: '#666666' }}>—</Typography>
+                                      <Typography level="body-sm" sx={{ color: '#666666', textAlign: 'center' }}>—</Typography>
                                     );
-                                    
                                     const { prop, result, hit } = propResult;
                                     const hasResult = result !== null && game.boxscore;
-                                    
                                     return (
-                                      <Box>
-                                        <Typography 
-                                          level="body-sm" 
-                                          sx={{ 
+                                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0 }}>
+                                        <Typography
+                                          level="body-sm"
+                                          sx={{
                                             fontWeight: hasResult ? 'bold' : 'normal',
-                                            color: hasResult 
-                                              ? (hit ? '#10B981' : '#EF4444')
-                                              : '#CCCCCC',
+                                            color: hasResult ? (hit ? '#10B981' : '#EF4444') : '#CCCCCC',
                                             fontSize: '0.875rem',
+                                            textAlign: 'center',
                                           }}
                                         >
-                                          {prop.line ? prop.line.toFixed(1) : 'N/A'}
+                                          {prop.line != null ? Number(prop.line).toFixed(1) : '—'}
                                         </Typography>
                                         {hasResult && (
-                                          <Typography 
-                                            level="body-xs" 
-                                            sx={{ 
-                                              color: '#888888',
-                                              fontSize: '0.7rem',
-                                            }}
-                                          >
+                                          <Typography level="body-xs" sx={{ color: '#888888', fontSize: '0.7rem', textAlign: 'center' }}>
                                             {result.actualValue.toFixed(1)}
                                           </Typography>
                                         )}
@@ -1664,9 +1755,10 @@ export default function PlayerPage({
                                     );
                                   };
                                   
+                                  const statCellSx = { textAlign: 'center' as const, verticalAlign: 'middle' };
                                   return (
                                     <tr key={`${game.event_id}-${game.game_date}-${index}`}>
-                                      <td>
+                                      <td style={{ width: 56, minWidth: 56, textAlign: 'left', verticalAlign: 'middle' }}>
                                         <Typography 
                                           level="body-sm" 
                                           sx={{ 
@@ -1682,34 +1774,44 @@ export default function PlayerPage({
                                           {formattedDate}
                                         </Typography>
                                       </td>
-                                      <td>
-                                        <Typography 
-                                          level="body-sm" 
-                                          sx={{ 
-                                            fontWeight: 'bold', 
-                                            color: game.boxscore ? '#FFFFFF' : '#666666',
-                                            cursor: game.boxscore ? 'pointer' : 'default',
-                                            '&:hover': game.boxscore ? {
-                                              color: '#FFD700',
-                                              textDecoration: 'underline',
-                                            } : {},
-                                          }}
-                                          onClick={() => game.boxscore && handleGameLogClick(game.boxscore.game_id)}
-                                        >
-                                          {simplifiedMatchup}
-                                        </Typography>
+                                      <td style={{ width: 56, minWidth: 56, verticalAlign: 'middle' }}>
+                                        <Stack direction="row" spacing={0.5} alignItems="center">
+                                          {isAwayGame && (
+                                            <FaAt style={{ fontSize: 14, color: '#888888', flexShrink: 0 }} title="Away" />
+                                          )}
+                                          {opponentTricode ? (
+                                            <Box
+                                              component="img"
+                                              src={getTeamLogoUrl(opponentTricode)}
+                                              alt={opponentTricode}
+                                              title={isAwayGame ? `@ ${opponentTricode}` : `vs ${opponentTricode}`}
+                                              onClick={() => game.boxscore && handleGameLogClick(game.boxscore.game_id)}
+                                              sx={{
+                                                height: 40,
+                                                width: 'auto',
+                                                maxWidth: 40,
+                                                objectFit: 'contain',
+                                                cursor: game.boxscore ? 'pointer' : 'default',
+                                                opacity: game.boxscore ? 1 : 0.6,
+                                                '&:hover': game.boxscore ? { opacity: 0.9 } : {},
+                                              }}
+                                            />
+                                          ) : (
+                                            <Typography level="body-sm" sx={{ color: '#666666' }}>—</Typography>
+                                          )}
+                                        </Stack>
                                       </td>
-                                      <td>{renderPropCell(ptsProp)}</td>
-                                      <td>{renderPropCell(rebProp)}</td>
-                                      <td>{renderPropCell(astProp)}</td>
-                                      <td>{renderPropCell(stlProp)}</td>
-                                      <td>{renderPropCell(blkProp)}</td>
-                                      <td>{renderPropCell(fg3mProp)}</td>
-                                      <td>{renderPropCell(praProp)}</td>
-                                      <td>{renderPropCell(prProp)}</td>
-                                      <td>{renderPropCell(paProp)}</td>
-                                      <td>{renderPropCell(raProp)}</td>
-                                      <td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(ptsProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(rebProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(astProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(stlProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(blkProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(fg3mProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(praProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(prProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(paProp)}</td>
+                                      <td style={{ width: 52, minWidth: 52, ...statCellSx }}>{renderPropCell(raProp)}</td>
+                                      <td style={{ width: 68, minWidth: 68, ...statCellSx }}>
                                         {game.boxscore ? (
                                           <Typography 
                                             level="body-sm" 
@@ -2298,8 +2400,193 @@ export default function PlayerPage({
           </Box>
               </Box>
             )}
+
+            {/* Awards Tab */}
+            {activeTab === 5 && (
+              <Box>
+                <Card variant="outlined" sx={{ bgcolor: '#000000', borderColor: '#333333' }}>
+                  <CardContent sx={{ bgcolor: '#000000' }}>
+                    <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 3 }}>
+                      Awards &amp; Accolades
+                    </Typography>
+
+                    {awardsLoading ? (
+                      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                        <LinearProgress sx={{ width: '100%' }} />
+                      </Box>
+                    ) : !awardsData || (awardsData.pow.length === 0 && awardsData.pom.length === 0 && awardsData.totn.length === 0 && awardsData.totw.length === 0) ? (
+                      <Typography level="body-sm" sx={{ color: '#999999', textAlign: 'center', py: 4 }}>
+                        No awards or accolades recorded yet.
+                      </Typography>
+                    ) : (
+                      <Stack spacing={3}>
+                        {/* Player of the Month */}
+                        {awardsData.pom.length > 0 && (
+                          <Box>
+                            <Typography level="title-md" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 1.5 }}>
+                              Player of the Month
+                            </Typography>
+                            <Box sx={{ overflowX: 'auto' }}>
+                              <Table size="sm" sx={{ minWidth: 400, bgcolor: '#000000' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Season</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Month</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Conference</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Tie</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {awardsData.pom.map((a) => (
+                                    <tr key={a.id}>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.season}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {new Date(a.award_year, a.award_month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.conference === 'E' ? 'Eastern' : a.conference === 'W' ? 'Western' : '—'}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.is_tie ? 'Yes' : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </Table>
+                            </Box>
+                          </Box>
+                        )}
+
+                        {/* Player of the Week */}
+                        {awardsData.pow.length > 0 && (
+                          <Box>
+                            <Typography level="title-md" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 1.5 }}>
+                              Player of the Week
+                            </Typography>
+                            <Box sx={{ overflowX: 'auto' }}>
+                              <Table size="sm" sx={{ minWidth: 400, bgcolor: '#000000' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Season</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Week Of</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Conference</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Tie</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {awardsData.pow.map((a) => (
+                                    <tr key={a.id}>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.season}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {new Date(a.week_start_date + 'T00:00:00').toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.conference === 'E' ? 'Eastern' : a.conference === 'W' ? 'Western' : '—'}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>{a.is_tie ? 'Yes' : '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </Table>
+                            </Box>
+                          </Box>
+                        )}
+
+                        {/* Team of the Night appearances */}
+                        {awardsData.totn.length > 0 && (
+                          <Box>
+                            <Typography level="title-md" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 1.5 }}>
+                              Team of the Night ({awardsData.totn.length})
+                            </Typography>
+                            <Box sx={{ overflowX: 'auto' }}>
+                              <Table size="sm" sx={{ minWidth: 500, bgcolor: '#000000' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Date</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Role</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333', textAlign: 'right' }}>FP</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333', textAlign: 'right' }}>Salary</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {awardsData.totn.map((a) => (
+                                    <tr
+                                      key={a.game_date + a.slot}
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => setLineupModal({ open: true, type: 'totn', gameDate: a.game_date })}
+                                    >
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {new Date(a.game_date + 'T00:00:00').toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {a.slot.startsWith('s') ? 'Starter' : 'Bench'}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', textAlign: 'right' }}>{a.fantasy_points.toFixed(1)}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', textAlign: 'right' }}>${a.salary.toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </Table>
+                            </Box>
+                          </Box>
+                        )}
+
+                        {/* Team of the Week appearances */}
+                        {awardsData.totw.length > 0 && (
+                          <Box>
+                            <Typography level="title-md" sx={{ color: '#FFFFFF', fontWeight: 700, mb: 1.5 }}>
+                              Team of the Week ({awardsData.totw.length})
+                            </Typography>
+                            <Box sx={{ overflowX: 'auto' }}>
+                              <Table size="sm" sx={{ minWidth: 600, bgcolor: '#000000' }}>
+                                <thead>
+                                  <tr>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Week</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Dates</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333' }}>Role</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333', textAlign: 'right' }}>Avg FP</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333', textAlign: 'right' }}>GP</th>
+                                    <th style={{ color: '#FFFFFF', borderBottom: '1px solid #333333', textAlign: 'right' }}>Salary</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {awardsData.totw.map((a) => (
+                                    <tr
+                                      key={a.week_start + a.slot}
+                                      style={{ cursor: 'pointer' }}
+                                      onClick={() => setLineupModal({ open: true, type: 'totw', weekStart: a.week_start, weekEnd: a.week_end, weekNumber: a.week_number })}
+                                    >
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>Wk {a.week_number}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {new Date(a.week_start + 'T00:00:00').toLocaleDateString('default', { month: 'short', day: 'numeric' })} – {new Date(a.week_end + 'T00:00:00').toLocaleDateString('default', { month: 'short', day: 'numeric' })}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a' }}>
+                                        {a.slot.startsWith('s') ? 'Starter' : 'Bench'}
+                                      </td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', textAlign: 'right' }}>{a.avg_fantasy_points.toFixed(1)}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', textAlign: 'right' }}>{a.games_played}</td>
+                                      <td style={{ color: '#CCCCCC', borderBottom: '1px solid #1a1a1a', textAlign: 'right' }}>${a.salary.toLocaleString()}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </Table>
+                            </Box>
+                          </Box>
+                        )}
+                      </Stack>
+                    )}
+                  </CardContent>
+                </Card>
+              </Box>
+            )}
           </Tabs>
         </Box>
+
+        {/* Team Lineup Modal (TOTN / TOTW) */}
+        <TeamLineupModal
+          open={lineupModal.open}
+          onClose={() => setLineupModal(prev => ({ ...prev, open: false }))}
+          type={lineupModal.type}
+          gameDate={lineupModal.gameDate}
+          weekStart={lineupModal.weekStart}
+          weekEnd={lineupModal.weekEnd}
+          weekNumber={lineupModal.weekNumber}
+          highlightPlayerId={playerId}
+        />
 
         {/* Image Modal */}
         <Modal open={imageModal} onClose={() => setImageModal(false)}>

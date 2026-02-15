@@ -169,7 +169,7 @@ export default function GamesWithPosts() {
   });
 
   const handleGameClick = (gameId: string) => {
-    navigate(`/admin/content/game/${gameId}`);
+    navigate(`/admin/create-post/game/${gameId}`);
   };
 
   if (isLoading) {

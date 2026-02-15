@@ -31,29 +31,29 @@ export default function Layout() {
 
   return (
     <UserSettingsProvider>
-      <Box sx={{ 
-        minHeight: '100vh',
+      {/* Outer wrapper: fixed viewport height + scroll. Scroll works whether cursor is over nav or page content. */}
+      <Box sx={{
+        height: '100vh',
         width: '100%',
         maxWidth: '100%',
         overflowX: 'hidden',
+        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         margin: 0,
         padding: 0,
       }}>
         <TopNavigation />
-        {/* Persistent Avatar Bar Skeleton - Hidden on player page, settings, admin routes, mobile, and mobile landscape */}
         {!shouldHideAvatarBar && !isMobile && !isLandscapeMobile && <PersistentAvatarBar />}
-        {/* MarginBars - Always rendered on desktop for all routes */}
         <MarginBarsWrapper />
-        <Box component="main" sx={{ 
-          flex: '1 1 auto', // Allow main to grow and shrink naturally
+        <Box component="main" sx={{
+          flex: '1 1 auto',
           width: '100%',
           maxWidth: '100%',
           overflowX: 'hidden',
-          overflowY: 'visible', // Don't create a scroll container - let body handle it
-          marginTop: isLandscapeMobile ? '0px' : '0px', // No margin when nav bar is hidden in landscape mobile
-          paddingBottom: { xs: '80px', md: 0 }, // Add bottom padding on mobile for bottom nav
+          overflowY: 'visible',
+          marginTop: isLandscapeMobile ? '0px' : '0px',
+          paddingBottom: { xs: '80px', md: 0 },
         }}>
           <Outlet key={location.key || location.pathname} />
         </Box>

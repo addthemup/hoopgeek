@@ -207,6 +207,7 @@ export default function TodayModulesGrid({
                       selectedDate={selectedDate}
                       navigate={navigate}
                       onOpen={onOpenPropPredictions}
+                      nbaScoreboard={nbaScoreboard}
                     />
                   </Grid>
                 );

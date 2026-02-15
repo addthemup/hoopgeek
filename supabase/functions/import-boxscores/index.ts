@@ -332,20 +332,22 @@ async function fetchBoxScore(gameId: string) {
 
 async function updateGameScores(supabaseAdmin: any, gameId: string, awayScore?: number, homeScore?: number) {
   try {
-    // If scores provided, update them
+    // If scores provided, update them and mark game as Final (so "last 10 completed games" includes it)
     if (awayScore !== undefined && homeScore !== undefined) {
       const { error } = await supabaseAdmin
         .from('nba_games')
         .update({
           away_team_score: awayScore,
-          home_team_score: homeScore
+          home_team_score: homeScore,
+          game_status: 3,
+          game_status_text: 'Final',
         })
         .eq('game_id', gameId)
 
       if (error) {
         console.error(`Error updating game scores: ${error.message}`)
       } else {
-        console.log(`✅ Updated scores: ${awayScore}-${homeScore}`)
+        console.log(`✅ Updated scores and status=Final: ${awayScore}-${homeScore}`)
       }
     }
   } catch (error) {

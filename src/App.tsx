@@ -28,9 +28,7 @@ import CommissionerTools from './pages/CommissionerTools'
 import UserSettings from './pages/UserSettings'
 import PlayerPage from './pages/PlayerPage'
 import TeamPage from './pages/TeamPage'
-import AdminContent from './pages/AdminContent'
 import AdminContentGame from './pages/AdminContentGame'
-import AdminBlog from './pages/AdminBlog'
 import AdminDFS from './pages/AdminDFS'
 import AdminDFSPoolDetails from './pages/AdminDFSPoolDetails'
 import AdminAnalytics from './pages/AdminAnalytics'
@@ -40,10 +38,12 @@ import TeamOfNightPage from './pages/TeamOfNightPage'
 
 // Import Highlights and Post pages
 import Highlights from './pages/Highlights'
+import PostStory from './pages/PostStory'
 import Post from './pages/Post'
+import PostCreator from './pages/PostCreator'
 
-// Import global draft manager service (auto-starts on import)
-import './services/draftManagerService'
+// Fantasy feature disabled – draft manager service not loaded
+// import './services/draftManagerService'
 
 const Analysis = () => (
   <Box sx={{ textAlign: 'center', py: 8 }}>
@@ -149,6 +149,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/today" replace />} />
           <Route path="feed" element={<Highlights />} />
+          <Route path="feed/:slug" element={<PostStory />} />
           <Route path="login" element={<Login />} />
           
           {/* DFS Routes */}
@@ -190,9 +191,8 @@ function App() {
           <Route path="settings" element={<UserSettings />} />
           
           {/* Admin Routes */}
-          <Route path="admin/content" element={<AdminContent />} />
-          <Route path="admin/content/game/:gameId" element={<AdminContentGame />} />
-          <Route path="admin/blog" element={<AdminBlog />} />
+          <Route path="admin/create-post" element={<PostCreator />} />
+          <Route path="admin/create-post/game/:gameId" element={<AdminContentGame />} />
           <Route path="admin/dfs" element={<AdminDFS />} />
           <Route path="admin/dfs/pool/:poolId" element={<AdminDFSPoolDetails />} />
           <Route path="admin/analytics" element={<AdminAnalytics />} />

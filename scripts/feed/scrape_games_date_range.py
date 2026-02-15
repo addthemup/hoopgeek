@@ -4,7 +4,9 @@ Script to scrape NBA 2025-26 season games for a date range with automatic proces
 Automatically scrapes all games from start_date to end_date with:
 - 5 minute break between games
 - 10 minute break between days
-- Saves each game to a separate JSON file
+- Saves each game to a separate JSON file in this script's folder (scripts/feed/).
+
+Use the separate script upload_feed_to_bucket.py to upload those files to Supabase Storage.
 """
 
 from nba_api.stats.endpoints.leaguegamefinder import LeagueGameFinder
@@ -18,25 +20,24 @@ import pandas as pd
 import time
 import os
 from datetime import datetime, timedelta
+from pathlib import Path
+
+# Output directory: same folder as this script (scripts/feed/)
+FEED_DIR = Path(__file__).resolve().parent
 
 # Try to load environment variables from .env file
 try:
     from dotenv import load_dotenv
-    from pathlib import Path
-    
     # Get the project root (assuming script is in scripts/feed/)
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent.parent  # Go up from scripts/feed/ to project root
-    
-    # Try multiple common env file locations (project root first, then current directory)
+    project_root = FEED_DIR.parent.parent
     load_dotenv(project_root / '.env.local')
     load_dotenv(project_root / '.env')
-    load_dotenv('.env.local')  # Also try current directory
-    load_dotenv('.env')  # Also try current directory
+    load_dotenv('.env.local')
+    load_dotenv('.env')
 except ImportError:
-    pass  # dotenv not installed, skip
-except:
-    pass  # File not found, skip
+    pass
+except Exception:
+    pass
 
 
 def validate_date(date_string):
@@ -485,11 +486,24 @@ def get_game_videos(game_id):
         consecutive_errors = 0
         null_url_count = 0  # Track actions with null URLs
         batch_size = 5  # Reduced batch size for more conservative rate limiting
+        max_consecutive_errors = 10  # Bail out after this many consecutive errors
+        should_bail = False  # Flag to break out of outer loop
         
         for i in range(0, len(action_numbers), batch_size):
+            # Check if we should bail out due to too many errors
+            if consecutive_errors >= max_consecutive_errors or should_bail:
+                print(f"    ⚠️  Bailing out: {consecutive_errors} consecutive errors")
+                print(f"    Processed {processed_count}/{len(action_numbers)} actions before bailing")
+                break
+            
             batch = action_numbers[i:i+batch_size]
             
             for action_num in batch:
+                # Check consecutive errors before processing each action
+                if consecutive_errors >= max_consecutive_errors:
+                    print(f"    ⚠️  Bailing out: {consecutive_errors} consecutive errors")
+                    should_bail = True
+                    break
                 try:
                     # VideoEventsAsset uses game_event_id which corresponds to actionNumber
                     video_event = videoeventsasset.VideoEventsAsset(
@@ -610,11 +624,17 @@ def get_game_videos(game_id):
                         if processed_count % 20 == 0 or consecutive_errors > 3:
                             print(f"    ⚠ Error with action {action_num}: {str(e)[:50]}")
                     
+                    # If too many consecutive errors, bail out early
+                    if consecutive_errors >= max_consecutive_errors:
+                        print(f"    ⚠️  Too many consecutive errors ({consecutive_errors}). Bailing out of video fetch.")
+                        print(f"    This game may not have videos available yet. Will retry later.")
+                        should_bail = True
+                        break  # Exit the batch loop
+                    
                     # If too many consecutive errors, take a longer break
                     if consecutive_errors >= 5:
                         print(f"    ⏸ Too many consecutive errors. Pausing for 10 seconds...")
                         time.sleep(10.0)
-                        consecutive_errors = 0
                     
                     continue
                 
@@ -629,6 +649,10 @@ def get_game_videos(game_id):
                 print(f"    📊 Processed {processed_count}/{len(action_numbers)} actions, "
                       f"found {success_count} videos, {error_count} errors")
                 print(f"       Estimated remaining time: ~{remaining_estimate / 60:.1f} minutes")
+            
+            # Check if we should bail before next batch
+            if should_bail:
+                break
             
             # Longer delay between batches (increased from 0.5s to 2.0s)
             if i + batch_size < len(action_numbers):
@@ -2518,7 +2542,7 @@ def get_complete_game_data(game_id, game_df):
         
         # Get team leaders from ScoreboardV2
         try:
-            print("  Fetching team leaders from scoreboard...")
+            print("  Fetching team leaders from scoreboard...", flush=True)
             from nba_api.stats.endpoints.scoreboardv2 import ScoreboardV2
             
             # Extract game date from game_row (most reliable source)
@@ -2536,42 +2560,52 @@ def get_complete_game_data(game_id, game_df):
                 else:
                     game_date = game_date_str.replace('-', '')
                 
-                scoreboard = ScoreboardV2(game_date=game_date, get_request=True)
-                time.sleep(1.0)  # Rate limiting
-                
-                if scoreboard.team_leaders:
-                    team_leaders_df = scoreboard.team_leaders.get_data_frame()
-                    if not team_leaders_df.empty:
-                        # Filter for this specific game
-                        game_leaders = team_leaders_df[team_leaders_df['GAME_ID'] == game_id]
-                        if not game_leaders.empty:
-                            # Convert to list of records grouped by team
-                            team_leaders_dict = {}
-                            for _, row in game_leaders.iterrows():
-                                team_id = row.get('TEAM_ID')
-                                if team_id not in team_leaders_dict:
-                                    team_leaders_dict[team_id] = []
-                                team_leaders_dict[team_id].append(row.to_dict())
-                            
-                            game_data['gameMetadata']['teamLeaders'] = team_leaders_dict
-                            print(f"    ✓ Found team leaders for {len(team_leaders_dict)} teams")
-                        else:
-                            print(f"    ⚠ No team leaders found for game {game_id} on date {game_date}")
-                else:
-                    print(f"    ⚠ ScoreboardV2 returned no team_leaders data")
+                try:
+                    scoreboard = ScoreboardV2(game_date=game_date, get_request=True)
+                    time.sleep(1.0)  # Rate limiting
+                    
+                    if scoreboard.team_leaders:
+                        team_leaders_df = scoreboard.team_leaders.get_data_frame()
+                        if not team_leaders_df.empty:
+                            # Filter for this specific game
+                            game_leaders = team_leaders_df[team_leaders_df['GAME_ID'] == game_id]
+                            if not game_leaders.empty:
+                                # Convert to list of records grouped by team
+                                team_leaders_dict = {}
+                                for _, row in game_leaders.iterrows():
+                                    team_id = row.get('TEAM_ID')
+                                    if team_id not in team_leaders_dict:
+                                        team_leaders_dict[team_id] = []
+                                    team_leaders_dict[team_id].append(row.to_dict())
+                                
+                                game_data['gameMetadata']['teamLeaders'] = team_leaders_dict
+                                print(f"    ✓ Found team leaders for {len(team_leaders_dict)} teams", flush=True)
+                            else:
+                                print(f"    ⚠ No team leaders found for game {game_id} on date {game_date}", flush=True)
+                    else:
+                        print(f"    ⚠ ScoreboardV2 returned no team_leaders data", flush=True)
+                except (json.JSONDecodeError, ValueError, Exception) as api_error:
+                    print(f"    ⚠ Error fetching team leaders from API (date may not have data): {type(api_error).__name__}", flush=True)
+                    # Continue without team leaders - this is not critical
         except Exception as e:
-            print(f"    ⚠ Error fetching team leaders: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"    ⚠ Error fetching team leaders: {type(e).__name__}: {str(e)[:100]}", flush=True)
             # Continue without team leaders
         
         # Get videos and play-by-play
         print("  Fetching videos and play-by-play data...")
         videos = get_game_videos(game_id)
         
-        if videos:
+        # Check if video fetching failed critically (no videos and likely API issues)
+        video_fetch_failed = False
+        if not videos or len(videos) == 0:
+            print("  ⚠️  WARNING: No videos found for this game")
+            print("  This may indicate videos are not available yet or API issues")
+            # Don't fail completely - continue with empty videos
+            game_data['playByPlay']['allPlays'] = []
+        else:
             # Add videos to playByPlay structure
             game_data['playByPlay']['allPlays'] = videos
+            print(f"  ✓ Successfully fetched {len(videos)} videos")
         
         # Get shot chart data for all players
         # Extract player IDs and team IDs from aggregated player stats
@@ -2823,13 +2857,47 @@ def get_unique_game_ids(df):
     return games_info
 
 
-def scrape_nba_game_ids_date_range(start_date, end_date):
+def is_valid_game_data(game_data):
+    """
+    Validate that scraped game data is complete enough to save.
+    Returns (is_valid, reason) tuple.
+    
+    A game file is considered invalid (and should NOT be saved) if:
+    - PlayerStats is empty (no box score data)
+    - Both team abbreviations are missing/null
+    - gameMetadata is missing
+    """
+    if not game_data:
+        return False, "game_data is None"
+    
+    # Check metadata exists
+    meta = game_data.get('gameMetadata', {})
+    if not meta:
+        return False, "no gameMetadata"
+    
+    # Check team abbreviations
+    home_abbr = meta.get('homeTeam', {}).get('abbreviation')
+    away_abbr = meta.get('awayTeam', {}).get('abbreviation')
+    if not home_abbr and not away_abbr:
+        return False, "no team abbreviations (game likely not played yet)"
+    
+    # Check PlayerStats is populated
+    player_stats = game_data.get('PlayerStats', [])
+    if not player_stats or len(player_stats) == 0:
+        return False, "empty PlayerStats (box score not available)"
+    
+    return True, "ok"
+
+
+def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
     """
     Main function: Get all games for a date range and scrape them automatically.
+    Implements retry logic for failed games.
     
     Args:
         start_date: Start date string in format YYYY-MM-DD
         end_date: End date string in format YYYY-MM-DD
+        max_retries: Maximum number of retry attempts for failed games (default: 3)
     """
     try:
         # Parse dates
@@ -2846,6 +2914,8 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
         print(f"\n{'='*80}")
         print(f"Starting to scrape NBA 2025-26 season games from {start_date} to {end_date}")
         print(f"Total days to process: {total_days}")
+        print(f"Max retries per failed game: {max_retries}")
+        print(f"Output directory: {FEED_DIR}")
         print(f"{'='*80}\n")
         
         # Track statistics
@@ -2853,6 +2923,9 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
         successful_games = 0
         failed_games = 0
         skipped_games = 0
+        
+        # Track failed games for retry
+        failed_games_list = []  # List of game_info dicts that failed
         
         # Iterate through each date
         current_date = start
@@ -2890,7 +2963,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
                 for game_idx, game_info in enumerate(games_info, 1):
                     game_id = game_info['game_id']
                     matchup = game_info['matchup']
-                    output_file = f"{game_id}.json"
+                    output_file = str(FEED_DIR / f"{game_id}.json")
                     
                     # Check if file already exists
                     if os.path.exists(output_file):
@@ -2911,35 +2984,66 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
                     print(f"Matchup: {matchup}")
                     print(f"{'='*80}\n")
                     
+                    game_success = False
                     try:
                         # Get all game data
                         game_data = get_complete_game_data(game_id, df)
                         
                         if game_data:
-                            # Save complete game data to JSON file
-                            with open(output_file, 'w') as f:
-                                json.dump(game_data, f, indent=2)
-                            print(f"\n✓ Complete game data saved to {output_file}")
-                            successful_games += 1
-                            
-                            # Print summary
-                            if 'score' in game_data and game_data['score']:
-                                score_info = game_data['score'].get(game_id, {})
-                                if score_info:
-                                    fun_score = score_info.get('fun_score', 'N/A')
-                                    print(f"  Fun Score: {fun_score}")
-                            
-                            if 'playByPlay' in game_data and 'allPlays' in game_data['playByPlay']:
-                                videos_count = len(game_data['playByPlay']['allPlays'])
+                            # ── Validate data quality before saving ──
+                            is_valid, validity_reason = is_valid_game_data(game_data)
+                            if not is_valid:
+                                print(f"\n  ⚠️  SKIPPING SAVE for {game_id}: {validity_reason}")
+                                print(f"  Game data is incomplete — will NOT create an empty shell file.")
+                                failed_games += 1
+                                failed_games_list.append(game_info)
+                            else:
+                                # Check if videos were successfully fetched
+                                videos_count = 0
+                                if 'playByPlay' in game_data and 'allPlays' in game_data['playByPlay']:
+                                    videos_count = len(game_data['playByPlay']['allPlays'])
+                                
+                                # If no videos, mark for retry but still save (data is valid)
+                                if videos_count == 0:
+                                    print(f"  ⚠️  WARNING: No videos found for {game_id}")
+                                    print(f"  Game data is valid and will be saved, but marked for video retry")
+                                    failed_games_list.append(game_info)
+                                else:
+                                    game_success = True
+                                
+                                # Save complete game data to JSON file (in scripts/feed/)
+                                with open(output_file, 'w') as f:
+                                    json.dump(game_data, f, indent=2)
+                                print(f"\n✓ Complete game data saved to {output_file}")
+                                
+                                if game_success:
+                                    successful_games += 1
+                                else:
+                                    failed_games += 1
+                                
+                                # Print summary
+                                if 'score' in game_data and game_data['score']:
+                                    score_info = game_data['score'].get(game_id, {})
+                                    if score_info:
+                                        fun_score = score_info.get('fun_score', 'N/A')
+                                        print(f"  Fun Score: {fun_score}")
+                                
                                 print(f"  Videos/Plays: {videos_count} events")
+                                player_count = len(game_data.get('PlayerStats', []))
+                                print(f"  Players: {player_count}")
                         else:
                             print(f"\n⚠ WARNING: Failed to fetch complete game data for {game_id}")
                             failed_games += 1
+                            failed_games_list.append(game_info)
                     
+                    except KeyboardInterrupt:
+                        print(f"\n⚠ Interrupted by user")
+                        raise
                     except Exception as e:
                         print(f"\n✗ FAIL: Error processing game {game_id}")
                         print(f"Error details: {str(e)}")
                         failed_games += 1
+                        failed_games_list.append(game_info)
                         import traceback
                         traceback.print_exc()
                     
@@ -2962,6 +3066,85 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
             # Move to next date
             current_date += timedelta(days=1)
         
+        # Retry failed games
+        retry_round = 0
+        while failed_games_list and retry_round < max_retries:
+            retry_round += 1
+            print(f"\n{'='*80}")
+            print(f"RETRY ROUND {retry_round}/{max_retries}")
+            print(f"Retrying {len(failed_games_list)} failed games...")
+            print(f"{'='*80}\n")
+            
+            # Wait before retry round
+            if retry_round > 1:
+                wait_minutes = 30 * retry_round  # Exponential backoff: 30, 60, 90 minutes
+                print(f"⏸ Waiting {wait_minutes} minutes before retry round {retry_round}...")
+                time.sleep(wait_minutes * 60)
+            
+            # Process failed games
+            still_failed = []
+            for game_info in failed_games_list:
+                game_id = game_info['game_id']
+                matchup = game_info['matchup']
+                date_str = game_info['date']
+                output_file = str(FEED_DIR / f"{game_id}.json")
+                
+                print(f"\n{'='*80}")
+                print(f"RETRY: {game_id} - {matchup}")
+                print(f"{'='*80}\n")
+                
+                try:
+                    # Get games for this date again
+                    df = get_games_for_date(date_str)
+                    if df is None or df.empty:
+                        print(f"  ⚠️  No games found for {date_str}, will retry later")
+                        still_failed.append(game_info)
+                        continue
+                    
+                    # Get all game data
+                    game_data = get_complete_game_data(game_id, df)
+                    
+                    if game_data:
+                        # Validate data quality before saving
+                        is_valid, validity_reason = is_valid_game_data(game_data)
+                        if not is_valid:
+                            print(f"  ⚠️  Still invalid ({validity_reason}), will retry again")
+                            still_failed.append(game_info)
+                        else:
+                            videos_count = 0
+                            if 'playByPlay' in game_data and 'allPlays' in game_data['playByPlay']:
+                                videos_count = len(game_data['playByPlay']['allPlays'])
+                            
+                            # Save valid data even without videos
+                            with open(output_file, 'w') as f:
+                                json.dump(game_data, f, indent=2)
+                            print(f"  ✓ Complete game data saved to {output_file}")
+                            
+                            if videos_count == 0:
+                                print(f"  ⚠️  No videos but data is valid — saved. Will retry for videos.")
+                                still_failed.append(game_info)
+                            else:
+                                successful_games += 1
+                                failed_games -= 1
+                                print(f"  ✓ Successfully retried {game_id} with {videos_count} videos")
+                    else:
+                        print(f"  ⚠️  Failed to fetch game data, will retry")
+                        still_failed.append(game_info)
+                
+                except Exception as e:
+                    print(f"  ✗ Error on retry: {e}")
+                    still_failed.append(game_info)
+                
+                # Wait between retries
+                time.sleep(60)  # 1 minute between retries
+            
+            failed_games_list = still_failed
+            
+            if failed_games_list:
+                print(f"\n⚠️  {len(failed_games_list)} games still failed after retry round {retry_round}")
+            else:
+                print(f"\n✓ All games successfully processed after retry round {retry_round}")
+        
         # Print final summary
         print(f"\n{'='*80}")
         print(f"SCRAPING COMPLETE")
@@ -2970,6 +3153,10 @@ def scrape_nba_game_ids_date_range(start_date, end_date):
         print(f"Successful: {successful_games}")
         print(f"Skipped (already exist): {skipped_games}")
         print(f"Failed: {failed_games}")
+        if failed_games_list:
+            print(f"\n⚠️  {len(failed_games_list)} games still failed after all retries:")
+            for game_info in failed_games_list:
+                print(f"  - {game_info['game_id']} - {game_info['matchup']}")
         print(f"{'='*80}\n")
         
     except ImportError as e:

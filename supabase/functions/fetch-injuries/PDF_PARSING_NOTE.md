@@ -1,10 +1,12 @@
 # PDF Parsing Note
 
-The current implementation attempts to parse PDFs using various libraries, but PDF parsing in Deno Edge Functions can be challenging.
+## Current Implementation (unpdf via esm.sh)
 
-## Current Status
+The function uses **unpdf** (https://github.com/unjs/unpdf) via `https://esm.sh/unpdf@0.6.1` for PDF text extraction. unpdf provides a serverless build of Mozilla PDF.js that works in Deno Edge Functions. The previous `deno.land/x/pdfjs` module was removed/changed and caused "Module not found" errors.
 
-The function tries to use PDF parsing libraries but may encounter issues. For production use, consider:
+## Fallback / Alternatives
+
+If unpdf fails in production, consider:
 
 ## Option 1: Use External PDF-to-Text Service
 

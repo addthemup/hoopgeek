@@ -8,6 +8,8 @@ from nba_api.stats.static import players
 import pandas as pd
 from typing import List, Dict, Any
 
+from teamdashptreb import TeamDashPtReb
+
 load_dotenv()
 
 app = FastAPI(title="NBA Data Service", version="1.0.0")
@@ -100,6 +102,32 @@ async def get_player_stats(player_id: str):
         if not result.data:
             raise HTTPException(status_code=404, detail="Player not found")
         return {"player": result.data[0]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/teamdashptreb")
+async def get_team_rebound_dashboard(teamId: int, season: str = "2025-26"):
+    """
+    Proxy for NBA stats 'teamdashptreb' endpoint for a single team/season.
+    The frontend caches this in the browser for 24 hours.
+    """
+    try:
+        # NBA API season format is typically '2025-26'
+        endpoint = TeamDashPtReb(
+            team_id=teamId,
+            season=season,
+            season_type_all_star=SeasonTypeAllStar.default,  # usually 'Regular Season'
+        )
+
+        # Use the raw data_sets dict so the frontend can shape it as needed
+        data_sets = endpoint.nba_response.get_data_sets()
+
+        return {
+            "teamId": teamId,
+            "season": season,
+            "dataSets": data_sets,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

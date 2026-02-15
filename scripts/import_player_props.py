@@ -12,14 +12,18 @@ from typing import List, Dict, Optional, Any, Tuple
 from supabase import create_client, Client
 from sports_odds_api import SportsGameOdds
 
-# Try to load environment variables
+# Try to load environment variables (from project root or cwd)
 try:
     from dotenv import load_dotenv
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _root = os.path.dirname(_script_dir)  # project root when script is in scripts/
+    load_dotenv(os.path.join(_root, '.env.local'))
+    load_dotenv(os.path.join(_root, '.env'))
     load_dotenv('.env.local')
     load_dotenv('.env')
 except ImportError:
     pass
-except:
+except Exception:
     pass
 
 # Configuration
@@ -395,12 +399,15 @@ def import_game_and_props(supabase: Client, event: Any, target_date: str) -> Tup
     return 1, props_imported
 
 def main():
-    """Main import function"""
+    """Main import function. Imports props for today, tomorrow, and day-after (3 days total, 2 days ahead)."""
     today = datetime.now()
-    target_date = today.strftime('%Y-%m-%d')
-    tomorrow_date = (today + timedelta(days=1)).strftime('%Y-%m-%d')
-    
-    print(f"🚀 Starting player props import for {target_date}\n")
+    target_dates = [
+        today.strftime('%Y-%m-%d'),
+        (today + timedelta(days=1)).strftime('%Y-%m-%d'),
+        (today + timedelta(days=2)).strftime('%Y-%m-%d'),
+    ]
+    # today, tomorrow, next day
+    print(f"🚀 Starting player props import for 3 days: {target_dates[0]}, {target_dates[1]}, {target_dates[2]}\n")
     
     # Setup clients
     supabase = setup_supabase()
@@ -418,7 +425,7 @@ def main():
         
         print(f"✅ Found {len(page.data)} total events\n")
         
-        # Collect all available dates
+        # Collect all available dates and group events by date
         available_dates = set()
         events_by_date = {}
         
@@ -434,38 +441,26 @@ def main():
                         if event_date_str not in events_by_date:
                             events_by_date[event_date_str] = []
                         events_by_date[event_date_str].append(event)
-                    except:
+                    except Exception:
                         pass
         
-        print(f"📅 Available dates: {sorted(available_dates)[:5]}")
+        print(f"📅 Available dates in API: {sorted(available_dates)}")
         
-        # Try today first, then tomorrow
-        target_events = events_by_date.get(target_date, [])
-        if not target_events:
-            print(f"⚠️  No events for {target_date}, trying {tomorrow_date}...")
-            target_events = events_by_date.get(tomorrow_date, [])
-            if target_events:
-                target_date = tomorrow_date
-        
-        print(f"📅 Found {len(target_events)} events for {target_date}\n")
-        
-        if not target_events:
-            print("❌ No events found for today or tomorrow")
-            if available_dates:
-                print(f"   Available dates: {sorted(available_dates)}")
-            return
-        
-        # Import each game
         total_games = 0
         total_props = 0
         
-        for i, event in enumerate(target_events, 1):
-            event_id = event.eventID if hasattr(event, 'eventID') else f'event_{i}'
-            print(f"\n[{i}/{len(target_events)}] Processing event: {event_id}")
+        for target_date in target_dates:
+            target_events = events_by_date.get(target_date, [])
+            print(f"\n📅 {target_date}: {len(target_events)} events")
+            if not target_events:
+                continue
             
-            games, props = import_game_and_props(supabase, event, target_date)
-            total_games += games
-            total_props += props
+            for i, event in enumerate(target_events, 1):
+                event_id = event.eventID if hasattr(event, 'eventID') else f'event_{i}'
+                print(f"\n  [{target_date}] [{i}/{len(target_events)}] Processing event: {event_id}")
+                games, props = import_game_and_props(supabase, event, target_date)
+                total_games += games
+                total_props += props
         
         print(f"\n{'='*70}")
         print(f"✅ Import complete!")

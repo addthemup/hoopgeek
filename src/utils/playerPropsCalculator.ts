@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { filterFullGameProps } from './playerPropsFilter';
 
 /**
  * Prop Result - whether a player hit or missed a prop
@@ -188,15 +189,17 @@ export async function calculatePlayerPropResults(
     return [];
   }
 
-  // Fetch all props for this player on this game date
-  const { data: props, error: propsError } = await supabase
+  // Fetch all props for this player on this game date (full-game only when comparing to boxscore)
+  const { data: propsRaw, error: propsError } = await supabase
     .from('player_props')
-    .select('id, bet_type, line, game_date')
+    .select('id, bet_type, line, game_date, raw_odd_data')
     .eq('nba_player_id', nbaPlayerId)
     .eq('game_date', gameDate);
 
-  if (propsError || !props || props.length === 0) {
-    console.log(`ℹ️ No props found for player ${nbaPlayerId} on ${gameDate}`);
+  const props = filterFullGameProps(propsRaw ?? []);
+
+  if (propsError || !props.length) {
+    console.log(`ℹ️ No full-game props found for player ${nbaPlayerId} on ${gameDate}`);
     return [];
   }
 
@@ -234,15 +237,17 @@ export async function calculatePlayerDailyHitRate(
     return null;
   }
 
-  // Get all props for this player on this date
-  const { data: props, error: propsError } = await supabase
+  // Get all props for this player on this date (full-game only when comparing to boxscore)
+  const { data: propsRaw, error: propsError } = await supabase
     .from('player_props')
-    .select('id, bet_type, line, game_id, game_date')
+    .select('id, bet_type, line, game_id, game_date, raw_odd_data')
     .eq('nba_player_id', nbaPlayerId)
     .eq('game_date', gameDate);
 
-  if (propsError || !props || props.length === 0) {
-    return null; // No props available
+  const props = filterFullGameProps(propsRaw ?? []);
+
+  if (propsError || !props.length) {
+    return null; // No full-game props available
   }
 
   // Get unique game IDs

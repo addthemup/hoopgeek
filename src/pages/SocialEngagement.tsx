@@ -12,7 +12,7 @@ import ZoomIn from '@mui/icons-material/ZoomIn'
 import Twitter from '@mui/icons-material/Twitter'
 import Facebook from '@mui/icons-material/Facebook'
 import ContentCopy from '@mui/icons-material/ContentCopy'
-import { SocialService } from './socialService.ts'
+import { toggleLike, getEngagementStats, shareToExternal, recordShare } from './socialService'
 import CommentsModal from '../components/CommentsModal'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../utils/supabase'
@@ -134,7 +134,7 @@ const SocialEngagement = React.memo(function SocialEngagement({
 
   const loadEngagementStats = async () => {
     try {
-      const stats = await SocialService.getEngagementStats(contentId)
+      const stats = await getEngagementStats(contentId)
       setLikes(stats.likesCount)
       setComments(stats.commentsCount)
       setShares(stats.sharesCount)
@@ -171,7 +171,7 @@ const SocialEngagement = React.memo(function SocialEngagement({
     
     try {
       // Make the actual API call in the background
-      const result = await SocialService.toggleLike(contentId, userId)
+      const result = await toggleLike(contentId, userId)
       
       // Sync with server response (in case of race conditions or errors)
       setLiked(result.liked)
@@ -194,12 +194,12 @@ const SocialEngagement = React.memo(function SocialEngagement({
 
   const handleShare = async (platform: 'twitter' | 'facebook' | 'copy') => {
     try {
-      await SocialService.shareToExternal(contentId, platform)
+      await shareToExternal(contentId, platform)
       
       // Track share in database
       if (userId && userId !== 'anonymous') {
         try {
-          await SocialService.shareContent(contentId, userId, platform)
+          await recordShare(contentId, userId, platform as any)
         } catch (error) {
           console.error('Error tracking share:', error)
           // Continue even if tracking fails

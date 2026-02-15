@@ -204,18 +204,20 @@ def fetch_box_score(game_id: str) -> Optional[Dict]:
         return None
 
 def update_game_scores(supabase: Client, game_id: str, away_score: int, home_score: int):
-    """Update game scores in nba_games table"""
+    """Update game scores and mark game as Final in nba_games (so 'last 10 completed games' includes it)."""
     try:
         result = supabase.table('nba_games') \
             .update({
                 'away_team_score': away_score,
-                'home_team_score': home_score
+                'home_team_score': home_score,
+                'game_status': 3,
+                'game_status_text': 'Final',
             }) \
             .eq('game_id', game_id) \
             .execute()
         
         if result.data:
-            print(f"✅ Updated scores in nba_games: {away_score}-{home_score}")
+            print(f"✅ Updated scores and status=Final in nba_games: {away_score}-{home_score}")
         else:
             print(f"⚠️  No game found in nba_games for {game_id}")
     except Exception as e:

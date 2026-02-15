@@ -20,6 +20,20 @@ from nba_api.stats.library.parameters import Season
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# Load .env from project root (works when run from repo root or scripts/setup/)
+try:
+    from dotenv import load_dotenv
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _root = os.path.dirname(os.path.dirname(_script_dir))  # project root when script is in scripts/setup/
+    load_dotenv(os.path.join(_root, '.env.local'))
+    load_dotenv(os.path.join(_root, '.env'))
+    load_dotenv('.env.local')
+    load_dotenv('.env')
+except ImportError:
+    pass
+except Exception:
+    pass
+
 # Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
 supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -160,16 +174,18 @@ def import_team_roster(team_id, season):
                 
                 # Update nba_players.team_id from roster data (more accurate than commonallplayers endpoint)
                 if player_id:
-                    # Get team info from nba_teams
+                    # Get team info from nba_teams (abbreviation or team_abbreviation depending on schema)
                     team_response = supabase.table('nba_teams').select('team_id, abbreviation, city, nickname').eq('team_id', team_id).limit(1).execute()
-                    
+                    if not team_response.data or len(team_response.data) == 0:
+                        team_response = supabase.table('nba_teams').select('team_id, team_abbreviation, city, nickname').eq('team_id', team_id).limit(1).execute()
                     if team_response.data and len(team_response.data) > 0:
                         team_info = team_response.data[0]
+                        abbr = team_info.get('abbreviation') or team_info.get('team_abbreviation') or ''
                         supabase.table('nba_players').update({
                             'team_id': int(team_id),
-                            'team_name': f"{team_info['city']} {team_info['nickname']}",
-                            'team_abbreviation': team_info['abbreviation'],
-                            'team_city': team_info['city'],
+                            'team_name': f"{team_info.get('city', '')} {team_info.get('nickname', '')}".strip(),
+                            'team_abbreviation': abbr,
+                            'team_city': team_info.get('city') or '',
                             'updated_at': datetime.now().isoformat()
                         }).eq('id', player_id).execute()
                 
@@ -233,169 +249,77 @@ def main():
     print("=" * 60)
     
     try:
-        # First, try to create/update the sync function if it doesn't exist
-        sync_function_sql = """
-CREATE OR REPLACE FUNCTION sync_player_teams_from_roster(p_season TEXT DEFAULT NULL)
-RETURNS JSONB AS $$
-DECLARE
-    result JSONB;
-    updated_count INTEGER := 0;
-    cleared_count INTEGER := 0;
-    current_season TEXT;
-BEGIN
-    -- Determine season to use
-    IF p_season IS NULL THEN
-        SELECT 
-            CASE 
-                WHEN EXTRACT(MONTH FROM CURRENT_DATE) >= 10 THEN 
-                    EXTRACT(YEAR FROM CURRENT_DATE)::TEXT || '-' || SUBSTRING((EXTRACT(YEAR FROM CURRENT_DATE) + 1)::TEXT, 3, 2)
-                ELSE 
-                    (EXTRACT(YEAR FROM CURRENT_DATE) - 1)::TEXT || '-' || SUBSTRING(EXTRACT(YEAR FROM CURRENT_DATE)::TEXT, 3, 2)
-            END
-        INTO current_season;
-    ELSE
-        current_season := p_season;
-    END IF;
-    
-    -- Step 1: Update nba_players with team info from nba_team_roster (players who ARE on teams)
-    UPDATE nba_players np
-    SET 
-        team_id = r.team_id,
-        team_name = t.city || ' ' || t.nickname,
-        team_abbreviation = t.abbreviation,
-        team_city = t.city,
-        updated_at = NOW()
-    FROM nba_team_roster r
-    JOIN nba_teams t ON r.team_id = t.team_id
-    WHERE np.nba_player_id = r.nba_player_id
-        AND r.season = current_season
-        AND r.team_id IS NOT NULL
-        AND (np.team_id IS NULL OR np.team_id != r.team_id OR np.team_id = 0);
-    
-    GET DIAGNOSTICS updated_count = ROW_COUNT;
-    
-    -- Step 2: Clear team_id for players who are NOT in any current season roster (free agents)
-    UPDATE nba_players np
-    SET 
-        team_id = NULL,
-        team_name = NULL,
-        team_abbreviation = NULL,
-        team_city = NULL,
-        updated_at = NOW()
-    WHERE np.team_id IS NOT NULL
-        AND np.team_id != 0
-        AND NOT EXISTS (
-            SELECT 1 
-            FROM nba_team_roster r 
-            WHERE r.nba_player_id = np.nba_player_id 
-                AND r.season = current_season
-                AND r.team_id IS NOT NULL
-        );
-    
-    GET DIAGNOSTICS cleared_count = ROW_COUNT;
-    
-    result := jsonb_build_object(
-        'success', TRUE,
-        'season', current_season,
-        'players_updated', updated_count,
-        'free_agents_cleared', cleared_count,
-        'message', format('Successfully synced %s players and cleared %s free agents from roster data', updated_count, cleared_count)
-    );
-    
-    RETURN result;
-    
-EXCEPTION WHEN OTHERS THEN
-    RETURN jsonb_build_object(
-        'success', FALSE,
-        'error', SQLERRM,
-        'sqlstate', SQLSTATE
-    );
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-"""
-        
-        # Try to execute the function creation via raw SQL
-        # Since Supabase Python client doesn't support DDL, we'll do the sync manually
-        print("📝 Note: Function creation requires manual SQL execution.")
-        print("   For now, performing manual sync...")
-        
-        # Manual sync: Update players on rosters
-        print("\n   Step 1: Updating players on rosters...")
-        update_query = f"""
-        UPDATE nba_players np
-        SET 
-            team_id = r.team_id,
-            team_name = t.city || ' ' || t.nickname,
-            team_abbreviation = t.abbreviation,
-            team_city = t.city,
-            updated_at = NOW()
-        FROM nba_team_roster r
-        JOIN nba_teams t ON r.team_id = t.team_id
-        WHERE np.nba_player_id = r.nba_player_id
-            AND r.season = '{season}'
-            AND r.team_id IS NOT NULL
-            AND (np.team_id IS NULL OR np.team_id != r.team_id OR np.team_id = 0);
-        """
-        
-        # We can't execute DDL/DML directly via Supabase Python client
-        # So we'll use a workaround: update players one by one via the roster data
-        # Get all roster entries for this season
-        roster_response = supabase.table('nba_team_roster').select('nba_player_id, team_id').eq('season', season).execute()
-        # Filter out None team_ids in Python
-        roster_players = [r for r in (roster_response.data if roster_response.data else []) if r.get('team_id') is not None]
-        
-        if roster_players:
-            updated = 0
-            # Get unique team IDs to batch fetch team info
-            unique_team_ids = list(set([r['team_id'] for r in roster_players]))
-            teams_map = {}
+        # Prefer the DB function so nba_players are overwritten in one SQL pass (handles moves correctly)
+        try:
+            rpc_result = supabase.rpc('sync_player_teams_from_roster', {'p_season': season}).execute()
+            if rpc_result.data and isinstance(rpc_result.data, dict):
+                d = rpc_result.data
+            elif rpc_result.data and isinstance(rpc_result.data, list) and len(rpc_result.data) > 0:
+                d = rpc_result.data[0]
+            else:
+                d = {}
+            if d.get('success'):
+                print(f"   ✅ RPC sync: {d.get('players_updated', 0)} players updated, {d.get('free_agents_cleared', 0)} free agents cleared")
+                print("\n✅ Sync completed via sync_player_teams_from_roster()")
+            else:
+                print(f"   ⚠️  RPC returned: {d.get('error', d)}")
+                raise RuntimeError("RPC sync failed")
+        except Exception as rpc_err:
+            print(f"   📝 RPC not available ({rpc_err}), performing manual sync...")
             
-            for team_id in unique_team_ids:
-                team_response = supabase.table('nba_teams').select('team_id, abbreviation, city, nickname').eq('team_id', team_id).limit(1).execute()
-                if team_response.data and len(team_response.data) > 0:
-                    teams_map[team_id] = team_response.data[0]
+            # Manual sync: fetch ALL roster entries (paginate; default limit can truncate)
+            roster_players = []
+            page_size = 1000
+            offset = 0
+            while True:
+                page = supabase.table('nba_team_roster').select('nba_player_id, team_id').eq('season', season).range(offset, offset + page_size - 1).execute()
+                data = page.data or []
+                roster_players.extend([r for r in data if r.get('team_id') is not None])
+                if len(data) < page_size:
+                    break
+                offset += page_size
+            # One row per player (if traded, same player can appear twice; keep last so current team wins)
+            by_player = {r['nba_player_id']: r['team_id'] for r in roster_players}
+            roster_players = [{'nba_player_id': pid, 'team_id': tid} for pid, tid in by_player.items()]
             
-            for roster_entry in roster_players:
-                nba_player_id = roster_entry['nba_player_id']
-                team_id = roster_entry['team_id']
-                
-                if team_id in teams_map:
+            if roster_players:
+                updated = 0
+                unique_team_ids = list(set(r['team_id'] for r in roster_players))
+                teams_map = {}
+                for team_id in unique_team_ids:
+                    team_response = supabase.table('nba_teams').select('team_id, abbreviation, city, nickname').eq('team_id', team_id).limit(1).execute()
+                    if team_response.data and len(team_response.data) > 0:
+                        teams_map[team_id] = team_response.data[0]
+                # Support schema with either abbreviation or team_abbreviation
+                for roster_entry in roster_players:
+                    nba_player_id = roster_entry['nba_player_id']
+                    team_id = roster_entry['team_id']
+                    if team_id not in teams_map:
+                        continue
                     team = teams_map[team_id]
-                    # Update player
+                    abbr = team.get('abbreviation') or team.get('team_abbreviation') or ''
                     player_update = supabase.table('nba_players').update({
                         'team_id': team_id,
-                        'team_name': f"{team['city']} {team['nickname']}",
-                        'team_abbreviation': team['abbreviation'],
-                        'team_city': team['city'],
+                        'team_name': f"{team.get('city', '')} {team.get('nickname', '')}".strip(),
+                        'team_abbreviation': abbr,
+                        'team_city': team.get('city') or '',
                         'updated_at': datetime.now().isoformat()
                     }).eq('nba_player_id', nba_player_id).execute()
-                    
                     if player_update.data:
                         updated += 1
+                print(f"   ✅ Updated {updated} players with team info from rosters")
             
-            print(f"   ✅ Updated {updated} players with team info from rosters")
-        
-        # Step 2: Clear free agents (players not in any roster)
-        print("\n   Step 2: Clearing free agents...")
-        all_roster_player_ids = set([r['nba_player_id'] for r in roster_players])
-        
-        if all_roster_player_ids:
-            # Get all players with team_id set (in batches to avoid timeout)
+            all_roster_player_ids = set(r['nba_player_id'] for r in roster_players)
             cleared = 0
             batch_size = 100
             offset = 0
-            
             while True:
-                # Get players with team_id set (not null and not 0)
                 players_response = supabase.table('nba_players').select('nba_player_id, id').neq('team_id', 0).range(offset, offset + batch_size - 1).execute()
-                players_with_teams = [p for p in (players_response.data if players_response.data else []) if p.get('team_id') is not None and p.get('team_id') != 0]
-                
+                players_with_teams = [p for p in (players_response.data or []) if p.get('team_id') is not None and p.get('team_id') != 0]
                 if not players_with_teams:
                     break
-                
                 for player in players_with_teams:
                     if player['nba_player_id'] not in all_roster_player_ids:
-                        # Clear team info
                         supabase.table('nba_players').update({
                             'team_id': None,
                             'team_name': None,
@@ -404,17 +328,13 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
                             'updated_at': datetime.now().isoformat()
                         }).eq('id', player['id']).execute()
                         cleared += 1
-                
                 if len(players_with_teams) < batch_size:
                     break
                 offset += batch_size
-                
                 if cleared % 50 == 0:
                     print(f"   ... cleared {cleared} so far...")
-            
             print(f"   ✅ Cleared team info for {cleared} free agents")
-        
-        print("\n✅ Manual sync completed!")
+            print("\n✅ Manual sync completed!")
         
     except Exception as e:
         print(f"⚠️  Error syncing player teams: {e}")

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 NBA Players Import Script for HoopGeek - Robust Version
-Imports all NBA players from the NBA API into Supabase database with better error handling
+Imports all NBA players from the NBA API into Supabase database with better error handling.
+Prints a list of players who were added and/or changed teams after the run.
 """
 
 import os
@@ -11,10 +12,24 @@ import time
 import requests
 from datetime import datetime
 from supabase import create_client, Client
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple, Optional
+
+# Load .env from project root (works when run from repo root or scripts/setup/)
+try:
+    from dotenv import load_dotenv
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _root = os.path.dirname(os.path.dirname(_script_dir))  # project root when script is in scripts/setup/
+    load_dotenv(os.path.join(_root, '.env.local'))
+    load_dotenv(os.path.join(_root, '.env'))
+    load_dotenv('.env.local')
+    load_dotenv('.env')
+except ImportError:
+    pass
+except Exception:
+    pass
 
 # Configuration
-SUPABASE_URL = os.getenv('VITE_SUPABASE_URL', 'https://qbznyaimnrpibmahisue.supabase.co')
+SUPABASE_URL = os.getenv('SUPABASE_URL') or os.getenv('VITE_SUPABASE_URL')
 SUPABASE_SERVICE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
 USER_UID = "fd58dfb7-ad5d-43e2-b2c4-c254e2a29211"
 
@@ -43,10 +58,12 @@ def setup_supabase() -> Client:
     print("🔧 Setting up Supabase client...")
     
     if not SUPABASE_URL:
-        raise Exception("VITE_SUPABASE_URL environment variable is not set")
+        print("❌ Error: SUPABASE_URL (or VITE_SUPABASE_URL) must be set. Add to .env in project root or export.")
+        sys.exit(1)
     
     if not SUPABASE_SERVICE_KEY:
-        raise Exception("SUPABASE_SERVICE_ROLE_KEY environment variable is not set")
+        print("❌ Error: SUPABASE_SERVICE_ROLE_KEY must be set. Add to .env in project root or export.")
+        sys.exit(1)
     
     print(f"   Using Supabase URL: {SUPABASE_URL}")
     print(f"   Service key: {'*' * 20}{SUPABASE_SERVICE_KEY[-10:] if SUPABASE_SERVICE_KEY else 'None'}")
@@ -319,19 +336,43 @@ def parse_player_data(player: Dict[str, Any]) -> Dict[str, Any]:
         'to_year': player.get('TO_YEAR')
     }
 
-def import_players_to_database(supabase: Client, players: List[Dict[str, Any]]) -> Dict[str, int]:
-    """Import players to Supabase database using upsert function"""
+def _fetch_existing_players(supabase: Client, nba_player_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """Fetch existing nba_players by nba_player_id; returns dict nba_player_id -> { team_id, team_abbreviation, team_name }."""
+    out = {}
+    page_size = 500
+    for start in range(0, len(nba_player_ids), page_size):
+        chunk = nba_player_ids[start:start + page_size]
+        r = supabase.table('nba_players').select('nba_player_id, team_id, team_abbreviation, team_name').in_('nba_player_id', chunk).execute()
+        for row in (r.data or []):
+            out[row['nba_player_id']] = {
+                'team_id': row.get('team_id'),
+                'team_abbreviation': row.get('team_abbreviation'),
+                'team_name': row.get('team_name'),
+            }
+    return out
+
+
+def import_players_to_database(
+    supabase: Client, players: List[Dict[str, Any]]
+) -> Tuple[Dict[str, int], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Import players to Supabase; returns (stats, added_list, changed_teams_list)."""
     print("💾 Importing players to database...")
     
-    stats = {
-        'total': len(players),
-        'imported': 0,
-        'updated': 0,
-        'errors': 0
-    }
+    stats = {'total': len(players), 'imported': 0, 'updated': 0, 'errors': 0}
+    added: List[Dict[str, Any]] = []
+    changed_teams: List[Dict[str, Any]] = []
     
-    # Process players in batches
-    batch_size = 25  # Smaller batches for better reliability
+    # Pre-fetch existing players so we can detect adds and team changes
+    nba_ids = []
+    for p in players:
+        try:
+            nba_ids.append(int(p.get('PERSON_ID') or p.get('nba_player_id')))
+        except (TypeError, ValueError):
+            pass
+    print(f"   Loading existing players for {len(nba_ids)} IDs...")
+    existing = _fetch_existing_players(supabase, nba_ids)
+    
+    batch_size = 25
     total_batches = (len(players) + batch_size - 1) // batch_size
     
     for batch_num in range(total_batches):
@@ -343,10 +384,14 @@ def import_players_to_database(supabase: Client, players: List[Dict[str, Any]]) 
         
         for i, player in enumerate(batch):
             try:
-                # Parse player data
                 player_data = parse_player_data(player)
+                nba_id = player_data['nba_player_id']
+                prev = existing.get(nba_id)
+                is_new = prev is None
+                new_team_id = player_data.get('team_id')
+                new_team_abbr = (player_data.get('team_abbreviation') or '').strip() or None
+                new_team_name = (player_data.get('team_name') or '').strip() or None
                 
-                # Call the upsert function
                 result = supabase.rpc('upsert_nba_player', {
                     'p_nba_player_id': player_data['nba_player_id'],
                     'p_name': player_data['name'],
@@ -377,18 +422,34 @@ def import_players_to_database(supabase: Client, players: List[Dict[str, Any]]) 
                 }).execute()
                 
                 if result.data:
-                    # Check if this was an insert or update by querying the database
-                    existing = supabase.table('nba_players').select('id').eq('nba_player_id', player_data['nba_player_id']).execute()
-                    
-                    if existing.data:
-                        stats['updated'] += 1
-                    else:
+                    if is_new:
                         stats['imported'] += 1
+                        added.append({
+                            'name': player_data['name'],
+                            'team': new_team_name or new_team_abbr or str(new_team_id) or '—',
+                            'position': player_data.get('position') or '—',
+                        })
+                    else:
+                        stats['updated'] += 1
+                        old_id = prev.get('team_id')
+                        old_abbr = (prev.get('team_abbreviation') or '').strip() or None
+                        old_name = (prev.get('team_name') or '').strip() or None
+                        team_changed = (
+                            old_id != new_team_id
+                            or (old_abbr or '') != (new_team_abbr or '')
+                        )
+                        if team_changed:
+                            old_display = old_name or old_abbr or (str(old_id) if old_id else 'FA')
+                            new_display = new_team_name or new_team_abbr or (str(new_team_id) if new_team_id else 'FA')
+                            changed_teams.append({
+                                'name': player_data['name'],
+                                'old_team': old_display,
+                                'new_team': new_display,
+                            })
                 else:
                     stats['errors'] += 1
                     print(f"⚠️  Error upserting player {player_data['name']}")
                 
-                # Progress indicator
                 if (i + 1) % 5 == 0:
                     print(f"   Processed {i + 1}/{len(batch)} players in this batch")
                 
@@ -396,11 +457,10 @@ def import_players_to_database(supabase: Client, players: List[Dict[str, Any]]) 
                 stats['errors'] += 1
                 print(f"❌ Error processing player {player.get('DISPLAY_FIRST_LAST', 'Unknown')}: {e}")
         
-        # Add a small delay between batches
         if batch_num < total_batches - 1:
             time.sleep(0.2)
     
-    return stats
+    return stats, added, changed_teams
 
 def main():
     """Main function"""
@@ -417,7 +477,7 @@ def main():
         players = fetch_nba_players()
         
         # Import to database
-        stats = import_players_to_database(supabase, players)
+        stats, added, changed_teams = import_players_to_database(supabase, players)
         
         # Print final results
         print("-" * 60)
@@ -429,18 +489,33 @@ def main():
         print(f"   Errors: {stats['errors']}")
         print(f"🕐 Completed at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
+        # List of players ADDED (new to DB)
+        print("\n" + "=" * 60)
+        print("📥 PLAYERS ADDED (new in database)")
+        print("=" * 60)
+        if not added:
+            print("   (none)")
+        else:
+            for p in added:
+                print(f"   • {p['name']}  |  {p['team']}  |  {p['position']}")
+            print(f"   Total: {len(added)}")
+        
+        # List of players who CHANGED TEAMS
+        print("\n" + "=" * 60)
+        print("🔄 PLAYERS WHO CHANGED TEAMS")
+        print("=" * 60)
+        if not changed_teams:
+            print("   (none)")
+        else:
+            for p in changed_teams:
+                print(f"   • {p['name']}:  {p['old_team']}  →  {p['new_team']}")
+            print(f"   Total: {len(changed_teams)}")
+        
         # Verify import
         print("\n🔍 Verifying import...")
         result = supabase.table('nba_players').select('id', count='exact').execute()
         total_in_db = result.count
         print(f"✅ Total players in database: {total_in_db}")
-        
-        # Show some sample players
-        print("\n📋 Sample of imported players:")
-        sample = supabase.table('nba_players').select('name, position, team_name, is_active').limit(10).execute()
-        for player in sample.data:
-            status = "Active" if player['is_active'] else "Inactive"
-            print(f"   • {player['name']} ({player['position']}) - {player['team_name']} - {status}")
         
     except Exception as e:
         print(f"❌ Fatal error: {e}")

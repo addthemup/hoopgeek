@@ -278,9 +278,12 @@ export default function GameDetailView({
             plus_minus: stats.plus_minus || 0,
           } as any);
           
+          // Only use roster (nba_players) for current team — do not fall back to game team_tricode.
+          const currentTeam = playerTeams.get(player.nba_player_id) ?? undefined;
           return {
             ...player,
             team_tricode: teamTricode,
+            current_team_tricode: currentTeam,
             stats: stats,
             position: playerPositions.get(player.nba_player_id),
             fantasy_points: fantasyPoints,
@@ -303,6 +306,19 @@ export default function GameDetailView({
       
       if (!boxScoreData || boxScoreData.length === 0) {
         return { stats: [], isLive: false };
+      }
+      
+      // Fetch current team for each player so we only show players still on that team
+      const boxScorePlayerIds = [...new Set((boxScoreData || []).map((p: any) => p.nba_player_id).filter(Boolean))];
+      const currentTeamByNbaId = new Map<number, string>();
+      if (boxScorePlayerIds.length > 0) {
+        const { data: playersData } = await supabase
+          .from('nba_players')
+          .select('nba_player_id, team_abbreviation')
+          .in('nba_player_id', boxScorePlayerIds);
+        (playersData || []).forEach((p: any) => {
+          if (p.team_abbreviation) currentTeamByNbaId.set(p.nba_player_id, p.team_abbreviation);
+        });
       }
       
       return { 
@@ -354,11 +370,14 @@ export default function GameDetailView({
           plus_minus: stats.plus_minus,
         } as any);
         
+        // Only use roster (nba_players) for current team — do not fall back to game team_tricode.
+        const currentTeam = currentTeamByNbaId.get(player.nba_player_id) ?? undefined;
         return {
           nba_player_id: player.nba_player_id,
           player_id: player.player_id || null,
           player_name: player.player_name,
           team_tricode: player.team_tricode || null,
+          current_team_tricode: currentTeam,
           team_id: player.team_id || null,
           stats: stats,
           position: player.position || null,
@@ -887,9 +906,12 @@ export default function GameDetailView({
     ? gameData.away_team_tricode 
     : gameData.home_team_tricode);
   const currentRoster = selectedTeam === 'away' ? awayRoster : homeRoster;
-  const currentTeamStats = (liveStats || []).filter(player => 
-    player.team_tricode === currentTeamTricode
-  );
+  // Only show players who are currently on this team (exclude traded players)
+  const normalizeTricode = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+  const currentTeamStats = (liveStats || []).filter(player => {
+    const effectiveTeam = (player as any).current_team_tricode ?? player.team_tricode;
+    return normalizeTricode(effectiveTeam) === normalizeTricode(currentTeamTricode);
+  });
 
   // Fetch player stats for upcoming games - sorted by minutes played (descending)
   // MUST be called before any early returns to follow Rules of Hooks
@@ -1136,8 +1158,12 @@ export default function GameDetailView({
           .map((p: any) => p.player_id || (p.nba_player_id ? String(p.nba_player_id) : null))
           .filter(Boolean) as string[];
       } else {
-        // For live/completed games, get player IDs from liveStats
-        const teamStats = (liveStats || []).filter((p: any) => p.team_tricode === currentTeamTricode);
+        // For live/completed games, get player IDs from liveStats (only players currently on this team)
+        const norm = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+        const teamStats = (liveStats || []).filter((p: any) => {
+          const effectiveTeam = p.current_team_tricode ?? p.team_tricode;
+          return norm(effectiveTeam) === norm(currentTeamTricode);
+        });
         
         // First, try to use player_id directly from liveStats (available in nba_boxscores for completed games)
         const directPlayerIds = teamStats
@@ -1653,12 +1679,14 @@ export default function GameDetailView({
           stats = {};
         }
       }
-      
+      // Keep current_team_tricode from stats (roster-only); do not fall back to game team_tricode.
+      const currentTeam = (player as any).current_team_tricode ?? undefined;
       return {
         nba_player_id: player.nba_player_id,
         player_id: player.player_id,
         player_name: player.player_name,
         team_tricode: player.team_tricode || null,
+        current_team_tricode: currentTeam,
         stats: stats,
         position: (player as any).position,
         fantasy_points: player.fantasy_points || 0,

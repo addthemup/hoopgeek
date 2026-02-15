@@ -17,19 +17,26 @@ import {
   CircularProgress,
   Sheet,
   IconButton,
+  Modal,
+  ModalDialog,
+  ModalClose,
 } from '@mui/joy';
-import { ArrowBack, NavigateBefore, NavigateNext, CalendarToday, EmojiEvents, BarChart, TrendingUp, Analytics, ArrowUpward, ArrowDownward } from '@mui/icons-material';
+import { ArrowBack, NavigateBefore, NavigateNext, CalendarToday, EmojiEvents, BarChart, TrendingUp, Analytics, ArrowUpward, ArrowDownward, Shield } from '@mui/icons-material';
 import dayjs, { Dayjs } from 'dayjs';
 import { supabase } from '../utils/supabase';
 import { getTeamColors, getTeamPrimaryColor, getTeamSecondaryColor } from '../utils/nbaTeamColors';
 import { getTeamLogoUrl } from '../utils/nbaTeamLogos';
 import { FANDUEL_SCORING } from '../utils/fantasyScoring';
 import { calculatePropResult } from '../utils/playerPropsCalculator';
+import { filterFullGameProps } from '../utils/playerPropsFilter';
 import { hexToRgba } from '../components/MarginBars';
 import BoxScore from '../components/BoxScore';
 import { FeedPost } from '../utils/feedAlgorithm';
 import { matchPlayerNames } from '../utils/playerNameMatcher';
 import { loadGameJson, getScoreData, getFunScore, getLeadChanges, getDunkStats, getScoringMilestones, getTeamStats, getStoryData, getQuarterScores, type GameJsonData } from '../utils/gameJsonLoader';
+import PropPerformanceCell from '../components/PropPerformanceCell';
+import { useOpponentTeamPropsPerformance } from '../hooks/useOpponentTeamPropsPerformance';
+import { usePredictorStats } from '../hooks/usePredictorStats';
 
 interface GameData {
   game_id: string;
@@ -114,6 +121,123 @@ interface PlayerProp {
   player_id?: string;
 }
 
+type PropsVsTeamModalData = {
+  teamTricode: string;
+  label: string;
+  data: NonNullable<ReturnType<typeof useOpponentTeamPropsPerformance>['data']>;
+} | null;
+
+function PropsVsTeamRow({
+  betType,
+  label,
+  homeTricode,
+  awayTricode,
+  isMobile,
+}: {
+  betType: string;
+  label: string;
+  homeTricode: string;
+  awayTricode: string;
+  isMobile: boolean;
+}) {
+  const { data: vsHome } = useOpponentTeamPropsPerformance(homeTricode, betType, !!homeTricode && !!betType);
+  const { data: vsAway } = useOpponentTeamPropsPerformance(awayTricode, betType, !!awayTricode && !!betType);
+  const [modalData, setModalData] = useState<PropsVsTeamModalData>(null);
+
+  const formatCell = (data: typeof vsHome, teamTricode: string) => {
+    if (!data) return <Typography sx={{ color: '#666', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>—</Typography>;
+    if (data.totalProps === 0) return <Typography sx={{ color: '#666', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>No data</Typography>;
+    const rate = data.hitRate != null ? data.hitRate.toFixed(0) : '—';
+    const color = data.hitRate != null ? (data.hitRate >= 60 ? '#4CAF50' : data.hitRate <= 40 ? '#F44336' : '#FFC72C') : '#CCCCCC';
+    return (
+      <Box
+        component="button"
+        type="button"
+        onClick={() => setModalData({ teamTricode, label, data })}
+        sx={{
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          cursor: 'pointer',
+          width: '100%',
+          textAlign: 'right',
+          '&:hover': { opacity: 0.85 },
+        }}
+      >
+        <Typography sx={{ color, fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 600 }}>
+          {rate}% ({data.hits}/{data.totalProps})
+        </Typography>
+      </Box>
+    );
+  };
+
+  const resultsToShow = modalData?.data.last10Games.filter(g => g.result !== null && g.result !== 'push') ?? [];
+
+  return (
+    <>
+      <tr style={{ borderBottom: '1px solid #333' }}>
+        <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', padding: '8px 12px' }}>{label}</td>
+        <td style={{ textAlign: 'right', padding: '8px 12px' }}>{formatCell(vsHome, homeTricode)}</td>
+        <td style={{ textAlign: 'right', padding: '8px 12px' }}>{formatCell(vsAway, awayTricode)}</td>
+      </tr>
+      <Modal open={!!modalData} onClose={() => setModalData(null)}>
+        <ModalDialog
+          sx={{
+            maxWidth: 520,
+            maxHeight: '85vh',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            bgcolor: '#1a1a1a',
+          }}
+        >
+          <ModalClose sx={{ color: '#fff' }} />
+          {modalData && (
+            <>
+              <Typography level="h6" sx={{ color: '#fff', mb: 1 }}>
+                {modalData.label} vs {modalData.teamTricode}
+              </Typography>
+              <Typography level="body-sm" sx={{ color: '#999', mb: 2 }}>
+                Last 10 games (actual prop lines) · {modalData.data.hits}/{modalData.data.totalProps} hit over
+              </Typography>
+              <Box sx={{ overflow: 'auto', flex: 1, minHeight: 0 }}>
+                <Table size="sm" sx={{ '& th, & td': { color: '#ccc', fontSize: '0.75rem', py: 0.75 } }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left' }}>Player</th>
+                      <th style={{ textAlign: 'right' }}>Date</th>
+                      <th style={{ textAlign: 'right' }}>Line</th>
+                      <th style={{ textAlign: 'right' }}>Actual</th>
+                      <th style={{ textAlign: 'center' }}>Hit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {resultsToShow.map((row, i) => (
+                      <tr key={`${row.opponentPlayerId}-${row.gameDate}-${i}`}>
+                        <td>{row.opponentPlayerName}</td>
+                        <td style={{ textAlign: 'right' }}>{row.gameDate}</td>
+                        <td style={{ textAlign: 'right' }}>{row.line ?? '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{row.actualValue}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          {row.hit === true ? (
+                            <Typography component="span" sx={{ color: '#4CAF50', fontWeight: 600 }}>Over</Typography>
+                          ) : (
+                            <Typography component="span" sx={{ color: '#F44336', fontWeight: 600 }}>Under</Typography>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </Box>
+            </>
+          )}
+        </ModalDialog>
+      </Modal>
+    </>
+  );
+}
+
 export default function GamePage() {
   const { id: gameId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -136,7 +260,7 @@ export default function GamePage() {
   const [selectedTeam, setSelectedTeam] = useState<'away' | 'home'>('away');
   
   // View toggle state - default to stats
-  const [activeView, setActiveView] = useState<'stats' | 'props' | 'advanced'>('stats');
+  const [activeView, setActiveView] = useState<'stats' | 'props' | 'advanced' | 'propsVsTeams' | 'predictor'>('stats');
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -186,7 +310,6 @@ export default function GamePage() {
       </th>
     );
   };
-
 
   // Fetch game data
   const { data: gameData, isLoading: gameLoading } = useQuery<GameData | null>({
@@ -275,6 +398,19 @@ export default function GamePage() {
     enabled: !!gameId,
   });
 
+  // Team analytics: fetch from nba_daily_team_stats table for this game date
+  const predictorDateKey = gameData ? dayjs(gameData.game_date).format('YYYY-MM-DD') : null;
+  const {
+    data: predictorStats,
+    isLoading: predictorStatsLoading,
+    error: predictorStatsError,
+  } = usePredictorStats({
+    gameDate: predictorDateKey ?? null,
+    homeTricode: gameData?.home_team_tricode ?? null,
+    awayTricode: gameData?.away_team_tricode ?? null,
+    enabled: !!predictorDateKey && !!gameData?.home_team_tricode && !!gameData?.away_team_tricode && activeView === 'predictor',
+  });
+
   // Determine game state - compute this first so it can be used in enabled conditions
   const gameState = useMemo(() => {
     if (!gameData) return 'loading';
@@ -282,12 +418,32 @@ export default function GamePage() {
     if (gameData.game_status === 2) return 'live';
     return 'completed';
   }, [gameData]);
+
+  // Whether to show the status chip in the header.
+  // If the game time is already shown in yellow below the teams (upcoming, 0–0),
+  // we hide the chip to avoid showing the time twice.
+  const showStatusChip = useMemo(() => {
+    if (!gameData?.game_status_text) return false;
+
+    const hasScores =
+      gameData.home_team_score !== null && gameData.away_team_score !== null;
+    const bothZero =
+      hasScores &&
+      gameData.home_team_score === 0 &&
+      gameData.away_team_score === 0;
+
+    if (gameState === 'upcoming' && (!hasScores || bothZero)) {
+      return false;
+    }
+
+    return true;
+  }, [gameData, gameState]);
   
   // Set default sort column based on gameState and activeView
   useEffect(() => {
     if (!sortColumn && gameState && gameState !== 'loading') {
       if (activeView === 'advanced') {
-        setSortColumn('per');
+        setSortColumn('net_rtg');
       } else if (gameState === 'upcoming') {
         setSortColumn('mpg');
       } else {
@@ -428,9 +584,13 @@ export default function GamePage() {
             plus_minus: stats.plus_minus || 0,
           } as any);
           
+          // Only use roster (nba_players) for current team — do not fall back to game team_tricode,
+          // so traded players are excluded once roster is updated.
+          const currentTeam = playerTeams.get(player.nba_player_id) ?? undefined;
           const processedPlayer = {
             ...player,
             team_tricode: teamTricode,
+            current_team_tricode: currentTeam,
             stats: stats, // Use parsed stats
             position: playerPositions.get(player.nba_player_id),
             fantasy_points: fantasyPoints,
@@ -460,6 +620,19 @@ export default function GamePage() {
       }
       
       console.log('📊 Raw nba_boxscores data:', boxScoreData.length);
+      
+      // Fetch current team for each player so we only show players still on that team
+      const boxScorePlayerIds = [...new Set((boxScoreData || []).map((p: any) => p.nba_player_id).filter(Boolean))];
+      const currentTeamByNbaId = new Map<number, string>();
+      if (boxScorePlayerIds.length > 0) {
+        const { data: playersData } = await supabase
+          .from('nba_players')
+          .select('nba_player_id, team_abbreviation')
+          .in('nba_player_id', boxScorePlayerIds);
+        (playersData || []).forEach((p: any) => {
+          if (p.team_abbreviation) currentTeamByNbaId.set(p.nba_player_id, p.team_abbreviation);
+        });
+      }
       
       // Transform nba_boxscores data to match live_player_stats format
       return boxScoreData.map((player) => {
@@ -513,11 +686,14 @@ export default function GamePage() {
           plus_minus: stats.plus_minus,
         } as any);
         
+        // Only use roster (nba_players) for current team — do not fall back to game team_tricode.
+        const currentTeam = currentTeamByNbaId.get(player.nba_player_id) ?? undefined;
         return {
           nba_player_id: player.nba_player_id,
           player_id: player.player_id || null,
           player_name: player.player_name,
           team_tricode: player.team_tricode || null,
+          current_team_tricode: currentTeam,
           team_id: player.team_id || null,
           stats: stats,
           position: player.position || null,
@@ -630,60 +806,112 @@ export default function GamePage() {
     enabled: !!gameId && !!gameData && gameData?.game_status === 3,
   });
 
-  // Fetch player props - simple approach: get game_id from carousel, find player_props_games by nba_game_id, query props
+  // Fetch player props: match by nba_game_id, or fallback by team tricodes + game_date (try multiple dates)
   const { data: playerProps, isLoading: propsLoading } = useQuery<PlayerProp[]>({
-    queryKey: ['player-props-game', gameId, gameData?.game_date],
+    queryKey: ['player-props-game', gameId, gameData?.game_date, gameData?.home_team_tricode, gameData?.away_team_tricode],
     queryFn: async () => {
-      if (!gameId || !gameData?.game_date) return [];
-      
-      const gameDate = gameData.game_date.split('T')[0];
-      
-      console.log('🔍 Fetching player props for game:', {
-        gameId,
-        gameDate
-      });
-      
-      // Step 1: Find the player_props_games entry where nba_game_id matches this game
-      const { data: propsGame, error: propsGameError } = await supabase
-        .from('player_props_games')
-        .select('id, nba_game_id, game_date')
-        .eq('nba_game_id', String(gameId))
-        .eq('game_date', gameDate)
-        .maybeSingle();
-      
-      if (propsGameError) {
-        console.error('❌ Error finding player_props_games:', propsGameError);
+      if (!gameData?.game_date) {
+        console.log('[Props] queryFn skipped: no gameData.game_date', { gameData: !!gameData, game_date: gameData?.game_date });
         return [];
       }
       
-      if (!propsGame || !propsGame.id) {
-        console.log('⚠️ No player_props_games entry found for nba_game_id:', gameId, 'on date:', gameDate);
+      const rawDate = gameData.game_date;
+      const gameDate = typeof rawDate === 'string' ? rawDate.split('T')[0] : String(rawDate).split('T')[0];
+      const homeTricode = (gameData.home_team_tricode || '').trim().toUpperCase();
+      const awayTricode = (gameData.away_team_tricode || '').trim().toUpperCase();
+      
+      const normalize = (s: string) => (s || '').trim().toUpperCase();
+      const matchTeams = (h: string | null, a: string | null) =>
+        h && a && (normalize(h) === homeTricode && normalize(a) === awayTricode) || (normalize(h) === awayTricode && normalize(a) === homeTricode);
+      
+      console.log('[Props] 🔍 Fetching player props for game:', { gameId, gameDate, homeTricode, awayTricode });
+      
+      let propsGame: { id: string } | null = null;
+      
+      // Step 1a: Try by nba_game_id if we have it (exact date)
+      if (gameId) {
+        const { data, error } = await supabase
+          .from('player_props_games')
+          .select('id, nba_game_id, game_date')
+          .eq('nba_game_id', String(gameId))
+          .eq('game_date', gameDate)
+          .maybeSingle();
+        console.log('[Props] Step 1a nba_game_id lookup:', { gameId, gameDate, found: !!data?.id, error: error?.message, data });
+        if (!error && data?.id) {
+          propsGame = data;
+          console.log('[Props] ✅ Found player_props_games by nba_game_id:', propsGame.id);
+        }
+      }
+      
+      // Step 1b: Fallback – fetch candidates by date range (game_date can be off by 1 day due to timezone)
+      if (!propsGame?.id && homeTricode && awayTricode) {
+        const datesToTry = [gameDate];
+        try {
+          const d = new Date(gameDate);
+          const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+          const next = new Date(d); next.setDate(next.getDate() + 1);
+          datesToTry.push(prev.toISOString().split('T')[0], next.toISOString().split('T')[0]);
+        } catch (_) {}
+        console.log('[Props] Step 1b trying dates:', [...new Set(datesToTry)], 'looking for', { homeTricode, awayTricode });
+        for (const d of [...new Set(datesToTry)]) {
+          const { data: rows, error: err } = await supabase
+            .from('player_props_games')
+            .select('id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
+            .eq('game_date', d)
+            .limit(20);
+          const candidates = (rows || []).map((r: any) => ({ id: r.id, game_date: r.game_date, home_team_tricode: r.home_team_tricode, away_team_tricode: r.away_team_tricode, home_team: r.home_team, away_team: r.away_team }));
+          console.log('[Props] Step 1b player_props_games for date', d, ':', { rowCount: candidates.length, error: err?.message, rows: candidates });
+          if (err || !rows?.length) continue;
+          // Match by tricode (exact after normalize)
+          let found = rows.find((r: any) => matchTeams(r.home_team_tricode, r.away_team_tricode));
+          // Fallback: match by full team names (e.g. "Orlando Magic" contains ORL city, "Toronto Raptors" contains TOR city)
+          const cityToTricode: Record<string, string> = { ORL: 'orlando', TOR: 'toronto', LAL: 'lakers', BOS: 'celtics', GSW: 'golden state', MIA: 'miami', PHX: 'phoenix', DEN: 'denver', MIL: 'milwaukee', PHI: 'philadelphia', DAL: 'dallas', BKN: 'brooklyn', NYK: 'new york', CHI: 'chicago', CLE: 'cleveland', IND: 'indiana', ATL: 'atlanta', WAS: 'washington', CHO: 'charlotte', DET: 'detroit', HOU: 'houston', SAS: 'san antonio', MEM: 'memphis', NOP: 'new orleans', MIN: 'minnesota', OKC: 'oklahoma', POR: 'portland', SAC: 'sacramento', UTA: 'utah' };
+          if (!found?.id && rows.length > 0) {
+            const homeKey = cityToTricode[homeTricode] || homeTricode.toLowerCase();
+            const awayKey = cityToTricode[awayTricode] || awayTricode.toLowerCase();
+            found = rows.find((r: any) => {
+              const h = (r.home_team || '').toLowerCase();
+              const a = (r.away_team || '').toLowerCase();
+              const match1 = h.includes(homeKey) && a.includes(awayKey);
+              const match2 = h.includes(awayKey) && a.includes(homeKey);
+              return match1 || match2;
+            }) || null;
+            if (found?.id) console.log('[Props] ✅ Matched by full team name fallback:', found.home_team, found.away_team);
+          }
+          if (found?.id) {
+            propsGame = { id: found.id };
+            console.log('[Props] ✅ Found player_props_games by teams+date:', found.game_date, found.home_team_tricode ?? found.home_team, found.away_team_tricode ?? found.away_team, propsGame.id);
+            break;
+          }
+        }
+      }
+      
+      if (!propsGame?.id) {
+        console.log('[Props] ⚠️ No player_props_games found (tried nba_game_id and team tricodes + date range). gameData.game_date=', gameData.game_date);
         return [];
       }
       
-      console.log('✅ Found player_props_games entry:', propsGame.id, 'for nba_game_id:', gameId);
-      
-      // Step 2: Query all props where game_id matches the player_props_games.id
-      const { data: allProps, error: propsError } = await supabase
+      // Step 2: Query all props where game_id matches the player_props_games.id (UUID); full-game only
+      const { data: allPropsRaw, error: propsError } = await supabase
         .from('player_props')
-        .select('id, bet_type, line, price, american_odds, bookmaker, player_name, nba_player_id, player_id, bet_type_id')
+        .select('id, bet_type, line, price, american_odds, bookmaker, player_name, nba_player_id, player_id, bet_type_id, raw_odd_data')
         .eq('game_id', propsGame.id)
-        .eq('game_date', gameDate)
         .order('player_name')
         .order('bet_type')
         .limit(10000);
-      
+
+      const allProps = filterFullGameProps(allPropsRaw ?? []);
+
+      console.log('[Props] Step 2 player_props by game_id (UUID):', { propsGameId: propsGame.id, count: allProps?.length ?? 0, error: propsError?.message });
       if (propsError) {
-        console.error('❌ Error fetching player props:', propsError);
+        console.error('[Props] ❌ Error fetching player props:', propsError);
         return [];
       }
-      
-      console.log('✅ Fetched', allProps?.length || 0, 'props for game_id:', propsGame.id);
-      console.log('📊 Unique players:', [...new Set((allProps || []).map((p: any) => p.player_name))].length);
-      
+
+      console.log('[Props] ✅ Fetched', allProps?.length || 0, 'full-game props for game_id:', propsGame.id);
       return allProps || [];
     },
-    enabled: !!gameId && !!gameData && !!gameData?.game_date,
+    enabled: !!gameData && !!gameData?.game_date,
   });
 
   // Fetch home team roster (for upcoming games) - always call this hook
@@ -780,10 +1008,69 @@ export default function GamePage() {
   const currentTeamTricode = gameData ? (selectedTeam === 'away' 
     ? gameData?.away_team_tricode 
     : gameData?.home_team_tricode) : null;
+  const opponentTeamTricode = gameData ? (selectedTeam === 'away' 
+    ? gameData?.home_team_tricode 
+    : gameData?.away_team_tricode) : null;
   const currentRoster = selectedTeam === 'away' ? awayRoster : homeRoster;
-  const currentTeamStats = (liveStats || []).filter(player => 
-    player.team_tricode === currentTeamTricode
-  );
+  const normalizeTricode = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+
+  // First tab (basic stats) must use the same source of truth as advanced stats: nba_players.team_abbreviation.
+  // Fetch current team from DB for game's players so we filter out traded players even if liveStats merge was stale.
+  const { data: currentTeamNbaPlayerIds } = useQuery<Set<number>>({
+    queryKey: ['game-current-team-player-ids', gameId, currentTeamTricode, liveStats?.length],
+    queryFn: async () => {
+      if (!currentTeamTricode || !liveStats?.length) return new Set<number>();
+      const nbaPlayerIds = [...new Set((liveStats || []).map((p: any) => p.nba_player_id).filter(Boolean))];
+      if (nbaPlayerIds.length === 0) return new Set<number>();
+      const { data: rows } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation')
+        .in('nba_player_id', nbaPlayerIds);
+      const target = normalizeTricode(currentTeamTricode);
+      const set = new Set<number>();
+      (rows || []).forEach((r: any) => {
+        if (r.nba_player_id != null && normalizeTricode(r.team_abbreviation) === target) set.add(r.nba_player_id);
+      });
+      return set;
+    },
+    enabled: !!currentTeamTricode && !!liveStats && liveStats.length > 0,
+  });
+
+  // For upcoming games, also derive the set of CURRENT active players for this team
+  // from nba_players.team_abbreviation/is_active so the Stats tab never shows
+  // players who have been traded away or are no longer on this team.
+  const { data: upcomingTeamNbaPlayerIds } = useQuery<Set<number>>({
+    queryKey: ['game-upcoming-team-player-ids', currentTeamTricode, currentSeason],
+    queryFn: async () => {
+      if (!currentTeamTricode || !currentSeason) return new Set<number>();
+      const { data: rows, error } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation, is_active')
+        .eq('team_abbreviation', currentTeamTricode)
+        .eq('is_active', true);
+      if (error) {
+        console.error('❌ Error fetching upcoming team player ids:', error);
+        return new Set<number>();
+      }
+      const set = new Set<number>();
+      (rows || []).forEach((r: any) => {
+        if (r.nba_player_id != null) set.add(r.nba_player_id);
+      });
+      return set;
+    },
+    enabled: gameState === 'upcoming' && !!currentTeamTricode,
+  });
+
+  // Only show players who are currently on this team (exclude traded players).
+  // Use nba_players-based set when available (same as advanced tab); otherwise fall back to current_team_tricode/team_tricode.
+  const currentTeamStats = (liveStats || []).filter(player => {
+    if (currentTeamNbaPlayerIds != null && currentTeamNbaPlayerIds.size > 0) {
+      return player.nba_player_id != null && currentTeamNbaPlayerIds.has(player.nba_player_id);
+    }
+    const fromRoster = (player as any).current_team_tricode;
+    const effectiveTeam = fromRoster ?? player.team_tricode;
+    return normalizeTricode(effectiveTeam) === normalizeTricode(currentTeamTricode);
+  });
 
   // Match unmatched player names using the player name matcher utility
   const { data: playerNameMatches } = useQuery({
@@ -897,9 +1184,9 @@ export default function GamePage() {
         }
       }
       
-      // Also add matched players' teams directly from the match results
+      // Also add matched players' teams by player_id, nba_player_id, and by name (for props with null ids)
       if (playerNameMatches) {
-        playerNameMatches.forEach((match) => {
+        playerNameMatches.forEach((match, playerName) => {
           if (match && match.team_abbreviation) {
             if (match.player_id) {
               map.set(match.player_id, match.team_abbreviation);
@@ -907,8 +1194,28 @@ export default function GamePage() {
             if (match.nba_player_id) {
               map.set(`nba_${match.nba_player_id}`, match.team_abbreviation);
             }
+            if (playerName) {
+              map.set(`name_${playerName}`, match.team_abbreviation);
+            }
           }
         });
+      }
+      
+      // Fallback: for unique prop player names that have no match, try direct nba_players lookup by name
+      const namesWithoutTeam = [...new Set(playerProps.map((p: any) => p.player_name).filter(Boolean))].filter(
+        (name) => !map.has(`name_${name}`) && (!playerNameMatches || !playerNameMatches.get(name))
+      );
+      if (namesWithoutTeam.length > 0) {
+        for (const name of namesWithoutTeam.slice(0, 50)) {
+          const { data: playersByName } = await supabase
+            .from('nba_players')
+            .select('name, team_abbreviation')
+            .ilike('name', name)
+            .limit(1);
+          if (playersByName?.[0]?.team_abbreviation) {
+            map.set(`name_${name}`, playersByName[0].team_abbreviation);
+          }
+        }
       }
       
       console.log('📊 Player teams map size:', map.size, 'out of', uniquePlayerIds.length + uniqueNbaPlayerIds.length, 'unique players');
@@ -972,15 +1279,21 @@ export default function GamePage() {
         foundTeam = prop.matched_team;
       }
       
+      // Fallback: lookup by player name (for props with null player_id/nba_player_id)
+      if (!foundTeam && prop.player_name && playerTeamsMap) {
+        foundTeam = playerTeamsMap.get(`name_${prop.player_name}`);
+      }
+      
       // If we found a team, check if it matches
       if (foundTeam) {
         return foundTeam === currentTeamTricode;
       }
       
-      // If we can't determine the team, exclude it (be more strict now that we have matching)
-      // This prevents players from showing on both teams
-      console.log('⚠️ Could not determine team for prop:', prop.player_name, 'player_id:', prop.player_id, 'nba_player_id:', prop.nba_player_id);
-      return false; // Exclude it - we have better matching now
+      // If we can't determine the team, exclude it (prevents players from showing on both teams)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('⚠️ Could not determine team for prop:', prop.player_name, 'player_id:', prop.player_id, 'nba_player_id:', prop.nba_player_id);
+      }
+      return false;
     });
     
     console.log('✅ Filtered props by team:', filtered.length, 'out of', enhancedProps.length, 'for team:', currentTeamTricode);
@@ -1161,8 +1474,12 @@ export default function GamePage() {
           .map((p: any) => p.player_id)
           .filter(Boolean) as string[];
       } else {
-        // For live/completed games, get player IDs from liveStats
-        const teamStats = (liveStats || []).filter((p: any) => p.team_tricode === currentTeamTricode);
+        // For live/completed games, get player IDs from liveStats (only players currently on this team)
+        const norm = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+        const teamStats = (liveStats || []).filter((p: any) => {
+          const effectiveTeam = p.current_team_tricode ?? p.team_tricode;
+          return norm(effectiveTeam) === norm(currentTeamTricode);
+        });
         
         // Try to use player_id directly from liveStats
         const directPlayerIds = teamStats
@@ -1661,7 +1978,7 @@ export default function GamePage() {
                   >
                     {gameData.away_team_tricode} @ {gameData.home_team_tricode}
                   </Typography>
-                  {gameData.game_status_text && (
+                {showStatusChip && (
                     <Chip
                       size="sm"
                       color={gameState === 'live' ? 'danger' : gameState === 'completed' ? 'success' : 'neutral'}
@@ -1675,19 +1992,46 @@ export default function GamePage() {
                     </Chip>
                   )}
                 </Box>
-                {(gameData.home_team_score !== null && gameData.away_team_score !== null) && (
-                  <Typography 
-                    level="h4" 
-                    sx={{ 
-                      fontWeight: 'bold', 
-                      color: '#FFC72C', 
-                      fontSize: { xs: '1rem', md: '1.25rem' },
-                      mt: 0.5,
-                    }}
-                  >
-                    {gameData.away_team_score} - {gameData.home_team_score}
-                  </Typography>
-                )}
+                {(() => {
+                  const hasScores = gameData.home_team_score !== null && gameData.away_team_score !== null;
+                  const bothZero = hasScores && gameData.home_team_score === 0 && gameData.away_team_score === 0;
+                  
+                  // For upcoming / not-started games, show tip-off time instead of "0 - 0"
+                  if (gameState === 'upcoming' && gameData.game_status_text && (!hasScores || bothZero)) {
+                    return (
+                      <Typography 
+                        level="h4" 
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          color: '#FFC72C', 
+                          fontSize: { xs: '1rem', md: '1.25rem' },
+                          mt: 0.5,
+                        }}
+                      >
+                        {gameData.game_status_text}
+                      </Typography>
+                    );
+                  }
+                  
+                  // For live/completed games with real scores, show the score
+                  if (hasScores && !bothZero) {
+                    return (
+                      <Typography 
+                        level="h4" 
+                        sx={{ 
+                          fontWeight: 'bold', 
+                          color: '#FFC72C', 
+                          fontSize: { xs: '1rem', md: '1.25rem' },
+                          mt: 0.5,
+                        }}
+                      >
+                        {gameData.away_team_score} - {gameData.home_team_score}
+                      </Typography>
+                    );
+                  }
+                  
+                  return null;
+                })()}
                 {gameData.arena_name && (
                   <Typography 
                     level="body-sm" 
@@ -1713,6 +2057,7 @@ export default function GamePage() {
                 flexWrap: 'wrap',
                 width: '100%',
               }}>
+                {/* Stats */}
                 <IconButton
                   size="sm"
                   variant={activeView === 'stats' ? 'solid' : 'outlined'}
@@ -1726,6 +2071,36 @@ export default function GamePage() {
                 >
                   <BarChart sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
                 </IconButton>
+                {/* Advanced stats */}
+                <IconButton
+                  size="sm"
+                  variant={activeView === 'advanced' ? 'solid' : 'outlined'}
+                  color={activeView === 'advanced' ? 'primary' : 'neutral'}
+                  onClick={() => setActiveView('advanced')}
+                  sx={{
+                    fontSize: { xs: '0.65rem', md: '0.75rem' },
+                    width: { xs: 28, md: 32 },
+                    height: { xs: 28, md: 32 },
+                  }}
+                >
+                  <Analytics sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
+                </IconButton>
+                {/* Team analytics compare (predictor placeholder) */}
+                <IconButton
+                  size="sm"
+                  variant={activeView === 'predictor' ? 'solid' : 'outlined'}
+                  color={activeView === 'predictor' ? 'primary' : 'neutral'}
+                  onClick={() => setActiveView('predictor')}
+                  sx={{
+                    fontSize: { xs: '0.65rem', md: '0.75rem' },
+                    width: { xs: 28, md: 32 },
+                    height: { xs: 28, md: 32 },
+                  }}
+                  title="Team analytics comparison"
+                >
+                  <TrendingUp sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
+                </IconButton>
+                {/* Player props */}
                 <IconButton
                   size="sm"
                   variant={activeView === 'props' ? 'solid' : 'outlined'}
@@ -1739,18 +2114,20 @@ export default function GamePage() {
                 >
                   <EmojiEvents sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
                 </IconButton>
+                {/* Props vs teams (shield) */}
                 <IconButton
                   size="sm"
-                  variant={activeView === 'advanced' ? 'solid' : 'outlined'}
-                  color={activeView === 'advanced' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('advanced')}
+                  variant={activeView === 'propsVsTeams' ? 'solid' : 'outlined'}
+                  color={activeView === 'propsVsTeams' ? 'primary' : 'neutral'}
+                  onClick={() => setActiveView('propsVsTeams')}
                   sx={{
                     fontSize: { xs: '0.65rem', md: '0.75rem' },
                     width: { xs: 28, md: 32 },
                     height: { xs: 28, md: 32 },
                   }}
+                  title="Props vs teams (how players fare against each defense)"
                 >
-                  <Analytics sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
+                  <Shield sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
                 </IconButton>
                 <Box sx={{ ml: { xs: 0.5, md: 1 }, display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
                   <IconButton
@@ -2079,13 +2456,7 @@ export default function GamePage() {
           </Box>
         ) : activeView === 'props' ? (
           // Player Props View - Table format: one row per player, one column per prop type
-          <Box sx={{ 
-            maxHeight: '500px', 
-            overflowY: 'auto',
-            overflowX: 'auto',
-            width: '100%',
-            WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
-          }}>
+          <Box sx={{ width: '100%', overflowX: 'auto' }}>
             {propsLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                 <CircularProgress />
@@ -2290,7 +2661,7 @@ export default function GamePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {players.map((player) => {
+                    {players.map((player, playerIndex) => {
                       const playerPropsMap = propsByPlayer.get(player.name || `${player.nba_player_id}`) || new Map();
                       // Try to find player in roster for jersey/position info, but don't require it
                       const rosterPlayer: any = currentRoster?.find((p: any) => 
@@ -2302,10 +2673,12 @@ export default function GamePage() {
                         (p.nba_player_id === player.nba_player_id) ||
                         (p.player_name === player.name)
                       );
+                      // Unique key: nba_player_id can be 0 or duplicated for unmatched names
+                      const rowKey = [player.nba_player_id, player.player_id, player.name].filter(Boolean).join('_') || `player_${playerIndex}`;
 
                       return (
                         <tr
-                          key={player.nba_player_id}
+                          key={rowKey}
                           style={{
                             borderBottom: '1px solid #333333',
                           }}
@@ -2384,46 +2757,15 @@ export default function GamePage() {
                                   width: `${columnWidth}px`
                                 }}
                               >
-                                {prop ? (
-                                  gameState === 'completed' ? (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: { xs: 0.25, md: 0.5 } }}>
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
-                                        <Typography sx={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 600 }}>
-                                          {prop.line || 'N/A'}
-                                        </Typography>
-                                        <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.6rem' : '0.7rem' }}>
-                                          /
-                                        </Typography>
-                                        <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 'bold' }}>
-                                          {propResult ? propResult.actualValue : 'N/A'}
-                                        </Typography>
-                                      </Box>
-                                      {propResult && (
-                                        <Chip
-                                          color={propResult.hit ? 'success' : 'danger'}
-                                          variant="solid"
-                                          size="sm"
-                                          sx={{ fontSize: isMobile ? '0.55rem' : '0.65rem', height: isMobile ? '16px' : '18px' }}
-                                        >
-                                          {propResult.hit ? '✅' : '❌'}
-                                        </Chip>
-                                      )}
-                                    </Box>
-                                  ) : (
-                                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: { xs: 0.125, md: 0.25 } }}>
-                                      <Typography sx={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 600 }}>
-                                        {prop.line || 'N/A'}
-                                      </Typography>
-                                      <Typography sx={{ color: '#CCCCCC', fontSize: isMobile ? '0.55rem' : '0.65rem' }}>
-                                        {prop.american_odds || prop.price || ''}
-                                      </Typography>
-                                    </Box>
-                                  )
-                                ) : (
-                                  <Typography sx={{ color: '#666666', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>
-                                    -
-                                  </Typography>
-                                )}
+                                <PropPerformanceCell
+                                  prop={prop || null}
+                                  propResult={propResult}
+                                  gameState={gameState}
+                                  opponentTeamTricode={opponentTeamTricode}
+                                  isMobile={isMobile}
+                                  american_odds={prop?.american_odds}
+                                  price={prop?.price}
+                                />
                               </td>
                             );
                           })}
@@ -2435,15 +2777,59 @@ export default function GamePage() {
               );
             })()}
           </Box>
+        ) : activeView === 'propsVsTeams' && gameData ? (
+          // Props vs Teams: how players have fared against each team's defense (last 10 games)
+          <Box sx={{ width: '100%', overflowX: 'auto', px: { xs: 2, sm: 0 } }}>
+            <Typography level="body-sm" sx={{ color: '#CCCCCC', mb: 2 }}>
+              Hit rates for player props against each team over their last 10 completed games. Higher % = opponents hit that prop more often. Click a cell to see the game-by-game breakdown.
+            </Typography>
+            <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '320px' : '500px' }}>
+              <thead>
+                <tr>
+                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'left', padding: '10px 12px' }}>Prop</th>
+                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
+                    vs {gameData.home_team_tricode}
+                  </th>
+                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
+                    vs {gameData.away_team_tricode}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { betType: 'points', label: 'PTS' },
+                  { betType: 'rebounds', label: 'REB' },
+                  { betType: 'assists', label: 'AST' },
+                  { betType: 'threes', label: '3PM' },
+                  { betType: 'steals', label: 'STL' },
+                  { betType: 'blocks', label: 'BLK' },
+                  { betType: 'turnovers', label: 'TOV' },
+                  { betType: 'blocks_steals', label: 'STL+BLK' },
+                  { betType: 'points_rebounds', label: 'P+R' },
+                  { betType: 'points_assists', label: 'P+A' },
+                  { betType: 'rebounds_assists', label: 'R+A' },
+                  { betType: 'points_rebounds_assists', label: 'P+R+A' },
+                  { betType: 'freethrowsmade', label: 'FTM' },
+                  { betType: 'fieldgoalsmade', label: 'FGM' },
+                  { betType: 'fieldgoalsattempted', label: 'FGA' },
+                  { betType: 'threepointersattempted', label: '3PA' },
+                  { betType: 'twopointersmade', label: '2PM' },
+                ].map(({ betType, label }) => (
+                  <PropsVsTeamRow
+                    key={betType}
+                    betType={betType}
+                    label={label}
+                    homeTricode={gameData.home_team_tricode}
+                    awayTricode={gameData.away_team_tricode}
+                    isMobile={isMobile}
+                  />
+                ))}
+              </tbody>
+            </Table>
+          </Box>
         ) : activeView === 'advanced' ? (
           // Advanced View - Display advanced stats
-          <Box sx={{ 
-            maxHeight: '500px', 
-            overflowY: 'auto',
-            overflowX: 'auto',
-            width: '100%',
-            WebkitOverflowScrolling: 'touch',
-          }}>
+          <Box sx={{ width: '100%', overflowX: 'auto' }}>
             {advancedStatsLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
                 <CircularProgress />
@@ -2461,7 +2847,6 @@ export default function GamePage() {
               <thead>
                 <tr>
                     <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: isMobile ? '140px' : '180px', width: isMobile ? '140px' : '180px', position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#000000', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
-                    <SortableHeader column="per" label="PER" />
                     <SortableHeader column="off_rtg" label="ORtg" />
                     <SortableHeader column="def_rtg" label="DRtg" />
                     <SortableHeader column="net_rtg" label="NetRtg" />
@@ -2483,10 +2868,7 @@ export default function GamePage() {
                         let aVal: number | null = null;
                         let bVal: number | null = null;
                         
-                        if (sortColumn === 'per') {
-                          aVal = a.per ?? null;
-                          bVal = b.per ?? null;
-                        } else if (sortColumn === 'off_rtg') {
+                        if (sortColumn === 'off_rtg') {
                           aVal = a.off_rtg ?? null;
                           bVal = b.off_rtg ?? null;
                         } else if (sortColumn === 'def_rtg') {
@@ -2529,6 +2911,7 @@ export default function GamePage() {
                       const rosterPlayer = (currentRoster || []).find((p: any) => 
                         p.player_id === stat.player_id || p.nba_player_id === stat.nba_player_id
                       );
+                      const injury = playerInjuries?.get(stat.nba_player_id);
                       
                       return (
                         <tr
@@ -2573,21 +2956,48 @@ export default function GamePage() {
                                 alt={stat.player_name}
                                 sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
                               />
-                              <Typography sx={{ 
-                                color: '#FFFFFF', 
-                                fontSize: isMobile ? '0.65rem' : '0.75rem',
-                                whiteSpace: 'nowrap',
-                                overflow: 'visible',
-                                flex: 1,
-                                minWidth: isMobile ? '90px' : '120px',
-                                maxWidth: isMobile ? '100px' : '130px'
-                              }}>
-                                {stat.player_name}
-                              </Typography>
+                              <Box sx={{ flex: 1, minWidth: isMobile ? '90px' : '120px', maxWidth: isMobile ? '100px' : '130px', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                                <Typography sx={{ 
+                                  color: '#FFFFFF', 
+                                  fontSize: isMobile ? '0.65rem' : '0.75rem',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'visible',
+                                }}>
+                                  {stat.player_name}
+                                </Typography>
+                                {/* Injury status badges (same design as Stats view) */}
+                                {injury && injury.injury_status === 'Out' && (
+                                  <Chip
+                                    size="sm"
+                                    color="danger"
+                                    variant="solid"
+                                    sx={{ 
+                                      fontSize: isMobile ? '0.55rem' : '0.65rem', 
+                                      height: isMobile ? '14px' : '16px',
+                                      fontWeight: 'bold',
+                                      alignSelf: 'flex-start'
+                                    }}
+                                  >
+                                    {injury.injury_status}
+                                  </Chip>
+                                )}
+                                {injury && (injury.injury_status === 'Questionable' || injury.injury_status === 'Day-to-Day') && (
+                                  <Chip
+                                    size="sm"
+                                    color="warning"
+                                    variant="solid"
+                                    sx={{ 
+                                      fontSize: isMobile ? '0.55rem' : '0.65rem', 
+                                      height: isMobile ? '14px' : '16px',
+                                      fontWeight: 'bold',
+                                      alignSelf: 'flex-start'
+                                    }}
+                                  >
+                                    {injury.injury_status}
+                                  </Chip>
+                                )}
+                              </Box>
                             </Box>
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.per !== null && stat.per !== undefined ? stat.per.toFixed(1) : 'N/A'}
                           </td>
                           <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
                             {stat.off_rtg !== null && stat.off_rtg !== undefined ? stat.off_rtg.toFixed(1) : 'N/A'}
@@ -2624,15 +3034,103 @@ export default function GamePage() {
             </Table>
             )}
           </Box>
+        ) : activeView === 'predictor' ? (
+          // Predictor / team analytics comparison – Phase 2: defense_dash_overall for this game's two teams
+          <Box sx={{ p: 3 }}>
+            <Card sx={{ bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
+              <CardContent>
+                <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 1 }}>
+                  Team Analytics Comparison
+                </Typography>
+                <Typography level="body-sm" sx={{ color: '#CCCCCC', mb: 2 }}>
+                  Last 10 games team stats from <code>nba_daily_team_stats</code> for game date {predictorDateKey ?? '—'}.
+                </Typography>
+                {predictorStatsLoading ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <CircularProgress size="sm" />
+                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                      Loading team stats...
+                    </Typography>
+                  </Box>
+                ) : predictorStatsError ? (
+                  <Typography level="body-sm" sx={{ color: '#f44336' }}>
+                    {predictorStatsError instanceof Error ? predictorStatsError.message : 'Failed to load team stats.'}
+                  </Typography>
+                ) : predictorStats ? (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      maxHeight: '70vh',
+                      overflowY: 'auto',
+                      pr: 1,
+                    }}
+                  >
+                    {Object.entries(predictorStats).map(([endpointName, slice]) => {
+                      const hasData = slice.home || slice.away;
+                      const sample = slice.home ?? slice.away ?? {};
+                      const columns = Object.keys(sample).filter((k) => k !== 'TEAM');
+                      return (
+                        <Box key={endpointName}>
+                          <Typography level="body-sm" sx={{ color: '#9e9e9e', mb: 0.5 }}>
+                            {endpointName}
+                          </Typography>
+                          {hasData ? (
+                            <Table
+                              size="sm"
+                              sx={{
+                                bgcolor: '#0d0d0d',
+                                '& th, & td': { borderColor: '#333', color: '#e0e0e0', fontSize: '0.75rem', padding: '6px 8px' },
+                              }}
+                            >
+                              <thead>
+                                <tr>
+                                  <th style={{ textAlign: 'left' }}>Team</th>
+                                  {columns.map((col) => (
+                                    <th key={col} style={{ textAlign: 'right' }}>{col}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {slice.home && (
+                                  <tr>
+                                    <td>{gameData?.home_team_tricode} (H)</td>
+                                    {columns.map((col) => (
+                                      <td key={col} style={{ textAlign: 'right' }}>{slice.home![col] ?? '—'}</td>
+                                    ))}
+                                  </tr>
+                                )}
+                                {slice.away && (
+                                  <tr>
+                                    <td>{gameData?.away_team_tricode} (A)</td>
+                                    {columns.map((col) => (
+                                      <td key={col} style={{ textAlign: 'right' }}>{slice.away![col] ?? '—'}</td>
+                                    ))}
+                                  </tr>
+                                )}
+                              </tbody>
+                            </Table>
+                          ) : (
+                            <Typography level="body-sm" sx={{ color: '#666' }}>
+                              No {endpointName} data for this matchup.
+                            </Typography>
+                          )}
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                ) : (
+                  <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                    No team stats for this date. Data is stored in the <code>nba_daily_team_stats</code> table.
+                  </Typography>
+                )}
+              </CardContent>
+            </Card>
+          </Box>
         ) : (
           // Stats View (default) - Single full-width table
-          <Box sx={{ 
-            maxHeight: '500px', 
-            overflowY: 'auto',
-            overflowX: 'auto',
-            width: '100%',
-            WebkitOverflowScrolling: 'touch',
-          }}>
+          <Box sx={{ width: '100%', overflowX: 'auto' }}>
             <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '300px' : '400px' }}>
               <thead>
                 <tr>
@@ -2675,10 +3173,16 @@ export default function GamePage() {
                     }
                     
                     if (!upcomingPlayerStats || upcomingPlayerStats.length === 0) {
-                      // Fallback to roster if no stats available - ensure we only show current team
-                      const filteredRoster = (currentRoster || []).filter((player: any) => 
-                        !currentTeamTricode || player.team_abbreviation === currentTeamTricode
-                      );
+                      // Fallback to roster if no stats available - ensure we only show CURRENT active team players
+                      const filteredRoster = (currentRoster || []).filter((player: any) => {
+                        if (!currentTeamTricode) return true;
+                        const teamOk = player.team_abbreviation === currentTeamTricode;
+                        const idOk =
+                          !upcomingTeamNbaPlayerIds ||
+                          upcomingTeamNbaPlayerIds.size === 0 ||
+                          (player.nba_player_id != null && upcomingTeamNbaPlayerIds.has(player.nba_player_id));
+                        return teamOk && idOk;
+                      });
                       return filteredRoster.map((player) => (
                     <GamePlayerRow
                       key={player.id}
@@ -2694,17 +3198,20 @@ export default function GamePage() {
                     }
                     
                     // Map upcoming stats to roster players to get position and jersey number
-                    // Filter to ensure we only show players from the current team
+                    // Filter to ensure we only show players from the CURRENT active team
                     const rosterMap = new Map();
                     (currentRoster || []).forEach((p: any) => {
                       const key = p.player_id || String(p.nba_player_id);
                       rosterMap.set(key, p);
                     });
                     
-                    // Filter stats to only show players from the current team
-                    let filteredStats = upcomingPlayerStats.filter(stat => 
-                      !currentTeamTricode || stat.team_tricode === currentTeamTricode
-                    );
+                    let filteredStats = upcomingPlayerStats.filter((stat) => {
+                      if (currentTeamTricode && stat.team_tricode !== currentTeamTricode) return false;
+                      if (upcomingTeamNbaPlayerIds && upcomingTeamNbaPlayerIds.size > 0) {
+                        return stat.nba_player_id != null && upcomingTeamNbaPlayerIds.has(stat.nba_player_id);
+                      }
+                      return true;
+                    });
                     
                     // Apply sorting
                     if (sortColumn) {
@@ -2756,7 +3263,8 @@ export default function GamePage() {
                             jersey_number: rosterPlayer?.jersey_number,
                             player_id: stat.player_id,
                             nba_player_id: stat.nba_player_id,
-                            player_name: stat.player_name,
+                            // Prefer full name from roster if available; fall back to boxscore name
+                            player_name: rosterPlayer?.player_name || stat.player_name,
                           }}
                           teamTricode={currentTeamTricode || ''}
                           gameState={gameState}
@@ -3023,31 +3531,19 @@ function GamePlayerRow({
             {playerName}
           </Typography>
             {injury && injury.injury_status === 'Out' && (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                <Chip
-                  size="sm"
-                  color="danger"
-                  variant="solid"
-                  sx={{ 
-                    fontSize: isMobile ? '0.55rem' : '0.65rem', 
-                    height: isMobile ? '14px' : '16px',
-                    fontWeight: 'bold',
-                    alignSelf: 'flex-start'
-                  }}
-                >
-                  {injury.injury_status}
-                </Chip>
-                {injury.injury_type && (
-                  <Typography sx={{ 
-                    color: '#FF6B6B', 
-                    fontSize: isMobile ? '0.55rem' : '0.65rem',
-                    lineHeight: 1.2,
-                  }}>
-                    {injury.injury_type}
-                    {injury.injury_description && `: ${injury.injury_description}`}
-                  </Typography>
-                )}
-              </Box>
+              <Chip
+                size="sm"
+                color="danger"
+                variant="solid"
+                sx={{ 
+                  fontSize: isMobile ? '0.55rem' : '0.65rem', 
+                  height: isMobile ? '14px' : '16px',
+                  fontWeight: 'bold',
+                  alignSelf: 'flex-start'
+                }}
+              >
+                {injury.injury_status}
+              </Chip>
             )}
             {injury && (injury.injury_status === 'Questionable' || injury.injury_status === 'Day-to-Day') && (
               <Chip

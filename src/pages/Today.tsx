@@ -5569,11 +5569,17 @@ function PropPredictionsFullView({
     return uniqueGamesList;
   }, [allProps, allGames, propsGamesMap]);
   
-  // Get unique prop types for filter
+  // Exclude FTM and FTA from prop predictor for now
+  const isFtmOrFtaProp = (prop: any) => {
+    const fmt = formatBetType(prop.bet_type || '');
+    return fmt === 'FTM' || fmt === 'FTA';
+  };
+
+  // Get unique prop types for filter (exclude FTM/FTA)
   const uniquePropTypes = useMemo(() => {
     const types = new Set<string>();
     (allProps || []).forEach((prop: any) => {
-      if (prop.bet_type) {
+      if (prop.bet_type && !isFtmOrFtaProp(prop)) {
         types.add(prop.bet_type);
       }
     });
@@ -5582,7 +5588,7 @@ function PropPredictionsFullView({
   
   // Filter and sort props
   const filteredAndSortedProps = useMemo(() => {
-    let filtered = [...(allProps || [])];
+    let filtered = [...(allProps || [])].filter((prop: any) => !isFtmOrFtaProp(prop));
     
     // Filter by game (using game_id UUID - the foreign key to player_props_games)
     if (gameFilter) {
@@ -6521,27 +6527,60 @@ export function PropPerformanceModule({
 export function PropPredictionsModule({ 
   selectedDate, 
   navigate,
-  onOpen
+  onOpen,
+  nbaScoreboard
 }: { 
   selectedDate: Dayjs; 
   navigate: (path: string) => void;
   onOpen?: (propsData: { pastProps?: any[]; futureProps?: any[]; isLoading: boolean; activeTab: 'hottest' | 'coldest' }) => void;
+  nbaScoreboard?: any;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
   const todayEST = getTodayEST();
   const isPast = selectedDate.isBefore(todayEST, 'day');
   const isToday = selectedDate.isSame(todayEST, 'day');
   
+  const [activeTab, setActiveTab] = useState<'hottest' | 'coldest'>('hottest');
+  
+  // Fetch games from DB
+  const { data: games } = useGamesByDate(dateString);
+  // For today: use scoreboard games when nba_games has none yet (games often sync later)
+  const allGames = useMemo(() => {
+    const fromDb = games || [];
+    if (fromDb.length > 0) return fromDb;
+    if (!isToday || !nbaScoreboard?.games) return fromDb;
+    const selectedDateString = selectedDate.format('YYYY-MM-DD');
+    const filtered = nbaScoreboard.games.filter((game: any) => {
+      const gameDate = game.gameDate || game.game_date;
+      if (!gameDate) return false;
+      try {
+        if (gameDate.includes('T') || gameDate.includes(' ')) {
+          return isDateInEST(gameDate, selectedDateString);
+        }
+        const utcDate = new Date(gameDate + 'T00:00:00Z');
+        const estDateString = utcToESTDate(utcDate);
+        return estDateString === selectedDateString;
+      } catch (e) {
+        return false;
+      }
+    });
+    return filtered.map((game: any) => ({
+      ...game,
+      game_id: game.gameId || game.game_id,
+      game_date: game.gameDate || game.game_date,
+      home_team_tricode: game.home_team_tricode || game.homeTeam?.abbreviation || game.homeTeam?.tricode,
+      away_team_tricode: game.away_team_tricode || game.awayTeam?.abbreviation || game.awayTeam?.tricode,
+      home_team_name: game.home_team_name || game.homeTeam?.name,
+      away_team_name: game.away_team_name || game.awayTeam?.name,
+      home_team_city: game.home_team_city || game.homeTeam?.city,
+      away_team_city: game.away_team_city || game.awayTeam?.city,
+    }));
+  }, [games, isToday, nbaScoreboard, selectedDate]);
+  
   // Only show for present/today dates
   if (isPast || !isToday) {
     return null;
   }
-  
-  const [activeTab, setActiveTab] = useState<'hottest' | 'coldest'>('hottest');
-  
-  // Fetch games
-  const { data: games } = useGamesByDate(dateString);
-  const allGames = games || [];
   
   // Helper function to format bet type for display
   const formatBetType = (betType: string): string => {
@@ -6938,12 +6977,19 @@ export function PropPredictionsModule({
   const isLoading = predictedPropsLoading;
   const predictedProps = predictedPropsData;
   
+  // Exclude FTM and FTA from prop predictor for now
+  const isFtmOrFta = (p: any) => {
+    const fmt = formatBetType(p.bet_type || '');
+    return fmt === 'FTM' || fmt === 'FTA';
+  };
+
   // For present/today dates: show hottest/coldest props based on last 10 games
   // Hottest: Show OVER props sorted by overHitRate (descending) - players consistently going over
   // Coldest: Show UNDER props sorted by underHitRate (descending) - players consistently going under
   const sortedProps = predictedProps 
     ? (activeTab === 'hottest' 
         ? [...predictedProps]
+            .filter((p: any) => !isFtmOrFta(p))
             .filter((p: any) => p.over && p.overHitRate !== null && p.overHitRate !== undefined) // Only show props with over side and valid hit rate
             .map((p: any) => ({ 
               ...p, 
@@ -6955,6 +7001,7 @@ export function PropPredictionsModule({
             .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0)) // Highest hit rate first
             .slice(0, 10)
         : [...predictedProps]
+            .filter((p: any) => !isFtmOrFta(p))
             .filter((p: any) => p.under && p.underHitRate !== null && p.underHitRate !== undefined) // Only show props with under side and valid hit rate
             .map((p: any) => ({ 
               ...p, 
@@ -6989,8 +7036,8 @@ export function PropPredictionsModule({
                 let propsToPass: any[] = [];
                 
                 if (predictedProps) {
-                  // predictedProps are already cleaned
-                  propsToPass = predictedProps;
+                  // predictedProps are already cleaned; exclude FTM/FTA for full view
+                  propsToPass = predictedProps.filter((p: any) => !isFtmOrFta(p));
                 }
                 
                 const propsData = {
@@ -7776,9 +7823,25 @@ export function StandingsModule({
                 <tr 
                   key={team.team_id || index}
                   style={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    if (team.team_id) {
-                      navigate(`/team/${team.team_id}`);
+                  onClick={async () => {
+                    if (!team.team_id) return;
+                    try {
+                      const { data: teamData, error } = await supabase
+                        .from('nba_teams')
+                        .select('id')
+                        .eq('team_id', team.team_id)
+                        .single();
+
+                      if (error) {
+                        console.error('Error handling team click:', error);
+                        return;
+                      }
+
+                      if (teamData?.id) {
+                        navigate(`/team/${teamData.id}`);
+                      }
+                    } catch (error) {
+                      console.error('Error handling team click:', error);
                     }
                   }}
                 >
@@ -8169,7 +8232,9 @@ export function InjuriesModule({
     queryKey: ['injuries', targetDate, isPastDate],
     queryFn: async () => {
       if (isPastDate) {
-        // For past dates, show injuries that were current on that date
+        // For past dates: show the injury report snapshot for that exact day (date_updated = report date)
+        const dayStart = `${targetDate}T00:00:00.000Z`;
+        const dayEnd = `${targetDate}T23:59:59.999Z`;
         const { data, error } = await supabase
           .from('nba_injuries')
           .select(`
@@ -8187,7 +8252,8 @@ export function InjuriesModule({
               position
             )
           `)
-          .lte('date_updated', `${targetDate}T23:59:59Z`)
+          .gte('date_updated', dayStart)
+          .lte('date_updated', dayEnd)
           .in('injury_status', ['Out', 'Questionable', 'Day-to-Day'])
           .order('date_updated', { ascending: false })
           .limit(200);
@@ -8197,7 +8263,7 @@ export function InjuriesModule({
           return [];
         }
         
-        // Get the latest injury per player as of that date
+        // One row per player for this report date (dedupe by player)
         const playerMap = new Map<number, any>();
         if (data) {
           data.forEach((injury: any) => {
@@ -8210,7 +8276,7 @@ export function InjuriesModule({
         
         return Array.from(playerMap.values());
       } else {
-        // For present/future dates, show current injuries
+        // For today/future: show current injury report (latest fetch)
         const { data, error } = await supabase
           .from('nba_injuries')
           .select(`

@@ -34,7 +34,6 @@ import {
   Person,
   AttachMoney,
   DynamicFeed,
-  Article,
   MonetizationOn,
   Analytics,
   PlayArrow,
@@ -140,25 +139,15 @@ export default function TopNavigation() {
       icon: <AttachMoney />,
       path: '/dfs',
     },
-    {
-      id: 'fantasy',
-      label: 'Fantasy',
-      icon: <SportsBasketball />,
-      path: '/fantasy',
-    },
+    // Fantasy tab disabled – branching away from fantasy feature
+    // { id: 'fantasy', label: 'Fantasy', icon: <SportsBasketball />, path: '/fantasy' },
     // Only show admin items on desktop (not mobile)
     ...(isSuperAdmin && !isMobile ? [
       {
         id: 'content',
         label: 'Content',
         icon: <DynamicFeed />,
-        path: '/admin/content',
-      },
-      {
-        id: 'blog',
-        label: 'Blog',
-        icon: <Article />,
-        path: '/admin/blog',
+        path: '/admin/create-post',
       },
       {
         id: 'dfs-admin',
@@ -206,12 +195,11 @@ export default function TopNavigation() {
   }
 
 
-  // Get current active tab index for bottom nav
+  // Get current active tab index for bottom nav (Fantasy tab disabled)
   const getActiveTabIndex = () => {
     if (location.pathname === '/today') return 0
     if (location.pathname === '/feed' || location.pathname === '/feed/') return 1
     if (location.pathname.startsWith('/dfs')) return 2
-    if (location.pathname === '/fantasy' || location.pathname === '/dashboard') return 3
     return 0
   }
 
@@ -226,7 +214,7 @@ export default function TopNavigation() {
     const index = typeof value === 'number' ? value : parseInt(value as string, 10)
     setActiveTabIndex(index)
     
-    const paths = ['/today', '/feed', '/dfs', '/fantasy']
+    const paths = ['/today', '/feed', '/dfs']
     if (paths[index]) {
       navigate(paths[index])
     }
@@ -295,7 +283,7 @@ export default function TopNavigation() {
               </Typography>
             </Box>
 
-            {/* Mobile Navigation Icons - Home, Feed, DFS, Fantasy */}
+            {/* Mobile Navigation Icons - Home, Feed, DFS */}
             <Box 
               sx={{ 
                 display: { xs: 'flex', md: 'none' },
@@ -792,17 +780,6 @@ export default function TopNavigation() {
                   <AttachMoney />
                 </ListItemDecorator>
                 DFS
-              </Tab>
-              <Tab
-                disableIndicator
-                orientation="vertical"
-                {...(activeTabIndex === 3 && { color: 'primary' })}
-                sx={{ flex: 1 }}
-              >
-                <ListItemDecorator>
-                  <SportsBasketball />
-                </ListItemDecorator>
-                Fantasy
               </Tab>
             </TabList>
           </Tabs>

@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
+const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 
 serve(async (req) => {
@@ -19,11 +20,28 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     )
 
-    // Get query parameters
+    // Prefer POST body (supabase.functions.invoke sends JSON body), fallback to query params
     const url = new URL(req.url)
-    const endpoint = url.searchParams.get('endpoint') || 'scoreboard'
-    const gameDate = url.searchParams.get('gameDate')
-    const dayOffset = url.searchParams.get('dayOffset') || '0'
+    let endpoint = url.searchParams.get('endpoint') || 'scoreboard'
+    let gameDate = url.searchParams.get('gameDate')
+    let dayOffset = url.searchParams.get('dayOffset') || '0'
+    let teamId = url.searchParams.get('teamId')
+    let season = url.searchParams.get('season') || new Date().getFullYear().toString()
+    let playerId = url.searchParams.get('playerId')
+
+    if (req.method === 'POST' && req.headers.get('content-type')?.includes('application/json')) {
+      try {
+        const body = (await req.json()) as Record<string, unknown>
+        if (body?.endpoint != null) endpoint = String(body.endpoint)
+        if (body?.gameDate != null) gameDate = String(body.gameDate)
+        if (body?.dayOffset != null) dayOffset = String(body.dayOffset)
+        if (body?.teamId != null) teamId = String(body.teamId)
+        if (body?.season != null) season = String(body.season)
+        if (body?.playerId != null) playerId = String(body.playerId)
+      } catch (_) {
+        // ignore body parse errors, use query params
+      }
+    }
 
     let nbaData
 
@@ -35,9 +53,92 @@ serve(async (req) => {
         nbaData = await fetchStandings()
         break
       case 'player-stats':
-        const playerId = url.searchParams.get('playerId')
         nbaData = await fetchPlayerStats(playerId)
         break
+      case 'team-rebound-dashboard': {
+        if (!teamId) {
+          return new Response(
+            JSON.stringify({ error: 'teamId is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        try {
+          nbaData = await fetchTeamReboundDashboard(parseInt(teamId), season)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to fetch team rebounding data'
+          return new Response(
+            JSON.stringify({ ok: false, error: msg }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        break
+      }
+      case 'team-gamelogs': {
+        if (!teamId) {
+          return new Response(
+            JSON.stringify({ error: 'teamId is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        try {
+          nbaData = await fetchTeamGameLogs(parseInt(teamId), season)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to fetch team game logs'
+          return new Response(
+            JSON.stringify({ ok: false, error: msg }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        break
+      }
+      case 'team-dashptshots': {
+        if (!teamId) {
+          return new Response(
+            JSON.stringify({ error: 'teamId is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        try {
+          nbaData = await fetchTeamDashPtShots(parseInt(teamId), season)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to fetch team shot dashboard'
+          return new Response(
+            JSON.stringify({ ok: false, error: msg }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        break
+      }
+      case 'team-estimated-metrics': {
+        try {
+          nbaData = await fetchTeamEstimatedMetrics(season)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to fetch team estimated metrics'
+          return new Response(
+            JSON.stringify({ ok: false, error: msg }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        break
+      }
+      case 'team-player-dashboard': {
+        if (!teamId) {
+          return new Response(
+            JSON.stringify({ error: 'teamId is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        try {
+          nbaData = await fetchTeamPlayerDashboard(parseInt(teamId), season)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Failed to fetch team player dashboard'
+          return new Response(
+            JSON.stringify({ ok: false, error: msg }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        break
+      }
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid endpoint' }),
@@ -66,9 +167,10 @@ serve(async (req) => {
     )
 
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Internal server error'
     console.error('Error in nba-api-proxy function:', error)
     return new Response(
-      JSON.stringify({ error: 'Internal server error' }),
+      JSON.stringify({ error: message }),
       { 
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -110,6 +212,294 @@ async function fetchScoreboard(gameDate?: string, dayOffset: number = 0) {
     console.error('Error fetching scoreboard:', error)
     // Return mock data as fallback
     return getMockScoreboardData(gameDate)
+  }
+}
+
+const NBA_FETCH_TIMEOUT_MS = 55_000
+
+async function fetchTeamReboundDashboard(teamId: number, season: string) {
+  try {
+    const baseUrl = 'https://stats.nba.com/stats/teamdashptreb'
+    
+    const params = new URLSearchParams({
+      TeamID: teamId.toString(),
+      Season: season,
+      SeasonType: 'Regular Season',
+      PerMode: 'PerGame',
+      LeagueID: '00',
+      Month: '0',
+      OpponentTeamID: '0',
+      Period: '0',
+      LastNGames: '0',
+      DateFrom: '',
+      DateTo: '',
+      GameSegment: '',
+      Location: '',
+      Outcome: '',
+      SeasonSegment: '',
+      VsConference: '',
+      VsDivision: '',
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), NBA_FETCH_TIMEOUT_MS)
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://stats.nba.com/',
+        'Origin': 'https://stats.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+      }
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`NBA API responded with status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return {
+      teamId,
+      season,
+      raw: data,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = message.includes('abort') || message.includes('timeout')
+    console.error('Error fetching team rebound dashboard:', error)
+    throw new Error(isTimeout ? 'NBA API request timed out' : message)
+  }
+}
+
+async function fetchTeamGameLogs(teamId: number, season: string) {
+  try {
+    const baseUrl = 'https://stats.nba.com/stats/teamgamelogs'
+    const params = new URLSearchParams({
+      TeamID: teamId.toString(),
+      Season: season,
+      SeasonType: 'Regular Season',
+      PerMode: 'Totals',
+      LeagueID: '00',
+      DateFrom: '',
+      DateTo: '',
+      GameSegment: '',
+      LastNGames: '0',
+      Location: '',
+      Month: '0',
+      Outcome: '',
+      Period: '0',
+      SeasonSegment: '',
+      VsConference: '',
+      VsDivision: '',
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), NBA_FETCH_TIMEOUT_MS)
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://stats.nba.com/',
+        'Origin': 'https://stats.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+      }
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`NBA API responded with status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return {
+      teamId,
+      season,
+      raw: data,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = message.includes('abort') || message.includes('timeout')
+    console.error('Error fetching team game logs:', error)
+    throw new Error(isTimeout ? 'NBA API request timed out' : message)
+  }
+}
+
+async function fetchTeamDashPtShots(teamId: number, season: string) {
+  try {
+    const baseUrl = 'https://stats.nba.com/stats/teamdashptshots'
+    const params = new URLSearchParams({
+      TeamID: teamId.toString(),
+      Season: season,
+      SeasonType: 'Regular Season',
+      PerMode: 'PerGame',
+      LeagueID: '00',
+      Month: '0',
+      OpponentTeamID: '0',
+      Period: '0',
+      LastNGames: '0',
+      DateFrom: '',
+      DateTo: '',
+      GameSegment: '',
+      Location: '',
+      Outcome: '',
+      SeasonSegment: '',
+      VsConference: '',
+      VsDivision: '',
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), NBA_FETCH_TIMEOUT_MS)
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://stats.nba.com/',
+        'Origin': 'https://stats.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+      }
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`NBA API responded with status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return {
+      teamId,
+      season,
+      raw: data,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = message.includes('abort') || message.includes('timeout')
+    console.error('Error fetching team dash pt shots:', error)
+    throw new Error(isTimeout ? 'NBA API request timed out' : message)
+  }
+}
+
+async function fetchTeamEstimatedMetrics(season: string) {
+  try {
+    const baseUrl = 'https://stats.nba.com/stats/teamestimatedmetrics'
+    const params = new URLSearchParams({
+      LeagueID: '00',
+      Season: season,
+      SeasonType: 'Regular Season',
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), NBA_FETCH_TIMEOUT_MS)
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://stats.nba.com/',
+        'Origin': 'https://stats.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+      }
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`NBA API responded with status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return {
+      season,
+      raw: data,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = message.includes('abort') || message.includes('timeout')
+    console.error('Error fetching team estimated metrics:', error)
+    throw new Error(isTimeout ? 'NBA API request timed out' : message)
+  }
+}
+
+async function fetchTeamPlayerDashboard(teamId: number, season: string) {
+  try {
+    const baseUrl = 'https://stats.nba.com/stats/teamplayerdashboard'
+    const params = new URLSearchParams({
+      TeamID: teamId.toString(),
+      Season: season,
+      SeasonType: 'Regular Season',
+      LeagueID: '00',
+      LastNGames: '0',
+      MeasureType: 'Base',
+      Month: '0',
+      OpponentTeamID: '0',
+      PaceAdjust: 'N',
+      PerMode: 'Totals',
+      Period: '0',
+      PlusMinus: 'N',
+      Rank: 'N',
+      DateFrom: '',
+      DateTo: '',
+      GameSegment: '',
+      Location: '',
+      Outcome: '',
+      PORound: '0',
+      SeasonSegment: '',
+      ShotClockRange: '',
+      VsConference: '',
+      VsDivision: '',
+    })
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), NBA_FETCH_TIMEOUT_MS)
+
+    const response = await fetch(`${baseUrl}?${params.toString()}`, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Referer': 'https://stats.nba.com/',
+        'Origin': 'https://stats.nba.com',
+        'x-nba-stats-origin': 'stats',
+        'x-nba-stats-token': 'true',
+      }
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`NBA API responded with status: ${response.status}`)
+    }
+
+    const data = await response.json()
+    return {
+      teamId,
+      season,
+      raw: data,
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    const isTimeout = message.includes('abort') || message.includes('timeout')
+    console.error('Error fetching team player dashboard:', error)
+    throw new Error(isTimeout ? 'NBA API request timed out' : message)
   }
 }
 

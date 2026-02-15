@@ -88,7 +88,7 @@ export function getPostWeightBreakdown(
   }
   
   // Quality scores
-  if (post.post_type === 'fun_score') {
+  if (post.post_type === 'game_recap') {
     const funScore = metadata?.fun_score || 0
     let qualityBonus = 0
     if (funScore >= 9) {
@@ -263,8 +263,8 @@ export function getPostWeightBreakdown(
   }
   
   // User behavior
-  if (options.userBehavior?.preferredPostType) {
-    const preferredType = post.post_type === options.userBehavior.preferredPostType
+  if (options.userBehavior?.preferredPostTypes) {
+    const preferredType = options.userBehavior.preferredPostTypes.includes(post.post_type as any)
     if (preferredType) {
       factors.userBehavior = { preferredType: true, multiplier: 1.2 }
     }

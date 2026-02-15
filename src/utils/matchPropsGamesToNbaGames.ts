@@ -137,8 +137,21 @@ function normalizeToESTDate(dateStr: string): string {
   }
 }
 
+/** Return date string YYYY-MM-DD as sortable; 0 = exact, 1 = off by 1 day, 2 = off by 2 days */
+function dateDistance(dateA: string, dateB: string): number {
+  if (!dateA || !dateB) return 999;
+  const a = dateA.slice(0, 10);
+  const b = dateB.slice(0, 10);
+  if (a === b) return 0;
+  const d1 = new Date(a).getTime();
+  const d2 = new Date(b).getTime();
+  const diffDays = Math.abs(Math.round((d2 - d1) / 86400000));
+  return Math.min(diffDays, 2);
+}
+
 /**
- * Match a single player_props_game to an nba_game
+ * Match a single player_props_game to an nba_game.
+ * Allows ±1 day on date so props feed offset doesn't drop games.
  */
 export function matchPropsGameToNbaGame(
   propsGame: PropsGame,
@@ -149,69 +162,54 @@ export function matchPropsGameToNbaGame(
     const matched = nbaGames.find(g => g.game_id === propsGame.nba_game_id);
     if (matched) return matched;
   }
-  
-  // Normalize dates to EST for comparison
+
   const propsGameDateEST = normalizeToESTDate(propsGame.game_date);
-  
-  // Filter nba games by date first
-  const gamesOnSameDate = nbaGames.filter(nbaGame => {
-    const nbaGameDateEST = normalizeToESTDate(nbaGame.game_date);
-    return nbaGameDateEST === propsGameDateEST;
-  });
-  
-  if (gamesOnSameDate.length === 0) {
+  if (!propsGameDateEST) return null;
+
+  // Include nba games within ±1 day (props feed often off by one calendar day)
+  const candidates = nbaGames
+    .map(nbaGame => ({
+      game: nbaGame,
+      nbaDateEST: normalizeToESTDate(nbaGame.game_date),
+    }))
+    .filter(
+      ({ nbaDateEST }) =>
+        nbaDateEST &&
+        dateDistance(propsGameDateEST, nbaDateEST) <= 1
+    )
+    .sort((a, b) => dateDistance(propsGameDateEST, a.nbaDateEST) - dateDistance(propsGameDateEST, b.nbaDateEST))
+    .map(({ game }) => game);
+
+  if (candidates.length === 0) return null;
+
+  const tryMatch = (list: NbaGame[]): NbaGame | null => {
+    if (propsGame.home_team_tricode && propsGame.away_team_tricode) {
+      const byTricode = list.find(nbaGame => {
+        if (!nbaGame.home_team_tricode || !nbaGame.away_team_tricode) return false;
+        const m1 =
+          nbaGame.home_team_tricode === propsGame.home_team_tricode &&
+          nbaGame.away_team_tricode === propsGame.away_team_tricode;
+        const m2 =
+          nbaGame.home_team_tricode === propsGame.away_team_tricode &&
+          nbaGame.away_team_tricode === propsGame.home_team_tricode;
+        return m1 || m2;
+      });
+      if (byTricode) return byTricode;
+    }
+    if (propsGame.home_team && propsGame.away_team) {
+      const byName = list.find(nbaGame => {
+        const homeLabel = nbaGame.home_team_name || (nbaGame.home_team_city ?? '') + ' ' + (nbaGame.home_team_name || '');
+        const awayLabel = nbaGame.away_team_name || (nbaGame.away_team_city ?? '') + ' ' + (nbaGame.away_team_name || '');
+        const m1 = teamsMatch(propsGame.home_team, homeLabel) && teamsMatch(propsGame.away_team, awayLabel);
+        const m2 = teamsMatch(propsGame.home_team, nbaGame.away_team_name || '') && teamsMatch(propsGame.away_team, nbaGame.home_team_name || '');
+        return m1 || m2;
+      });
+      if (byName) return byName;
+    }
     return null;
-  }
-  
-  // If only one game on that date, return it (common case)
-  if (gamesOnSameDate.length === 1) {
-    return gamesOnSameDate[0];
-  }
-  
-  // Multiple games on same date - match by teams
-  // Try matching by tricodes first (most reliable)
-  if (propsGame.home_team_tricode && propsGame.away_team_tricode) {
-    const matchedByTricode = gamesOnSameDate.find(nbaGame => {
-      if (!nbaGame.home_team_tricode || !nbaGame.away_team_tricode) return false;
-      
-      // Check both orders (home/away might be swapped)
-      const match1 = nbaGame.home_team_tricode === propsGame.home_team_tricode &&
-                     nbaGame.away_team_tricode === propsGame.away_team_tricode;
-      const match2 = nbaGame.home_team_tricode === propsGame.away_team_tricode &&
-                     nbaGame.away_team_tricode === propsGame.home_team_tricode;
-      
-      return match1 || match2;
-    });
-    
-    if (matchedByTricode) return matchedByTricode;
-  }
-  
-  // Fall back to matching by team names
-  if (propsGame.home_team && propsGame.away_team) {
-    const matchedByName = gamesOnSameDate.find(nbaGame => {
-      const homeMatch = teamsMatch(
-        propsGame.home_team,
-        nbaGame.home_team_name || nbaGame.home_team_city + ' ' + (nbaGame.home_team_name || '')
-      );
-      const awayMatch = teamsMatch(
-        propsGame.away_team,
-        nbaGame.away_team_name || nbaGame.away_team_city + ' ' + (nbaGame.away_team_name || '')
-      );
-      
-      // Check both orders
-      const match1 = homeMatch && awayMatch;
-      const swappedHomeMatch = teamsMatch(propsGame.home_team, nbaGame.away_team_name || '');
-      const swappedAwayMatch = teamsMatch(propsGame.away_team, nbaGame.home_team_name || '');
-      const match2 = swappedHomeMatch && swappedAwayMatch;
-      
-      return match1 || match2;
-    });
-    
-    if (matchedByName) return matchedByName;
-  }
-  
-  // If we still can't match, return null
-  return null;
+  };
+
+  return tryMatch(candidates) ?? null;
 }
 
 /**

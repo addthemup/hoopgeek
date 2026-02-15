@@ -19,6 +19,8 @@ interface PlayerStats {
   player_id?: string;
   player_name: string;
   team_tricode: string;
+  /** Current team (nba_players); used to exclude traded players from the wrong roster */
+  current_team_tricode?: string;
   stats: {
     pts?: number;
     reb?: number;
@@ -84,15 +86,16 @@ export default function BoxScore({
   const homeColors = getTeamColors(homeTeamTricode);
   const awayColors = getTeamColors(awayTeamTricode);
 
-  // Separate players by team
-  // If team_tricode is null, we'll show all players split between teams (fallback)
+  // Separate players by team (use current_team_tricode when present so traded players don't show under old team)
+  const normalizeTricode = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+  const effectiveTeam = (p: PlayerStats) => p.current_team_tricode ?? p.team_tricode;
   const homePlayers = useMemo(() => {
-    const filtered = players.filter(p => p.team_tricode === homeTeamTricode);
+    const filtered = players.filter(p => normalizeTricode(effectiveTeam(p)) === normalizeTricode(homeTeamTricode));
     
     // If no players found, check if all players have null team_tricode
     // In that case, split players between teams as fallback
     if (filtered.length === 0 && players.length > 0) {
-      const playersWithTeams = players.filter(p => p.team_tricode);
+      const playersWithTeams = players.filter(p => effectiveTeam(p));
       if (playersWithTeams.length === 0) {
         // All players have null team_tricode - split them
         const sorted = [...players].sort((a, b) => (b.stats?.min || 0) - (a.stats?.min || 0));
@@ -106,12 +109,12 @@ export default function BoxScore({
   }, [players, homeTeamTricode]);
 
   const awayPlayers = useMemo(() => {
-    const filtered = players.filter(p => p.team_tricode === awayTeamTricode);
+    const filtered = players.filter(p => normalizeTricode(effectiveTeam(p)) === normalizeTricode(awayTeamTricode));
     
     // If no players found, check if all players have null team_tricode
     // In that case, split players between teams as fallback
     if (filtered.length === 0 && players.length > 0) {
-      const playersWithTeams = players.filter(p => p.team_tricode);
+      const playersWithTeams = players.filter(p => effectiveTeam(p));
       if (playersWithTeams.length === 0) {
         // All players have null team_tricode - split them
         const sorted = [...players].sort((a, b) => (b.stats?.min || 0) - (a.stats?.min || 0));

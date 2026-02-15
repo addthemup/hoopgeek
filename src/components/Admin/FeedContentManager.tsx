@@ -5902,7 +5902,7 @@ export default function FeedContentManager({ initialView = 'table', onClose }: F
       })
       loadPosts()
       
-      // If creating a new post (not editing), go back to admin/content page
+      // If creating a new post (not editing), go back to admin/create-post page
       if (!editingPost && onClose) {
         onClose()
         return

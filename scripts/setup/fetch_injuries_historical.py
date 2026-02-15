@@ -5,18 +5,25 @@ NBA Injury Report Historical Data Fetcher
 Fetches and stores historical injury report data by going backwards from today.
 This is a one-time script to build up injury history in the database.
 
+Two modes:
+  - Local PDF (default): fetches PDFs with requests + PyPDF2, parses with built-in parser.
+  - Edge Function (--use-edge-function): calls the deployed fetch-injuries Supabase function
+    with ?date=YYYY-MM-DD&historical=true for each date. Uses the same parser as production
+    and avoids PDF format/parsing issues.
+
 Usage:
     python3 scripts/setup/fetch_injuries_historical.py [--days 7] [--start-date YYYY-MM-DD] [--end-date YYYY-MM-DD]
-    
+    python3 scripts/setup/fetch_injuries_historical.py --start-date 2026-01-20 --end-date 2026-02-09 --use-edge-function
+
 Examples:
-    # Fetch last 7 days
+    # Fetch last 7 days (local PDF)
     python3 scripts/setup/fetch_injuries_historical.py --days 7
-    
-    # Fetch specific date range
+
+    # Build season history using the fixed Edge Function parser (recommended after PDF format issues)
+    python3 scripts/setup/fetch_injuries_historical.py --start-date 2026-01-20 --end-date 2026-02-09 --use-edge-function --delay 1.0
+
+    # Fetch specific date range (local PDF)
     python3 scripts/setup/fetch_injuries_historical.py --start-date 2025-01-01 --end-date 2025-01-07
-    
-    # Fetch from a specific date backwards
-    python3 scripts/setup/fetch_injuries_historical.py --start-date 2025-01-07 --days 7
 """
 
 import os
@@ -538,13 +545,61 @@ def store_injuries_for_date(supabase: Client, injuries: List[Dict], report_date:
     }
 
 
+def fetch_injuries_via_edge_function(target_date: date, func_url: str, auth_key: str) -> Dict:
+    """Call the deployed fetch-injuries Edge Function for one date (historical mode)."""
+    import urllib.request
+    url = f"{func_url}?date={target_date.isoformat()}&historical=true"
+    req = urllib.request.Request(url, method='POST', headers={
+        'Authorization': f'Bearer {auth_key}',
+        'Content-Type': 'application/json',
+    }, data=b'{}')
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            import json
+            body = json.loads(resp.read().decode())
+            return {
+                'date': target_date.isoformat(),
+                'success': body.get('success', False),
+                'reason': body.get('error') if not body.get('success') else None,
+                'injuries_found': body.get('injuries_found', 0),
+                'stored': body.get('stored', 0),
+                'updated': body.get('updated', 0),
+                'skipped': body.get('skipped', 0),
+                'errors': body.get('errors', 0),
+            }
+    except urllib.error.HTTPError as e:
+        try:
+            err_body = e.read().decode()
+            import json
+            data = json.loads(err_body)
+            return {
+                'date': target_date.isoformat(),
+                'success': False,
+                'reason': data.get('error', err_body[:200]),
+                'stored': 0, 'skipped': 0, 'errors': 0,
+            }
+        except Exception:
+            return {
+                'date': target_date.isoformat(),
+                'success': False,
+                'reason': str(e),
+                'stored': 0, 'skipped': 0, 'errors': 0,
+            }
+    except Exception as e:
+        return {
+            'date': target_date.isoformat(),
+            'success': False,
+            'reason': str(e),
+            'stored': 0, 'skipped': 0, 'errors': 0,
+        }
+
+
 def fetch_injuries_for_date(supabase: Client, target_date: date, overwrite: bool = True) -> Dict:
-    """Fetch and store injuries for a single date"""
+    """Fetch and store injuries for a single date (local PDF + parse)."""
     print(f"\n{'='*80}")
     print(f"📅 Processing date: {target_date}")
     print(f"{'='*80}")
     
-    # Fetch PDF
     pdf_bytes = fetch_injury_pdf(target_date)
     
     if not pdf_bytes:
@@ -616,13 +671,13 @@ def main():
     parser.add_argument('--start-date', type=str, help='Start date in YYYY-MM-DD format')
     parser.add_argument('--end-date', type=str, help='End date in YYYY-MM-DD format')
     parser.add_argument('--delay', type=float, default=1.0, help='Delay between requests in seconds (default: 1.0)')
+    parser.add_argument('--use-edge-function', action='store_true', help='Call fetch-injuries Supabase function per date (historical=true). Uses fixed parser; no local PDF parse.')
     args = parser.parse_args()
     
     # Determine date range
     dates_to_process = []
     
     if args.start_date and args.end_date:
-        # Date range mode
         start = datetime.strptime(args.start_date, '%Y-%m-%d').date()
         end = datetime.strptime(args.end_date, '%Y-%m-%d').date()
         current = start
@@ -630,44 +685,42 @@ def main():
             dates_to_process.append(current)
             current += timedelta(days=1)
     elif args.start_date and args.days:
-        # Start date + days backwards
         start = datetime.strptime(args.start_date, '%Y-%m-%d').date()
         for i in range(args.days):
             dates_to_process.append(start - timedelta(days=i))
     elif args.days:
-        # Days back from today
         today = date.today()
         for i in range(args.days):
             dates_to_process.append(today - timedelta(days=i))
     else:
-        # Default: 7 days back from today
         today = date.today()
         for i in range(7):
             dates_to_process.append(today - timedelta(days=i))
     
-    # Sort dates (oldest first)
     dates_to_process.sort()
     
+    use_edge = getattr(args, 'use_edge_function', False)
     print("🏀 NBA Injury Report Historical Data Fetcher\n")
     print("=" * 80)
     print(f"📅 Processing {len(dates_to_process)} dates")
     print(f"   From: {dates_to_process[0]}")
     print(f"   To: {dates_to_process[-1]}")
-    print(f"   Delay between requests: {args.delay}s")
+    print(f"   Mode: {'Edge Function (historical=true)' if use_edge else 'Local PDF + parse'}")
+    print(f"   Delay: {args.delay}s")
     print("=" * 80)
     
-    # Setup
-    supabase = setup_supabase()
+    if use_edge:
+        supabase_url = os.getenv('VITE_SUPABASE_URL') or os.getenv('SUPABASE_URL')
+        auth_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+        if not supabase_url or not auth_key:
+            print("❌ For --use-edge-function set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
+            sys.exit(1)
+        func_url = f"{supabase_url.rstrip('/')}/functions/v1/fetch-injuries"
+    else:
+        supabase = setup_supabase()
+        if dates_to_process:
+            delete_existing_injuries_for_date_range(supabase, dates_to_process[0], dates_to_process[-1])
     
-    # Delete existing injuries for the date range (overwrite mode)
-    if dates_to_process:
-        delete_existing_injuries_for_date_range(
-            supabase, 
-            dates_to_process[0], 
-            dates_to_process[-1]
-        )
-    
-    # Process each date
     results = []
     successful = 0
     failed = 0
@@ -675,15 +728,20 @@ def main():
     for i, target_date in enumerate(dates_to_process, 1):
         print(f"\n[{i}/{len(dates_to_process)}] Processing {target_date}...")
         
-        result = fetch_injuries_for_date(supabase, target_date, overwrite=True)
-        results.append(result)
+        if use_edge:
+            result = fetch_injuries_via_edge_function(target_date, func_url, auth_key)
+            if result.get('injuries_found') is not None:
+                print(f"   Injuries: {result.get('injuries_found')} found, {result.get('stored', 0)} stored, {result.get('skipped', 0)} skipped")
+        else:
+            result = fetch_injuries_for_date(supabase, target_date, overwrite=True)
         
+        results.append(result)
         if result['success']:
             successful += 1
         else:
             failed += 1
+            print(f"   ❌ {result.get('reason', 'Unknown')}")
         
-        # Delay between requests to be respectful
         if i < len(dates_to_process):
             time.sleep(args.delay)
     

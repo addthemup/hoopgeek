@@ -29,6 +29,7 @@ import {
   Edit,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { supabase } from '../utils/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { useUserProfile } from '../hooks/useUserSettings';
 import { usePlayerFavorites } from '../hooks/usePlayerFavorites';
@@ -281,9 +282,26 @@ export default function UserDashboard() {
                         <Button
                           key={team.id}
                           variant="outlined"
-                          onClick={() => {
-                            // Navigate to team page
-                            navigate(`/team/${team.team_id}`);
+                          onClick={async () => {
+                            // Navigate to team page using nba_teams UUID id
+                            try {
+                              const { data: teamData, error } = await supabase
+                                .from('nba_teams')
+                                .select('id')
+                                .eq('team_id', team.team_id)
+                                .single();
+
+                              if (error) {
+                                console.error('Error fetching team for navigation:', error);
+                                return;
+                              }
+
+                              if (teamData?.id) {
+                                navigate(`/team/${teamData.id}`);
+                              }
+                            } catch (error) {
+                              console.error('Error navigating to team:', error);
+                            }
                           }}
                           sx={{
                             justifyContent: 'flex-start',

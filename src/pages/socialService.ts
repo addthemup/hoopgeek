@@ -1,244 +1,272 @@
 /**
- * Social Features Service
- * 
- * Handles likes, comments, and shares for the NBA highlights feed
+ * Social Features Service — Feed V2
+ *
+ * Uses the new feed_post_likes / feed_post_comments / feed_post_shares
+ * tables. Engagement counters on feed_posts are kept in sync automatically
+ * by database triggers — no manual incrementing needed.
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '../utils/supabase'
+import type { FeedPostComment, SharePlatform } from '../types/feed'
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://qbznyaimnrpibmahisue.supabase.co'
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiem55YWltbnJwaWJtYWhpc3VlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTU0MjgsImV4cCI6MjA3NDk5MTQyOH0.bV4FULUCT0tJg6Scu2-B86Pui8nIeMsxDb-x5iVEHuU'
+// ─── Likes ──────────────────────────────────────────────────
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+export async function toggleLike(
+  postId: string,
+  userId: string
+): Promise<{ liked: boolean; likesCount: number }> {
+  // Check if user has already liked this post
+  const { data: existing, error: checkError } = await supabase
+    .from('feed_post_likes')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .maybeSingle()
 
-export interface Like {
-  id: string
-  content_id: string
-  user_id: string
-  created_at: string
+  if (checkError) throw checkError
+
+  if (existing) {
+    // Unlike
+    const { error } = await supabase
+      .from('feed_post_likes')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+    if (error) throw error
+  } else {
+    // Like
+    const { error } = await supabase
+      .from('feed_post_likes')
+      .insert({ post_id: postId, user_id: userId })
+    if (error) throw error
+  }
+
+  // Read the denormalized counter (updated by trigger)
+  const { data: post } = await supabase
+    .from('feed_posts')
+    .select('likes_count')
+    .eq('id', postId)
+    .single()
+
+  return { liked: !existing, likesCount: post?.likes_count ?? 0 }
 }
 
-export interface Comment {
-  id: string
-  content_id: string
-  user_id: string
-  username: string
-  comment_text: string
-  created_at: string
+export async function hasUserLiked(postId: string, userId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('feed_post_likes')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  return !!data
 }
 
-export interface Share {
-  id: string
-  content_id: string
-  user_id: string
-  platform: string
-  created_at: string
+// ─── Comments ───────────────────────────────────────────────
+
+export async function addComment(
+  postId: string,
+  userId: string,
+  content: string,
+  parentCommentId?: string
+): Promise<FeedPostComment> {
+  const { data, error } = await supabase
+    .from('feed_post_comments')
+    .insert({
+      post_id: postId,
+      user_id: userId,
+      content,
+      parent_comment_id: parentCommentId ?? null,
+    })
+    .select('*')
+    .single()
+
+  if (error) throw error
+  return data as FeedPostComment
 }
 
-export class SocialService {
-  /**
-   * Like or unlike a piece of content
-   */
-  static async toggleLike(contentId: string, userId: string): Promise<{ liked: boolean; likesCount: number }> {
-    try {
-      // Check if user has already liked this content
-      const { data: existingLike, error: checkError } = await supabase
-        .from('feed_likes')
-        .select('id')
-        .eq('content_id', contentId)
-        .eq('user_id', userId)
-        .single()
+export async function getComments(
+  postId: string,
+  limit = 50
+): Promise<FeedPostComment[]> {
+  // Fetch top-level comments, then nest replies client-side
+  const { data, error } = await supabase
+    .from('feed_post_comments')
+    .select('*')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true })
+    .limit(limit)
 
-      if (checkError && checkError.code !== 'PGRST116') {
-        throw checkError
-      }
+  if (error) throw error
 
-      if (existingLike) {
-        // Unlike: Remove the like
-        const { error: deleteError } = await supabase
-          .from('feed_likes')
-          .delete()
-          .eq('content_id', contentId)
-          .eq('user_id', userId)
+  const comments = (data ?? []) as FeedPostComment[]
 
-        if (deleteError) throw deleteError
-
-        // Get updated likes count
-        const { count } = await supabase
-          .from('feed_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('content_id', contentId)
-
-        return { liked: false, likesCount: count || 0 }
-      } else {
-        // Like: Add the like
-        const { error: insertError } = await supabase
-          .from('feed_likes')
-          .insert({
-            content_id: contentId,
-            user_id: userId
-          })
-
-        if (insertError) throw insertError
-
-        // Get updated likes count
-        const { count } = await supabase
-          .from('feed_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('content_id', contentId)
-
-        return { liked: true, likesCount: count || 0 }
-      }
-    } catch (error) {
-      console.error('Error toggling like:', error)
-      throw error
+  // Build threaded tree
+  const topLevel: FeedPostComment[] = []
+  const byId = new Map<string, FeedPostComment>()
+  for (const c of comments) {
+    c.replies = []
+    byId.set(c.id, c)
+  }
+  for (const c of comments) {
+    if (c.parent_comment_id && byId.has(c.parent_comment_id)) {
+      byId.get(c.parent_comment_id)!.replies!.push(c)
+    } else {
+      topLevel.push(c)
     }
   }
 
-  /**
-   * Add a comment to content
-   */
-  static async addComment(contentId: string, userId: string, username: string, commentText: string): Promise<Comment> {
-    try {
-      const { data, error } = await supabase
-        .from('feed_comments')
-        .insert({
-          content_id: contentId,
-          user_id: userId,
-          username: username,
-          comment_text: commentText
-        })
-        .select()
-        .single()
+  return topLevel
+}
 
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Error adding comment:', error)
-      throw error
-    }
+export async function deleteComment(commentId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('feed_post_comments')
+    .delete()
+    .eq('id', commentId)
+    .eq('user_id', userId)
+  if (error) throw error
+}
+
+// ─── Shares ─────────────────────────────────────────────────
+
+export async function recordShare(
+  postId: string,
+  userId: string | null,
+  platform: SharePlatform
+): Promise<void> {
+  const { error } = await supabase
+    .from('feed_post_shares')
+    .insert({ post_id: postId, user_id: userId, platform })
+  if (error) throw error
+}
+
+export async function shareToExternal(
+  slug: string,
+  platform: 'twitter' | 'facebook' | 'copy'
+): Promise<void> {
+  const shareUrl = `${window.location.origin}/feed/${slug}`
+
+  switch (platform) {
+    case 'twitter':
+      window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}`, '_blank')
+      break
+    case 'facebook':
+      window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank')
+      break
+    case 'copy':
+      await navigator.clipboard.writeText(shareUrl)
+      break
+  }
+}
+
+// ─── Bookmarks ──────────────────────────────────────────────
+
+export async function toggleBookmark(
+  postId: string,
+  userId: string
+): Promise<{ bookmarked: boolean; bookmarksCount: number }> {
+  const { data: existing } = await supabase
+    .from('feed_post_bookmarks')
+    .select('id')
+    .eq('post_id', postId)
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing) {
+    const { error } = await supabase
+      .from('feed_post_bookmarks')
+      .delete()
+      .eq('post_id', postId)
+      .eq('user_id', userId)
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('feed_post_bookmarks')
+      .insert({ post_id: postId, user_id: userId })
+    if (error) throw error
   }
 
-  /**
-   * Get comments for content
-   */
-  static async getComments(contentId: string, limit: number = 10): Promise<Comment[]> {
-    try {
-      const { data, error } = await supabase
-        .from('feed_comments')
-        .select('*')
-        .eq('content_id', contentId)
-        .order('created_at', { ascending: false })
-        .limit(limit)
+  const { data: post } = await supabase
+    .from('feed_posts')
+    .select('bookmarks_count')
+    .eq('id', postId)
+    .single()
 
-      if (error) throw error
-      return data || []
-    } catch (error) {
-      console.error('Error fetching comments:', error)
-      return []
-    }
+  return { bookmarked: !existing, bookmarksCount: post?.bookmarks_count ?? 0 }
+}
+
+// ─── Views ──────────────────────────────────────────────────
+
+export async function recordView(
+  postId: string,
+  userId: string | null,
+  source: string = 'feed'
+): Promise<void> {
+  const { error } = await supabase
+    .from('feed_post_views')
+    .insert({
+      post_id: postId,
+      user_id: userId,
+      source,
+    })
+  if (error) console.error('Error recording view:', error)
+}
+
+export async function updateViewDuration(
+  viewId: string,
+  durationSeconds: number,
+  sectionsViewed: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('feed_post_views')
+    .update({
+      view_duration_seconds: durationSeconds,
+      sections_viewed: sectionsViewed,
+    })
+    .eq('id', viewId)
+  if (error) console.error('Error updating view duration:', error)
+}
+
+// ─── Engagement Stats (denormalized — single read) ──────────
+
+export async function getEngagementStats(
+  postId: string,
+  userId?: string
+): Promise<{
+  likesCount: number
+  commentsCount: number
+  sharesCount: number
+  viewsCount: number
+  bookmarksCount: number
+  userLiked: boolean
+  userBookmarked: boolean
+}> {
+  // Read counters from the post itself (all maintained by triggers)
+  const { data: post } = await supabase
+    .from('feed_posts')
+    .select('likes_count, comments_count, shares_count, views_count, bookmarks_count')
+    .eq('id', postId)
+    .single()
+
+  let userLiked = false
+  let userBookmarked = false
+
+  if (userId) {
+    const [likeCheck, bookmarkCheck] = await Promise.all([
+      supabase.from('feed_post_likes').select('id').eq('post_id', postId).eq('user_id', userId).maybeSingle(),
+      supabase.from('feed_post_bookmarks').select('id').eq('post_id', postId).eq('user_id', userId).maybeSingle(),
+    ])
+    userLiked = !!likeCheck.data
+    userBookmarked = !!bookmarkCheck.data
   }
 
-  /**
-   * Share content to a platform
-   */
-  static async shareContent(contentId: string, userId: string, platform: string): Promise<Share> {
-    try {
-      const { data, error } = await supabase
-        .from('feed_shares')
-        .insert({
-          content_id: contentId,
-          user_id: userId,
-          platform: platform
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Error sharing content:', error)
-      throw error
-    }
-  }
-
-  /**
-   * Get engagement stats for content
-   */
-  static async getEngagementStats(contentId: string): Promise<{
-    likesCount: number
-    commentsCount: number
-    sharesCount: number
-    viewsCount: number
-    userLiked: boolean
-  }> {
-    try {
-      // Get likes count
-      const { count: likesCount } = await supabase
-        .from('feed_likes')
-        .select('*', { count: 'exact', head: true })
-        .eq('content_id', contentId)
-
-      // Get comments count
-      const { count: commentsCount } = await supabase
-        .from('feed_comments')
-        .select('*', { count: 'exact', head: true })
-        .eq('content_id', contentId)
-
-      // Get shares count
-      const { count: sharesCount } = await supabase
-        .from('feed_shares')
-        .select('*', { count: 'exact', head: true })
-        .eq('content_id', contentId)
-
-      // Get views count from feed_posts
-      const { data: postData } = await supabase
-        .from('feed_posts')
-        .select('views_count')
-        .eq('id', contentId)
-        .single()
-
-      // Check if current user has liked (you'll need to pass userId)
-      const userLiked = false // This would need to be implemented with actual user auth
-
-      return {
-        likesCount: likesCount || 0,
-        commentsCount: commentsCount || 0,
-        sharesCount: sharesCount || 0,
-        viewsCount: postData?.views_count || 0,
-        userLiked
-      }
-    } catch (error) {
-      console.error('Error fetching engagement stats:', error)
-      return {
-        likesCount: 0,
-        commentsCount: 0,
-        sharesCount: 0,
-        viewsCount: 0,
-        userLiked: false
-      }
-    }
-  }
-
-  /**
-   * Share to external platforms (Twitter, Facebook, etc.)
-   */
-  static async shareToExternal(contentId: string, platform: 'twitter' | 'facebook' | 'copy'): Promise<void> {
-    const baseUrl = window.location.origin
-    // Share the post URL - the og:image meta tag will point to the og-image URL
-    // This way iMessage shows the post as a link preview, not an image attachment
-    const shareUrl = `${baseUrl}/${contentId}`
-
-    switch (platform) {
-      case 'twitter':
-        window.open(`https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}`, '_blank')
-        break
-      case 'facebook':
-        window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`, '_blank')
-        break
-      case 'copy':
-        await navigator.clipboard.writeText(shareUrl)
-        break
-    }
+  return {
+    likesCount: post?.likes_count ?? 0,
+    commentsCount: post?.comments_count ?? 0,
+    sharesCount: post?.shares_count ?? 0,
+    viewsCount: post?.views_count ?? 0,
+    bookmarksCount: post?.bookmarks_count ?? 0,
+    userLiked,
+    userBookmarked,
   }
 }

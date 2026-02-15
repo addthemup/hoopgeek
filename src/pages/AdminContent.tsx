@@ -48,7 +48,7 @@ export default function AdminContent() {
       bgcolor: '#ffffff',
       minHeight: '100vh',
     }}>
-      {/* Header with Title and Create Button */}
+      {/* Header with Title and Create Buttons */}
       <Stack 
         direction="row" 
         justifyContent="space-between" 
@@ -58,21 +58,34 @@ export default function AdminContent() {
         <Typography level="h3" sx={{ fontWeight: 700, color: '#000', fontFamily: 'serif' }}>
           Feed Content
         </Typography>
-        <Button
-          size="md"
-          variant="solid"
-          startDecorator={<Add />}
-          onClick={handleCreateClick}
-          sx={{
-            bgcolor: '#6a59ff',
-            color: '#000',
-            fontWeight: 600,
-            fontFamily: 'serif',
-            '&:hover': { bgcolor: '#5a49ef' }
-          }}
-        >
-          Create Post
-        </Button>
+        <Stack direction="row" gap={1}>
+          <Button
+            size="md"
+            variant="solid"
+            color="primary"
+            startDecorator={<Add />}
+            onClick={() => navigate('/admin/create-post')}
+            sx={{
+              fontWeight: 600,
+              fontFamily: 'serif',
+            }}
+          >
+            New Post (V2)
+          </Button>
+          <Button
+            size="md"
+            variant="outlined"
+            color="neutral"
+            startDecorator={<Add />}
+            onClick={handleCreateClick}
+            sx={{
+              fontWeight: 600,
+              fontFamily: 'serif',
+            }}
+          >
+            Legacy Create
+          </Button>
+        </Stack>
       </Stack>
 
       {/* Games Table */}

@@ -12,7 +12,7 @@ export default function AdminContentGame() {
   const isLandscapeMobile = isLandscape && isMobileHeight;
 
   const handleBack = () => {
-    navigate('/admin/content');
+    navigate('/admin/create-post');
   };
 
   if (!gameId) {

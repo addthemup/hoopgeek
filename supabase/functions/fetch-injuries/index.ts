@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { extractPDFText } from 'https://esm.sh/unpdf@0.6.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -85,132 +86,155 @@ async function fetchInjuryPdf(date: Date): Promise<Uint8Array | null> {
 
 /**
  * Parse PDF text content
- * Uses Deno-compatible PDF.js library
+ * Uses unpdf (esm.sh) - serverless PDF.js build that works in Deno Edge
  */
 async function parsePdfText(pdfBytes: Uint8Array): Promise<string> {
   try {
-    // Use Deno-compatible PDF.js library
-    const { getDocument } = await import('https://deno.land/x/pdfjs@2.10.377/build/pdf.js')
-    
-    // Load the PDF document
-    const pdf = await getDocument({ data: pdfBytes }).promise
-    let fullText = ''
-    
-    // Extract text from all pages
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum)
-      const textContent = await page.getTextContent()
-      
-      // Combine all text items
-      const pageText = textContent.items
-        .map((item: any) => item.str)
-        .join(' ')
-      
-      fullText += pageText + '\n'
-    }
-    
-    return fullText
+    const { text } = await extractPDFText(pdfBytes, { mergePages: true })
+    return text ?? ''
   } catch (error: any) {
     console.error('❌ Error parsing PDF:', error)
     throw new Error(`PDF parsing failed: ${error.message}`)
   }
 }
 
+// Status values from NBA injury report PDF (exact token match)
+const STATUS_TOKENS = new Set(['Out', 'Doubtful', 'Questionable', 'Probable', 'Available'])
+
+// Team names that can appear in PDF (multi-word: try longest first)
+const TEAM_NAMES = [
+  'Portland Trail Blazers', 'New Orleans Pelicans', 'New York Knicks', 'Oklahoma City Thunder',
+  'Golden State Warriors', 'San Antonio Spurs', 'Minnesota Timberwolves', 'Los Angeles Lakers',
+  'Washington Wizards', 'Philadelphia 76ers', 'Toronto Raptors', 'Memphis Grizzlies',
+  'Cleveland Cavaliers', 'Indiana Pacers', 'Charlotte Hornets', 'Atlanta Hawks', 'Brooklyn Nets',
+  'Chicago Bulls', 'Detroit Pistons', 'Milwaukee Bucks', 'Sacramento Kings', 'Houston Rockets',
+  'Miami Heat', 'Dallas Mavericks', 'Phoenix Suns', 'Utah Jazz', 'Orlando Magic', 'LA Clippers',
+  'Boston Celtics', 'Denver Nuggets',
+]
+
+function matchTeamAt(tokens: string[], i: number): { name: string; wordCount: number } | null {
+  for (const team of TEAM_NAMES) {
+    const words = team.split(' ')
+    if (i + words.length > tokens.length) continue
+    const slice = tokens.slice(i, i + words.length).join(' ')
+    if (slice === team) return { name: team, wordCount: words.length }
+  }
+  return null
+}
+
+function isStatusToken(t: string): boolean {
+  return STATUS_TOKENS.has(t)
+}
+
 /**
- * Parse injury data from PDF text
- * The PDF contains a table with: Game Date | Game Time | Matchup | Team | Player Name | Current Status | Reason
+ * Parse injury data from PDF text.
+ * The NBA PDF extractor (unpdf) returns one word per line, so we parse a stream of tokens:
+ * ... Team PlayerLast, PlayerFirst Status ReasonTokens NextPlayerLast ...
  */
-function parseInjuryData(text: string, reportDate: Date): InjuryData[] {
+function parseInjuryData(text: string, _reportDate: Date): InjuryData[] {
   const injuries: InjuryData[] = []
-  const lines = text.split('\n')
-  
+  const tokens = text.split(/\r?\n/).map((t) => t.trim()).filter((t) => t.length > 0)
+
   let currentGameDate: string | null = null
   let currentGameTime: string | null = null
   let currentMatchup: string | null = null
   let currentTeam: string | null = null
-  
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
-    
-    // Skip empty lines and headers
-    if (!line || line.includes('Injury Report') || line.includes('Game Date') || line.includes('---')) {
+  let rowStart = 0
+
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i]
+
+    // Skip header / page footer tokens
+    if (t === 'Injury' || t === 'Report:' || t === 'Page' || t === 'of' || t === 'Game' || t === 'Date' || t === 'Time' || t === 'Matchup' || t === 'Team' || t === 'Player' || t === 'Name' || t === 'Current' || t === 'Status' || t === 'Reason') {
       continue
     }
-    
-    // Try to detect game date (format: MM/DD/YYYY)
-    const dateMatch = line.match(/(\d{2}\/\d{2}\/\d{4})/)
-    if (dateMatch) {
-      currentGameDate = dateMatch[1]
+
+    // Game date (MM/DD/YYYY only; skip 02/09/26 style)
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(t)) {
+      currentGameDate = t
       continue
     }
-    
-    // Try to detect game time (format: HH:MM (ET))
-    const timeMatch = line.match(/(\d{1,2}:\d{2})\s*\(ET\)/)
-    if (timeMatch) {
-      currentGameTime = timeMatch[1]
+
+    // Game time: "07:00" followed by "(ET)"
+    if (/^\d{1,2}:\d{2}$/.test(t) && tokens[i + 1] === '(ET)') {
+      currentGameTime = t
+      i += 1
       continue
     }
-    
-    // Try to detect matchup (format: TEAM@TEAM or TEAM vs TEAM)
-    const matchupMatch = line.match(/([A-Z]{3}@[A-Z]{3}|[A-Z]{3}\s+vs\s+[A-Z]{3})/i)
-    if (matchupMatch) {
-      currentMatchup = matchupMatch[1]
+
+    // Matchup: DET@CHA
+    if (/^[A-Z]{3}@[A-Z]{3}$/i.test(t)) {
+      currentMatchup = t
       continue
     }
-    
-    // Try to detect team name (common team patterns)
-    const teamMatch = line.match(/(Washington Wizards|Philadelphia 76ers|Portland Trail Blazers|Toronto Raptors|Memphis Grizzlies|San Antonio Spurs|Minnesota Timberwolves|New Orleans Pelicans|New York Knicks|Boston Celtics|Oklahoma City Thunder|Golden State Warriors|Denver Nuggets|Indiana Pacers|Cleveland Cavaliers|Orlando Magic|Charlotte Hornets|LA Clippers|Atlanta Hawks|Brooklyn Nets|Chicago Bulls|Detroit Pistons|Milwaukee Bucks|Sacramento Kings|Houston Rockets|Miami Heat|Dallas Mavericks|Los Angeles Lakers|Phoenix Suns|Utah Jazz)/i)
-    if (teamMatch) {
-      currentTeam = teamMatch[1]
+
+    // Team name (multi-word)
+    const teamAt = matchTeamAt(tokens, i)
+    if (teamAt) {
+      currentTeam = teamAt.name
+      rowStart = i + teamAt.wordCount
+      i += teamAt.wordCount - 1
       continue
     }
-    
-    // Try to parse injury row
-    // Pattern: Player Name | Status | Reason
-    // Status can be: Out, Questionable, Probable, Available
-    const statusMatch = line.match(/(Out|Questionable|Probable|Available)/i)
-    if (statusMatch && currentTeam) {
-      // Try to extract player name and reason
-      const parts = line.split(/\s+(Out|Questionable|Probable|Available)\s+/i)
-      if (parts.length >= 2) {
-        const playerName = parts[0].trim()
-        const status = statusMatch[1]
-        const reason = parts.slice(2).join(' ').trim() || line.split(status)[1]?.trim() || ''
-        
-        if (playerName && playerName.length > 1 && !playerName.includes('NOT YET SUBMITTED')) {
-          injuries.push({
-            playerName: playerName.replace(/,/g, '').trim(), // Remove commas from names like "Drummond, Andre"
-            team: currentTeam,
-            status: status,
-            reason: reason,
-            gameDate: currentGameDate || undefined,
-            gameTime: currentGameTime || undefined,
-            matchup: currentMatchup || undefined,
-          })
-        }
+
+    // Status token → one injury row: player = tokens[rowStart..i), reason = tokens[i+1..j)
+    if (isStatusToken(t) && currentTeam) {
+      const playerName = tokens.slice(rowStart, i).join(' ').replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
+      if (!playerName || playerName.includes('NOT') && tokens[rowStart] === 'NOT') {
+        i++
+        continue
       }
-    }
-    
-    // Alternative pattern: Look for player name followed by status
-    // Format: "Last, First | Status | Reason"
-    const playerStatusPattern = /^([A-Z][a-z]+(?:,\s*[A-Z][a-z]+(?:\s+[A-Z]\.?)?)?)\s+(Out|Questionable|Probable|Available)\s+(.+)$/i
-    const playerMatch = line.match(playerStatusPattern)
-    if (playerMatch && currentTeam) {
-      const [, playerName, status, reason] = playerMatch
-      if (playerName && !playerName.includes('NOT YET SUBMITTED')) {
+
+      let j = i + 1
+      while (j < tokens.length) {
+        const next = tokens[j]
+        if (isStatusToken(next)) break
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(next)) break
+        if (/^\d{1,2}:\d{2}$/.test(next) && tokens[j + 1] === '(ET)') break
+        if (/^[A-Z]{3}@[A-Z]{3}$/i.test(next)) break
+        if (matchTeamAt(tokens, j)) break
+        if (next === 'Injury' && tokens[j + 1] === 'Report:') break
+        j++
+      }
+
+      const reason = tokens.slice(i + 1, j).join(' ').trim()
+      if (!playerName.includes('NOT YET SUBMITTED')) {
         injuries.push({
-          playerName: playerName.replace(/,/g, '').trim(),
+          playerName,
           team: currentTeam,
-          status: status,
-          reason: reason.trim(),
-          gameDate: currentGameDate || undefined,
-          gameTime: currentGameTime || undefined,
-          matchup: currentMatchup || undefined,
+          status: t,
+          reason,
+          gameDate: currentGameDate ?? undefined,
+          gameTime: currentGameTime ?? undefined,
+          matchup: currentMatchup ?? undefined,
         })
       }
+
+      if (j < tokens.length && tokens[j] === 'Injury' && tokens[j + 1] === 'Report:') {
+        j += 2
+        while (j < tokens.length) {
+          if (isStatusToken(tokens[j]) || /^\d{2}\/\d{2}\/\d{4}$/.test(tokens[j]) || matchTeamAt(tokens, j) || /^[A-Z]{3}@[A-Z]{3}$/i.test(tokens[j])) break
+          if (tokens[j] === 'Game' && tokens[j + 1] === 'Date') j += 10
+          else j++
+        }
+        // After page header, extraction order may put reason text first. Skip until we see a player last name (PDF uses "Last,").
+        while (j < tokens.length && !tokens[j].endsWith(',')) {
+          if (tokens[j] === 'Game' && tokens[j + 1] === 'Date') j += 10
+          else j++
+        }
+      }
+      if (j < tokens.length && isStatusToken(tokens[j])) {
+        rowStart = j + 1
+      } else if (j < tokens.length) {
+        const nextTeam = matchTeamAt(tokens, j)
+        if (nextTeam) rowStart = j + nextTeam.wordCount
+        else rowStart = j
+      }
+      i = j - 1
+      continue
     }
   }
-  
+
   return injuries
 }
 
@@ -256,60 +280,83 @@ function normalizeTeamName(teamName: string): string {
 }
 
 /**
- * Find NBA player ID from name and team
+ * PDF gives "Last, First" → we normalize to "Last First". DB stores "First Last".
+ * Return [original, flipped] so we can try both.
+ */
+function searchNamesForLookup(playerName: string): string[] {
+  const parts = playerName.trim().split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return [playerName]
+  const flipped = [...parts].reverse().join(' ')
+  return [playerName, flipped]
+}
+
+/**
+ * Find NBA player ID from name and team.
+ * Tries both "Last First" (PDF format) and "First Last" (DB format).
  */
 async function findPlayerId(
   supabase: any,
   playerName: string,
   teamAbbreviation: string
 ): Promise<number | null> {
+  const namesToTry = searchNamesForLookup(playerName)
   try {
-    // Try exact match first
-    let { data, error } = await supabase
-      .from('nba_players')
-      .select('nba_player_id, name')
-      .ilike('name', `%${playerName}%`)
-      .eq('team_abbreviation', teamAbbreviation)
-      .eq('is_active', true)
-      .limit(5)
-      .execute()
-    
-    if (error) throw error
-    
-    if (data && data.length > 0) {
-      // If multiple matches, try to find best match
-      if (data.length === 1) {
+    for (const searchName of namesToTry) {
+      let { data, error } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, name')
+        .ilike('name', `%${searchName}%`)
+        .eq('team_abbreviation', teamAbbreviation)
+        .eq('is_active', true)
+        .limit(5)
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        if (data.length === 1) return data[0].nba_player_id
+        const normalizedSearch = searchName.toLowerCase().replace(/[.,]/g, '').trim()
+        for (const player of data) {
+          const normalizedName = player.name.toLowerCase().replace(/[.,]/g, '').trim()
+          if (normalizedName.includes(normalizedSearch) || normalizedSearch.includes(normalizedName.split(' ')[0])) {
+            return player.nba_player_id
+          }
+        }
         return data[0].nba_player_id
       }
-      
-      // Try to match more precisely
-      const normalizedSearch = playerName.toLowerCase().replace(/[.,]/g, '').trim()
-      for (const player of data) {
-        const normalizedName = player.name.toLowerCase().replace(/[.,]/g, '').trim()
-        if (normalizedName.includes(normalizedSearch) || normalizedSearch.includes(normalizedName.split(' ')[0])) {
-          return player.nba_player_id
-        }
+    }
+
+    for (const searchName of namesToTry) {
+      const { data: data2, error: error2 } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, name')
+        .ilike('name', `%${searchName}%`)
+        .eq('is_active', true)
+        .limit(1)
+
+      if (error2) throw error2
+      if (data2 && data2.length > 0) return data2[0].nba_player_id
+    }
+
+    // Fallback: try first name only + team (e.g. "Cade" on DET for "Cunningham Cade")
+    const parts = playerName.trim().split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) {
+      const firstName = parts[parts.length - 1]
+      const { data: data3, error: error3 } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, name')
+        .ilike('name', `%${firstName}%`)
+        .eq('team_abbreviation', teamAbbreviation)
+        .eq('is_active', true)
+        .limit(5)
+      if (!error3 && data3 && data3.length === 1) return data3[0].nba_player_id
+      if (!error3 && data3 && data3.length > 1) {
+        const fullFlipped = [...parts].reverse().join(' ')
+        const match = data3.find((p: { name: string }) => p.name.toLowerCase().includes(fullFlipped.toLowerCase()) || fullFlipped.toLowerCase().includes(p.name.toLowerCase().split(' ')[0]))
+        if (match) return match.nba_player_id
+        return data3[0].nba_player_id
       }
-      
-      // Return first match if no better match found
-      return data[0].nba_player_id
     }
-    
-    // Try without team filter
-    const { data: data2, error: error2 } = await supabase
-      .from('nba_players')
-      .select('nba_player_id, name')
-      .ilike('name', `%${playerName}%`)
-      .eq('is_active', true)
-      .limit(1)
-      .execute()
-    
-    if (error2) throw error2
-    
-    if (data2 && data2.length > 0) {
-      return data2[0].nba_player_id
-    }
-    
+
     return null
   } catch (error) {
     console.error(`❌ Error finding player ${playerName}:`, error)
@@ -330,44 +377,55 @@ function normalizeInjuryStatus(status: string): string {
 }
 
 /**
- * Store injuries in database
- * This function:
- * 1. Marks all existing current injuries as not current (they're from older reports)
- * 2. Inserts new injury records for players on the current report (marked as current)
- * 3. Ensures players NOT on the current report have their injuries marked as not current
+ * Store injuries in database.
+ * When historical=false (default): mark all current as not current, then insert/update with is_current=true.
+ * When historical=true: delete existing records for this report date, then insert all with is_current=false (no touch to "current").
  */
-async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: Date) {
-  console.log(`💾 Processing ${injuries.length} injuries from report dated ${reportDate.toISOString().split('T')[0]}...`)
+async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: Date, historical: boolean = false) {
+  console.log(`💾 Processing ${injuries.length} injuries from report dated ${reportDate.toISOString().split('T')[0]}${historical ? ' (historical)' : ''}...`)
   
   const reportTimestamp = new Date().toISOString()
-  
-  // Step 1: Mark all existing injuries as not current (they're from older reports)
-  console.log('   📋 Marking old injuries as not current...')
-  try {
-    const { error: updateError } = await supabase
-      .from('nba_injuries')
-      .update({ is_current: false })
-      .eq('is_current', true)
-      .execute()
-    
-    if (updateError) {
-      console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${updateError.message}`)
-    } else {
-      console.log('   ✅ Marked existing injuries as not current')
+  const reportDateStr = reportDate.toISOString().split('T')[0]
+  const dayStart = `${reportDateStr}T00:00:00.000Z`
+  const dayEnd = `${reportDateStr}T23:59:59.999Z`
+
+  if (historical) {
+    console.log('   📋 Removing existing injuries for this report date (historical overwrite)...')
+    try {
+      const { error: deleteError } = await supabase
+        .from('nba_injuries')
+        .delete()
+        .gte('date_updated', dayStart)
+        .lte('date_updated', dayEnd)
+        .eq('source', 'nba_official_pdf')
+      if (deleteError) console.log(`   ⚠️  Delete warning: ${deleteError.message}`)
+    } catch (e: any) {
+      console.log(`   ⚠️  Delete warning: ${e.message}`)
     }
-  } catch (error: any) {
-    console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${error.message}`)
+  } else {
+    // Step 1: Mark all existing injuries as not current (they're from older reports)
+    console.log('   📋 Marking old injuries as not current...')
+    try {
+      const { error: updateError } = await supabase
+        .from('nba_injuries')
+        .update({ is_current: false })
+        .eq('is_current', true)
+      if (updateError) {
+        console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${updateError.message}`)
+      } else {
+        console.log('   ✅ Marked existing injuries as not current')
+      }
+    } catch (error: any) {
+      console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${error.message}`)
+    }
   }
-  
-  // Step 2: Track which players are on the current report
+
   const currentReportPlayerIds = new Set<number>()
-  
-  // Step 3: Process each injury from the current report
   let stored = 0
   let updated = 0
   let skipped = 0
   let errors = 0
-  
+
   for (const injury of injuries) {
     try {
       const teamAbbreviation = normalizeTeamName(injury.team)
@@ -381,7 +439,6 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
       
       currentReportPlayerIds.add(nbaPlayerId)
       
-      // Parse injury type and description from reason
       const reasonParts = injury.reason.split(';')
       const injuryType = reasonParts[0]?.trim() || null
       const injuryDescription = reasonParts.slice(1).join(';').trim() || injury.reason
@@ -393,7 +450,7 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
         injury_status: normalizeInjuryStatus(injury.status),
         date_updated: reportDate.toISOString(),
         report_timestamp: reportTimestamp,
-        is_current: true, // Mark as current since it's on this report
+        is_current: historical ? false : true,
         source: 'nba_official_pdf',
         source_url: `https://ak-static.cms.nba.com/referee/injury/Injury-Report_${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, '0')}-${String(reportDate.getDate()).padStart(2, '0')}_*.pdf`,
         raw_data: {
@@ -404,15 +461,24 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           matchup: injury.matchup,
         }
       }
+
+      if (historical) {
+        const { error: insertError } = await supabase.from('nba_injuries').insert(injuryData)
+        if (insertError) {
+          console.error(`❌ Error storing injury for ${injury.playerName}:`, insertError)
+          errors++
+        } else {
+          stored++
+        }
+        continue
+      }
       
-      // Check if player already has a current injury record
       const { data: existingData, error: checkError } = await supabase
         .from('nba_injuries')
         .select('id')
         .eq('nba_player_id', nbaPlayerId)
         .eq('is_current', true)
         .limit(1)
-        .execute()
       
       if (checkError) {
         console.error(`❌ Error checking existing injury for ${injury.playerName}:`, checkError)
@@ -426,7 +492,6 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           .from('nba_injuries')
           .update(injuryData)
           .eq('id', existingData[0].id)
-          .execute()
         
         if (updateError) {
           console.error(`❌ Error updating injury for ${injury.playerName}:`, updateError)
@@ -440,7 +505,6 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
         const { error: insertError } = await supabase
           .from('nba_injuries')
           .insert(injuryData)
-          .execute()
         
         if (insertError) {
           console.error(`❌ Error storing injury for ${injury.playerName}:`, insertError)
@@ -456,8 +520,12 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
     }
   }
   
+  if (historical) {
+    console.log(`   ✅ Historical: stored ${stored}, skipped ${skipped}, errors ${errors}`)
+    return { stored, updated, skipped, errors }
+  }
+
   // Step 4: For players NOT on the current report, ensure their injuries are marked as not current
-  // (This handles cases where a player was on a previous report but is now healthy)
   console.log('   🏥 Checking players not on current report...')
   try {
     // Get all players with current injuries
@@ -465,7 +533,6 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
       .from('nba_injuries')
       .select('nba_player_id')
       .eq('is_current', true)
-      .execute()
     
     if (fetchError) {
       console.log(`   ⚠️  Warning: Could not fetch current injuries: ${fetchError.message}`)
@@ -481,7 +548,6 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           .update({ is_current: false })
           .in('nba_player_id', playersToMarkHealthy)
           .eq('is_current', true)
-          .execute()
         
         if (markError) {
           console.log(`   ⚠️  Warning: Could not mark players as healthy: ${markError.message}`)
@@ -515,12 +581,12 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseKey)
 
-    // Get target date from query params or use today
     const url = new URL(req.url)
     const targetDateParam = url.searchParams.get('date')
     const targetDate = targetDateParam 
       ? new Date(targetDateParam)
       : new Date()
+    const historical = url.searchParams.get('historical') === 'true'
 
     console.log('🏀 Starting NBA Injury Report Fetch...')
     console.log(`📅 Target date: ${targetDate.toISOString().split('T')[0]}`)
@@ -552,20 +618,27 @@ serve(async (req) => {
     console.log(`✅ Extracted ${injuries.length} injuries from PDF`)
 
     if (injuries.length === 0) {
+      const sample = pdfText.slice(0, 4000)
+      const lineCount = pdfText.split(/\r?\n/).length
       return new Response(
-        JSON.stringify({ 
-          success: false, 
-          error: 'No injuries found in PDF. PDF format may have changed.' 
+        JSON.stringify({
+          success: false,
+          error: 'No injuries found in PDF. PDF format may have changed.',
+          debug: {
+            pdfTextLength: pdfText.length,
+            lineCount,
+            sampleLines: pdfText.split(/\r?\n/).slice(0, 120).filter((l) => l.trim()),
+            sampleRaw: sample,
+          },
         }),
-        { 
-          status: 400, 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       )
     }
 
-    // Store injuries
-    const result = await storeInjuries(supabase, injuries, targetDate)
+    const result = await storeInjuries(supabase, injuries, targetDate, historical)
 
     return new Response(
       JSON.stringify({
