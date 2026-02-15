@@ -49,3 +49,4 @@ dist-ssr
 # Keep only the lightweight index file
 public/games/*.json
 !public/games/games-index.json
+scripts/feed/*.json
