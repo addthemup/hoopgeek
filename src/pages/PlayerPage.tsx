@@ -999,7 +999,7 @@ export default function PlayerPage({
         mx: 'auto', 
         pt: isLandscapeMobile 
           ? '12px' // Minimal padding in landscape mobile
-          : { xs: '12px', md: 'calc((100vh - 40px) / 16 + 20px)' }, // Minimal padding on mobile, normal on desktop
+          : { xs: '12px', md: '16px' }, // Tighter top padding so header isn’t too far down
         pb: 2,
         px: { xs: 0, sm: 2, md: 2 },
         width: '100%',
@@ -1012,7 +1012,7 @@ export default function PlayerPage({
           flexDirection: 'row',
           alignItems: 'center', 
           gap: { xs: 1.5, md: 2 }, 
-          mb: 1, 
+          mb: 0.5, 
           px: { xs: 2, sm: 0 },
         }}>
           {/* Back Button - same as game page header */}

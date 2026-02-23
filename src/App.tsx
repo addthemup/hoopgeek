@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Routes, Route, useParams, Navigate } from 'react-router-dom'
 import { Box } from '@mui/joy'
 import Layout from './components/Layout'
@@ -14,6 +15,7 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import League from './pages/League'
 import Draft from './pages/Draft'
+import DraftProspectsPage from './pages/DraftProspectsPage'
 import Players from './pages/Players'
 import MatchupDetails from './pages/MatchupDetails'
 import DeleteLeague from './pages/DeleteLeague'
@@ -28,12 +30,12 @@ import CommissionerTools from './pages/CommissionerTools'
 import UserSettings from './pages/UserSettings'
 import PlayerPage from './pages/PlayerPage'
 import TeamPage from './pages/TeamPage'
+import ProspectPage from './pages/ProspectPage'
 import AdminContentGame from './pages/AdminContentGame'
 import AdminDFS from './pages/AdminDFS'
 import AdminDFSPoolDetails from './pages/AdminDFSPoolDetails'
 import AdminAnalytics from './pages/AdminAnalytics'
-import AdminToday from './pages/AdminToday'
-import AdminFeed from './pages/AdminFeed'
+import Admin from './pages/Admin'
 import TeamOfNightPage from './pages/TeamOfNightPage'
 
 // Import Highlights and Post pages
@@ -115,7 +117,49 @@ const GlobalPlayerPageWrapper = () => {
   )
 }
 
+/** Ensures only one video plays at a time app-wide: when any video plays, pause all others. */
+function useSingleVideoPlay() {
+  useEffect(() => {
+    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    const handlePlay = (e: Event) => {
+      if ((e.target as HTMLElement)?.tagName !== 'VIDEO') return
+      if (timeoutId) clearTimeout(timeoutId)
+      timeoutId = setTimeout(() => {
+        timeoutId = null
+        const videos = Array.from(document.querySelectorAll<HTMLVideoElement>('video'))
+        const playing = videos.filter((v) => !v.paused)
+        if (playing.length <= 1) return
+        // Keep the video that is most in view (React may have replaced the one that fired play).
+        const viewportHeight = window.innerHeight
+        let best: HTMLVideoElement | null = null
+        let bestArea = 0
+        const vw = window.innerWidth
+        for (const v of playing) {
+          const r = v.getBoundingClientRect()
+          const visibleW = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0))
+          const visibleH = Math.max(0, Math.min(r.bottom, viewportHeight) - Math.max(r.top, 0))
+          const area = visibleW * visibleH
+          if (area > bestArea) {
+            bestArea = area
+            best = v
+          }
+        }
+        playing.forEach((v) => {
+          if (v !== best) v.pause()
+        })
+      }, 50)
+    }
+    document.addEventListener('play', handlePlay, true)
+    return () => {
+      document.removeEventListener('play', handlePlay, true)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [])
+}
+
 function App() {
+  useSingleVideoPlay()
+
   return (
     <Box sx={{ 
       minHeight: '100vh',
@@ -147,7 +191,7 @@ function App() {
         <Route path="/join/:inviteCode" element={<JoinLeague />} />
         
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/today" replace />} />
+          <Route index element={<Navigate to="/feed" replace />} />
           <Route path="feed" element={<Highlights />} />
           <Route path="feed/:slug" element={<PostStory />} />
           <Route path="login" element={<Login />} />
@@ -172,6 +216,7 @@ function App() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="players" element={<Players leagueId="" />} />
           <Route path="player/:id" element={<GlobalPlayerPageWrapper />} />
+          <Route path="prospect/:id" element={<ProspectPage />} />
           <Route path="team/:id" element={<TeamPage />} />
           <Route path="league/:id" element={<League />} />
           <Route path="league/:id/matchup/:matchupId" element={<MatchupDetails />} />
@@ -182,6 +227,7 @@ function App() {
           <Route path="league/:id/draft-order" element={<DraftOrderWrapper />} />
           <Route path="league/:id/roster-settings" element={<EditRosterSettingsWrapper />} />
           <Route path="league/:id/commissioner-tools" element={<CommissionerToolsWrapper />} />
+          <Route path="draft" element={<DraftProspectsPage />} />
           <Route path="draft/:id" element={<Draft />} />
           <Route path="analysis" element={<Analysis />} />
           <Route path="betting" element={<Betting />} />
@@ -190,14 +236,14 @@ function App() {
           {/* User Settings */}
           <Route path="settings" element={<UserSettings />} />
           
-          {/* Admin Routes */}
-          <Route path="admin/create-post" element={<PostCreator />} />
+          {/* Admin Routes — single /admin with ?view= for create-post, dfs, analytics */}
+          <Route path="admin" element={<Admin />} />
+          <Route path="admin/feed" element={<Navigate to="/admin" replace />} />
+          <Route path="admin/create-post" element={<Navigate to="/admin?view=create-post" replace />} />
           <Route path="admin/create-post/game/:gameId" element={<AdminContentGame />} />
-          <Route path="admin/dfs" element={<AdminDFS />} />
+          <Route path="admin/dfs" element={<Navigate to="/admin?view=dfs" replace />} />
           <Route path="admin/dfs/pool/:poolId" element={<AdminDFSPoolDetails />} />
-          <Route path="admin/analytics" element={<AdminAnalytics />} />
-          <Route path="admin/today" element={<AdminToday />} />
-          <Route path="admin/feed" element={<AdminFeed />} />
+          <Route path="admin/analytics" element={<Navigate to="/admin?view=analytics" replace />} />
           
           {/* OG Image generation route - handled by Cloudflare Worker, exclude from React Router */}
           <Route path="og-image/*" element={<></>} />

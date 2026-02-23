@@ -29,7 +29,7 @@ import { getTeamLogoUrl } from '../utils/nbaTeamLogos';
 import { FANDUEL_SCORING } from '../utils/fantasyScoring';
 import { calculatePropResult } from '../utils/playerPropsCalculator';
 import { filterFullGameProps } from '../utils/playerPropsFilter';
-import { hexToRgba } from '../components/MarginBars';
+import { hexToRgba } from '../utils/colorUtils';
 import BoxScore from '../components/BoxScore';
 import { FeedPost } from '../utils/feedAlgorithm';
 import { matchPlayerNames } from '../utils/playerNameMatcher';

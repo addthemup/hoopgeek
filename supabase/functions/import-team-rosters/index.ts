@@ -348,4 +348,3 @@ async function syncPlayerTeamsFromRoster(supabaseAdmin: any, season: string) {
     return { success: false, error: error.message }
   }
 }
-

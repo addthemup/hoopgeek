@@ -48,6 +48,7 @@ import {
   Table,
   Sheet,
   Avatar,
+  Slider,
 } from '@mui/joy'
 import {
   ArrowBack,
@@ -77,9 +78,15 @@ import {
   Collections,
   TableChart,
   SportsBasketball,
+  Schedule,
+  Article,
 } from '@mui/icons-material'
 import { supabase } from '../utils/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { getHighlightClipsForPostType } from '../utils/feedHighlightClips'
+import { sortHighlightClipsChronological } from '../utils/sortHighlightClips'
+import { calculatePropResult } from '../utils/playerPropsCalculator'
+import { filterFullGameProps } from '../utils/playerPropsFilter'
 import type {
   PostType,
   PostStatus,
@@ -91,6 +98,7 @@ import type {
   StatComparisonContent,
   PullQuoteContent,
   LineupPlayer,
+  PropCardContent,
 } from '../types/feed'
 
 // ─── Constants ──────────────────────────────────────────────
@@ -195,6 +203,24 @@ const POST_TYPE_OPTIONS: PostTypeOption[] = [
     theoretical: true,
     dataSourceMode: 'manual',
   },
+  {
+    value: 'upcoming',
+    label: 'Upcoming',
+    description: 'Preview or teaser for upcoming games, events, or content.',
+    icon: <Schedule />,
+    color: '#8B5CF6',
+    tags: ['recap'],
+    dataSourceMode: 'manual',
+  },
+  {
+    value: 'blog',
+    label: 'Blog',
+    description: 'Editorial or long-form article with rich text and media.',
+    icon: <Article />,
+    color: '#0EA5E9',
+    tags: ['analysis'],
+    dataSourceMode: 'manual',
+  },
 ]
 
 const SECTION_TYPE_OPTIONS: { value: SectionType; label: string; icon: React.ReactNode; description: string }[] = [
@@ -205,6 +231,7 @@ const SECTION_TYPE_OPTIONS: { value: SectionType; label: string; icon: React.Rea
   { value: 'lineup_card', label: 'Lineup Card', icon: <Groups />, description: 'Starting lineup with fantasy points and stats' },
   { value: 'stat_comparison', label: 'Stat Comparison', icon: <BarChart />, description: 'Side-by-side team stat comparison' },
   { value: 'video_clip', label: 'Video Clip', icon: <VideoLibrary />, description: 'Embedded video with caption and timestamp' },
+  { value: 'video_carousel', label: 'Video Carousel', icon: <Collections />, description: 'Instagram-style carousel of MP4 clips (NBA.com) with play metadata' },
   { value: 'chart', label: 'Chart', icon: <BarChart />, description: 'Data visualization — radar, scatter, shot chart, etc.' },
   { value: 'prop_card', label: 'Prop Card', icon: <Casino />, description: 'Player prop prediction or result card' },
   { value: 'injury_card', label: 'Injury Card', icon: <LocalHospital />, description: 'Player injury status card' },
@@ -226,6 +253,8 @@ interface ResolvedPlayer {
   role: 'Starter' | 'Bench'
   fantasy_points: number
   salary: number
+  position?: string | null
+  jersey_number?: string | null
 }
 
 interface NbaGame {
@@ -448,7 +477,7 @@ async function resolvePlayersFromRow(row: any, type: 'totn' | 'totw'): Promise<R
 
   const { data: players } = await supabase
     .from('nba_players')
-    .select('id, name, team_abbreviation, nba_player_id')
+    .select('id, name, team_abbreviation, nba_player_id, position, jersey_number')
     .in('id', ids)
 
   const pMap: Record<string, any> = {}
@@ -458,7 +487,7 @@ async function resolvePlayersFromRow(row: any, type: 'totn' | 'totw'): Promise<R
   for (const s of TOTN_SLOTS) {
     const pid = row[`${s}_player_id`]
     if (!pid) continue
-    const info = pMap[pid] || { name: 'Unknown', team_abbreviation: null, nba_player_id: null }
+    const info = pMap[pid] || { name: 'Unknown', team_abbreviation: null, nba_player_id: null, position: null, jersey_number: null }
     const fpKey = type === 'totn' ? `${s}_fantasy_points` : `${s}_avg_fantasy_points`
     result.push({
       id: pid,
@@ -469,9 +498,36 @@ async function resolvePlayersFromRow(row: any, type: 'totn' | 'totw'): Promise<R
       role: s.startsWith('s') ? 'Starter' : 'Bench',
       fantasy_points: Number(row[fpKey]) || 0,
       salary: Number(row[`${s}_salary`]) || 0,
+      position: info.position ?? null,
+      jersey_number: info.jersey_number != null ? String(info.jersey_number) : null,
     })
   }
   return result
+}
+
+/** Resolve the single player from an nba_pow or nba_pom row (player_id FK → nba_players). */
+async function resolvePlayerFromAwardRow(row: any, _type: 'pow' | 'pom'): Promise<ResolvedPlayer[]> {
+  const playerId = row.player_id
+  if (!playerId) return []
+
+  const { data: players } = await supabase
+    .from('nba_players')
+    .select('id, name, team_abbreviation, nba_player_id')
+    .eq('id', playerId)
+    .maybeSingle()
+
+  if (!players) return []
+  const p = players as any
+  return [{
+    id: p.id,
+    name: p.name || 'Unknown',
+    team_abbreviation: p.team_abbreviation ?? null,
+    nba_player_id: p.nba_player_id != null ? Number(p.nba_player_id) : null,
+    slot: 's1',
+    role: 'Starter',
+    fantasy_points: 0,
+    salary: 0,
+  }]
 }
 
 /** Fetch games for a given date from nba_games */
@@ -482,6 +538,24 @@ async function fetchGamesForDate(gameDate: string): Promise<NbaGame[]> {
     .eq('game_date', gameDate)
     .order('game_id')
   if (error) { console.error('Failed to fetch games:', error); return [] }
+  return (data || []) as NbaGame[]
+}
+
+/** Fetch games for a date range from nba_games, optionally only for given team tricodes */
+async function fetchGamesForDateRange(weekStart: string, weekEnd: string, teamTricodes?: string[]): Promise<NbaGame[]> {
+  let query = supabase
+    .from('nba_games')
+    .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_status_text')
+    .gte('game_date', weekStart)
+    .lte('game_date', weekEnd)
+    .order('game_date', { ascending: true })
+    .order('game_id')
+  if (teamTricodes && teamTricodes.length > 0) {
+    const orConditions = teamTricodes.flatMap(t => [`home_team_tricode.eq.${t}`, `away_team_tricode.eq.${t}`]).join(',')
+    query = query.or(orConditions)
+  }
+  const { data, error } = await query
+  if (error) { console.error('Failed to fetch games for range:', error); return [] }
   return (data || []) as NbaGame[]
 }
 
@@ -499,9 +573,16 @@ async function loadLocalGameJson(gameId: string): Promise<GameData | null> {
 
 // ─── Component ──────────────────────────────────────────────
 
-export default function PostCreator() {
+export interface PostCreatorProps {
+  /** When set, back button and "save as draft" redirect here instead of /feed and /admin/create-post */
+  returnPath?: string
+}
+
+export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const backTarget = returnPath ?? '/feed'
+  const draftSaveTarget = returnPath ?? '/admin/create-post'
   const [activeStep, setActiveStep] = useState(0)
   const [draft, setDraft] = useState<PostDraft>({ ...EMPTY_DRAFT })
   const [saving, setSaving] = useState(false)
@@ -511,6 +592,8 @@ export default function PostCreator() {
   // TOTN / TOTW rows
   const [totnRows, setTotnRows] = useState<any[]>([])
   const [totwRows, setTotwRows] = useState<any[]>([])
+  const [powRows, setPowRows] = useState<any[]>([])
+  const [pomRows, setPomRows] = useState<any[]>([])
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [resolvedPlayers, setResolvedPlayers] = useState<ResolvedPlayer[]>([])
   const [loadingRows, setLoadingRows] = useState(false)
@@ -524,6 +607,23 @@ export default function PostCreator() {
   // Matched game JSONs (loaded from local dev server for the selected date)
   const [matchedGameData, setMatchedGameData] = useState<GameData[]>([])
   const [loadingGameData, setLoadingGameData] = useState(false)
+
+  // Player Spotlight: single player + highlight count (only when post_type is player_spotlight)
+  const [spotlightPlayerId, setSpotlightPlayerId] = useState<number | null>(null)
+  const [spotlightHighlightCount, setSpotlightHighlightCount] = useState(5)
+
+  // Game Recap: number of highlight clips to include (algorithm picks best plays; admin chooses count)
+  const [recapHighlightCount, setRecapHighlightCount] = useState(8)
+  // Game Recap: clips per player for the top-5 player cards (each card gets its own slideshow)
+  const [recapPlayerClipCount, setRecapPlayerClipCount] = useState(3)
+
+  // TOTN / TOTW: clips per player for lineup + player_highlight sections (games that night / week)
+  const [totnPlayerClipCount, setTotnPlayerClipCount] = useState(3)
+  const [totwPlayerClipCount, setTotwPlayerClipCount] = useState(3)
+
+  // TOTN: boxscores from nba_boxscores + per-game feed/mp4 status (for table)
+  const [totnBoxscores, setTotnBoxscores] = useState<Array<{ game_id: string; nba_player_id: number; player_name?: string; pts?: number; reb?: number; ast?: number; stl?: number; blk?: number; min?: number | string }>>([])
+  const [totnGamesFeedStatus, setTotnGamesFeedStatus] = useState<Array<{ gameId: string; inFeed: boolean; hasMp4: boolean }>>([])
 
   // Section editor state
   const [addSectionOpen, setAddSectionOpen] = useState(false)
@@ -570,12 +670,51 @@ export default function PostCreator() {
     }
   }, [])
 
+  const fetchPowRows = useCallback(async () => {
+    setLoadingRows(true)
+    try {
+      const { data, error } = await supabase
+        .from('nba_pow')
+        .select('*')
+        .order('week_start_date', { ascending: false })
+        .limit(30)
+      if (error) throw error
+      setPowRows(data || [])
+    } catch (err: any) {
+      console.error('Failed to fetch POW rows:', err)
+      setSnackbar({ open: true, message: `Failed to load POW data: ${err.message}`, color: 'danger' })
+    } finally {
+      setLoadingRows(false)
+    }
+  }, [])
+
+  const fetchPomRows = useCallback(async () => {
+    setLoadingRows(true)
+    try {
+      const { data, error } = await supabase
+        .from('nba_pom')
+        .select('*')
+        .order('award_year', { ascending: false })
+        .order('award_month', { ascending: false })
+        .limit(30)
+      if (error) throw error
+      setPomRows(data || [])
+    } catch (err: any) {
+      console.error('Failed to fetch POM rows:', err)
+      setSnackbar({ open: true, message: `Failed to load POM data: ${err.message}`, color: 'danger' })
+    } finally {
+      setLoadingRows(false)
+    }
+  }, [])
+
   // Load data when entering step 1 based on mode
   useEffect(() => {
     if (activeStep !== 1) return
     if (dataSourceMode === 'totn' && totnRows.length === 0) fetchTotnRows()
     if (dataSourceMode === 'totw' && totwRows.length === 0) fetchTotwRows()
-  }, [activeStep, dataSourceMode, totnRows.length, totwRows.length, fetchTotnRows, fetchTotwRows])
+    if (dataSourceMode === 'pow' && powRows.length === 0) fetchPowRows()
+    if (dataSourceMode === 'pom' && pomRows.length === 0) fetchPomRows()
+  }, [activeStep, dataSourceMode, totnRows.length, totwRows.length, powRows.length, pomRows.length, fetchTotnRows, fetchTotwRows, fetchPowRows, fetchPomRows])
 
   // ─── Select a TOTN/TOTW row ─────────────────────────────
 
@@ -650,6 +789,29 @@ export default function PostCreator() {
       )
       setMatchedGameData(relevantGames)
 
+      // Per-game: is it in /feed/? does it have mp4 in playByPlay?
+      setTotnGamesFeedStatus(gameIds.map(gameId => {
+        const gd = loaded.find(g => g.gameId === gameId)
+        return {
+          gameId,
+          inFeed: !!gd,
+          hasMp4: !!(gd?.playByPlay?.some((p: any) => p.mp4)),
+        }
+      }))
+
+      // nba_boxscores for these games and our players (for table)
+      if (gameIds.length > 0 && nbaPlayerIds.length > 0) {
+        const { data: boxData, error: boxErr } = await supabase
+          .from('nba_boxscores')
+          .select('game_id, nba_player_id, player_name, pts, reb, ast, stl, blk, min')
+          .in('game_id', gameIds)
+          .in('nba_player_id', nbaPlayerIds)
+        if (!boxErr) setTotnBoxscores((boxData || []) as Array<{ game_id: string; nba_player_id: number; player_name?: string; pts?: number; reb?: number; ast?: number; stl?: number; blk?: number; min?: number | string }>)
+        else setTotnBoxscores([])
+      } else {
+        setTotnBoxscores([])
+      }
+
       setSnackbar({
         open: true,
         message: `TOTN ${dateStr}: ${players.length} players, ${relevantGames.length} games with player data (${loaded.length} total files)`,
@@ -657,6 +819,8 @@ export default function PostCreator() {
       })
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message, color: 'danger' })
+      setTotnBoxscores([])
+      setTotnGamesFeedStatus([])
     } finally {
       setLoadingPlayers(false)
       setLoadingGameData(false)
@@ -666,6 +830,7 @@ export default function PostCreator() {
   const selectTotwRow = useCallback(async (row: any) => {
     setSelectedRowId(row.id)
     setLoadingPlayers(true)
+    setLoadingGameData(true)
     try {
       const players = await resolvePlayersFromRow(row, 'totw')
       setResolvedPlayers(players)
@@ -674,13 +839,14 @@ export default function PostCreator() {
       for (const p of players) {
         if (p.team_abbreviation) teamSet.add(p.team_abbreviation)
       }
+      const teamTricodes = [...teamSet]
       const nbaPlayerIds = players.map(p => p.nba_player_id).filter(Boolean) as number[]
       const totalFP = Number(row.total_avg_fantasy_points) || 0
 
       setDraft(prev => ({
         ...prev,
         game_date: row.week_start,
-        team_tricodes: [...teamSet],
+        team_tricodes: teamTricodes,
         player_ids: nbaPlayerIds,
         title: prev.title || `Team of the Week — Week ${row.week_number} (${row.week_start} → ${row.week_end})`,
         subtitle: prev.subtitle || `${totalFP.toFixed(1)} Avg Fantasy Points`,
@@ -698,7 +864,107 @@ export default function PostCreator() {
         },
       }))
 
-      setSnackbar({ open: true, message: `Loaded TOTW Week ${row.week_number}: ${players.length} players`, color: 'success' })
+      // Fetch nba_games for the week that involve any of the players' teams
+      const weekGames = await fetchGamesForDateRange(row.week_start, row.week_end, teamTricodes)
+      const gameIds = weekGames.map(g => g.game_id)
+      console.log(`[TOTW] Week ${row.week_start} → ${row.week_end}: ${weekGames.length} games in nba_games for teams ${teamTricodes.join(', ')}`)
+
+      // Load game JSONs from /feed/ (local-feed API)
+      const gameDataResults = await Promise.all(gameIds.map(id => loadLocalGameJson(id)))
+      const loaded = gameDataResults.filter(Boolean) as GameData[]
+
+      // Filter to games that contain at least one TOTW player (for matchedGameData)
+      const nbaIdSet = new Set(nbaPlayerIds)
+      const relevantGames = loaded.filter(gd =>
+        gd.playerStats?.some((ps: any) => nbaIdSet.has(Number(ps.personId)))
+      )
+      setMatchedGameData(relevantGames)
+
+      // Per-player: how many loaded games have this player's stats
+      for (const p of players) {
+        const pid = p.nba_player_id
+        if (pid == null) {
+          console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): 0 games retrieved (no nba_player_id)`)
+          continue
+        }
+        const count = loaded.filter(gd =>
+          gd.playerStats?.some((ps: any) => Number(ps.personId) === pid)
+        ).length
+        console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): ${count} games retrieved`)
+      }
+
+      setSnackbar({
+        open: true,
+        message: `TOTW Week ${row.week_number}: ${players.length} players, ${relevantGames.length} games with player data (${loaded.length} in /feed/)`,
+        color: 'success',
+      })
+    } catch (err: any) {
+      setSnackbar({ open: true, message: err.message, color: 'danger' })
+    } finally {
+      setLoadingPlayers(false)
+      setLoadingGameData(false)
+    }
+  }, [])
+
+  const selectPowRow = useCallback(async (row: any) => {
+    setSelectedRowId(row.id)
+    setLoadingPlayers(true)
+    try {
+      const players = await resolvePlayerFromAwardRow(row, 'pow')
+      setResolvedPlayers(players)
+      const p = players[0]
+      const nbaPlayerIds = p ? [p.nba_player_id].filter(Boolean) as number[] : []
+      const teamTricodes = p?.team_abbreviation ? [p.team_abbreviation] : []
+
+      setDraft(prev => ({
+        ...prev,
+        game_date: row.week_start_date,
+        team_tricodes: teamTricodes,
+        player_ids: nbaPlayerIds,
+        title: prev.title || `Player of the Week — ${row.week_start_date}`,
+        subtitle: prev.subtitle || (p ? `${p.name}${p.team_abbreviation ? ` (${p.team_abbreviation})` : ''}` : ''),
+        slug: prev.slug || generateSlug(`player-of-the-week-${row.week_start_date}`),
+        metadata: {
+          ...prev.metadata,
+          pow_row: row,
+          pow_player: p,
+        },
+      }))
+      setSnackbar({ open: true, message: p ? `Loaded POW: ${p.name}` : 'Loaded POW row', color: 'success' })
+    } catch (err: any) {
+      setSnackbar({ open: true, message: err.message, color: 'danger' })
+    } finally {
+      setLoadingPlayers(false)
+    }
+  }, [])
+
+  const selectPomRow = useCallback(async (row: any) => {
+    setSelectedRowId(row.id)
+    setLoadingPlayers(true)
+    try {
+      const players = await resolvePlayerFromAwardRow(row, 'pom')
+      setResolvedPlayers(players)
+      const p = players[0]
+      const nbaPlayerIds = p ? [p.nba_player_id].filter(Boolean) as number[] : []
+      const teamTricodes = p?.team_abbreviation ? [p.team_abbreviation] : []
+      const monthName = new Date(Number(row.award_year), Number(row.award_month) - 1).toLocaleString('default', { month: 'long' })
+      const periodLabel = `${monthName} ${row.award_year}`
+
+      setDraft(prev => ({
+        ...prev,
+        game_date: `${row.award_year}-${String(row.award_month).padStart(2, '0')}-01`,
+        team_tricodes: teamTricodes,
+        player_ids: nbaPlayerIds,
+        title: prev.title || `Player of the Month — ${periodLabel}`,
+        subtitle: prev.subtitle || (p ? `${p.name}${p.team_abbreviation ? ` (${p.team_abbreviation})` : ''}` : ''),
+        slug: prev.slug || generateSlug(`player-of-the-month-${row.award_year}-${String(row.award_month).padStart(2, '0')}`),
+        metadata: {
+          ...prev.metadata,
+          pom_row: row,
+          pom_player: p,
+        },
+      }))
+      setSnackbar({ open: true, message: p ? `Loaded POM: ${p.name}` : 'Loaded POM row', color: 'success' })
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message, color: 'danger' })
     } finally {
@@ -722,6 +988,7 @@ export default function PostCreator() {
   }, [])
 
   const selectGame = useCallback(async (game: NbaGame) => {
+    setSpotlightPlayerId(null)
     setLoadingGameData(true)
     try {
       const data = await loadLocalGameJson(game.game_id)
@@ -738,6 +1005,8 @@ export default function PostCreator() {
           slug: prev.slug || generateSlug(data.matchup || data.gameId, data.gameDate || undefined),
           metadata: {
             ...prev.metadata,
+            score: data.scoreData,
+            story: data.story,
             story_data: data.story,
             fun_data: data.scoreData,
             fun_score: data.funScore,
@@ -769,6 +1038,7 @@ export default function PostCreator() {
   // ─── File upload fallback ──────────────────────────────────
 
   const loadGameFromFile = useCallback((file: File) => {
+    setSpotlightPlayerId(null)
     const reader = new FileReader()
     reader.onload = (e) => {
       try {
@@ -788,7 +1058,7 @@ export default function PostCreator() {
           title: prev.title || data.matchup,
           subtitle: prev.subtitle || data.finalScore,
           slug: prev.slug || generateSlug(data.matchup || data.gameId, data.gameDate || undefined),
-          metadata: { ...prev.metadata, story_data: data.story, fun_data: data.scoreData, fun_score: data.funScore, homeTeam: data.homeTeam, awayTeam: data.awayTeam },
+          metadata: { ...prev.metadata, score: data.scoreData, story: data.story, story_data: data.story, fun_data: data.scoreData, fun_score: data.funScore, homeTeam: data.homeTeam, awayTeam: data.awayTeam },
         }))
         setSnackbar({ open: true, message: `Loaded ${file.name}`, color: 'success' })
       } catch (err: any) {
@@ -835,16 +1105,174 @@ export default function PostCreator() {
     setDraft(prev => ({ ...prev, sections: prev.sections.map((s, i) => i === idx ? { ...s, ...updates } : s) }))
   }
 
+  // Player Spotlight: players who have at least one MP4 in the selected game (from playByPlay)
+  const availableSpotlightPlayers = useMemo(() => {
+    if (draft.post_type !== 'player_spotlight' || matchedGameData.length === 0) return []
+    const data = matchedGameData[0]
+    const playByPlay = data.playByPlay || []
+    const playerStats = data.playerStats || []
+    const personIdsWithMp4 = new Set<number>()
+    const nameByPersonId = new Map<number, string>()
+    for (const play of playByPlay) {
+      if (play.mp4 && play.personId != null) {
+        personIdsWithMp4.add(play.personId)
+        if (!nameByPersonId.has(play.personId) && play.playerName) {
+          nameByPersonId.set(play.personId, play.playerName)
+        }
+      }
+    }
+    for (const ps of playerStats) {
+      const pid = ps.personId ?? ps.player_id
+      if (pid != null) {
+        const name = ps.name ?? ps.playerName ?? [ps.firstName, ps.familyName].filter(Boolean).join(' ')
+        if (name) nameByPersonId.set(Number(pid), name)
+      }
+    }
+    return Array.from(personIdsWithMp4)
+      .map(personId => ({ personId, name: nameByPersonId.get(personId) || `Player ${personId}` }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [draft.post_type, matchedGameData])
+
+  const spotlightClipCount = spotlightPlayerId != null
+    ? Math.min(20, getPlayerHighlightClips(spotlightPlayerId, matchedGameData, 999).length)
+    : 0
+
+  // Game Recap: max available clips from this game (score + story algorithm)
+  const recapClipCount = useMemo(() => {
+    if (draft.post_type !== 'game_recap' || matchedGameData.length === 0) return 0
+    const data = matchedGameData[0]
+    return getHighlightClipsForPostType('game_recap', {
+      gameId: data.gameId,
+      scoreData: data.scoreData || {},
+      story: data.story || {},
+      playByPlay: data.playByPlay || [],
+    }, { maxClips: 999 }).length
+  }, [draft.post_type, matchedGameData])
+
   // ─── Auto-generate sections ────────────────────────────────
 
-  const autoGenerateSections = useCallback(() => {
+  const autoGenerateSections = useCallback(async () => {
     const sections: SectionDraft[] = []
     let counter = 0
     const nextId = () => `auto-${counter++}-${Math.random().toString(36).slice(2, 6)}`
 
+    // ── Player Spotlight: single player, N highlights (excitement-scored), game stats, full-game props + hit rate ──
+    if (draft.post_type === 'player_spotlight' && spotlightPlayerId != null && matchedGameData.length > 0) {
+      const data = matchedGameData[0]
+      const gameId = data.gameId
+      const gameDate = data.gameDate || draft.game_date || ''
+      const playerStat = (data.playerStats || []).find((p: any) => Number(p.personId || p.player_id) === spotlightPlayerId)
+      const playerName = playerStat?.name || playerStat?.playerName || (data.playByPlay || []).find((p: any) => p.personId === spotlightPlayerId)?.playerName || `Player ${spotlightPlayerId}`
+      const teamTricode = playerStat?.teamTricode || playerStat?.team_abbreviation || data.teamTricodes?.[0] || ''
+
+      const clips = getPlayerHighlightClips(spotlightPlayerId, matchedGameData, Math.min(20, spotlightHighlightCount))
+      const highlightClips = sortHighlightClipsChronological(clips.map(c => ({
+        mp4: c.mp4!,
+        description: c.description,
+        action_type: c.actionType,
+        period: c.period,
+        clock: c.clock,
+      })))
+
+      const playerStats: Record<string, number> = playerStat
+        ? { pts: playerStat.pts || 0, reb: playerStat.reb || 0, ast: playerStat.ast || 0, stl: playerStat.stl || 0, blk: playerStat.blk || 0, min: playerStat.min || 0 }
+        : {}
+
+      sections.push({
+        id: nextId(), section_type: 'hero', title: '',
+        content: {
+          image_url: '',
+          gradient_overlay: true,
+          badge: 'PLAYER SPOTLIGHT',
+          team_tricode: teamTricode || null,
+          player_name: playerName,
+          player_stats: Object.keys(playerStats).length > 0 ? playerStats : undefined,
+        } satisfies HeroContent,
+        player_id: spotlightPlayerId, team_tricode: teamTricode || null,
+      })
+      sections.push({
+        id: nextId(), section_type: 'headline', title: '',
+        content: { text: draft.title || data.matchup || `${playerName} — ${data.finalScore || ''}`, subtitle: draft.subtitle || data.finalScore || '' },
+        player_id: spotlightPlayerId, team_tricode: null,
+      })
+      if (highlightClips.length > 0) {
+        sections.push({
+          id: nextId(), section_type: 'video_carousel', title: 'Highlights',
+          content: { clips: highlightClips },
+          player_id: spotlightPlayerId, team_tricode: null,
+        })
+      }
+      sections.push({
+        id: nextId(), section_type: 'player_highlight', title: playerName,
+        content: {
+          player_id: spotlightPlayerId,
+          name: playerName,
+          team_tricode: teamTricode || null,
+          stats: playerStats,
+          video_url: highlightClips[0]?.mp4,
+          video_clips: highlightClips.length ? highlightClips : undefined,
+          data_overlays: [
+            ...(playerStats.pts != null && playerStats.pts > 0 ? [{ label: 'PTS', value: String(playerStats.pts) }] : []),
+            ...(playerStats.reb != null && playerStats.reb > 0 ? [{ label: 'REB', value: String(playerStats.reb) }] : []),
+            ...(playerStats.ast != null && playerStats.ast > 0 ? [{ label: 'AST', value: String(playerStats.ast) }] : []),
+          ],
+        } satisfies PlayerHighlightContent,
+        player_id: spotlightPlayerId, team_tricode: teamTricode || null,
+      })
+
+      let propCards: SectionDraft[] = []
+      try {
+        const { data: nbaGame } = await supabase.from('nba_games').select('game_date, home_team_tricode, away_team_tricode').eq('game_id', gameId).maybeSingle()
+        if (nbaGame?.game_date) {
+          const targetDate = nbaGame.game_date.split('T')[0]
+          const home = nbaGame.home_team_tricode || ''
+          const away = nbaGame.away_team_tricode || ''
+          const { data: propsGame } = await supabase.from('player_props_games').select('id').eq('game_date', targetDate).or(`home_team_tricode.eq.${home},away_team_tricode.eq.${home},home_team_tricode.eq.${away},away_team_tricode.eq.${away}`).limit(1).maybeSingle()
+          if (propsGame) {
+            const { data: allProps } = await supabase.from('player_props').select('id, bet_type, line, bet_type_id, game_id, raw_odd_data').eq('game_id', propsGame.id).eq('nba_player_id', spotlightPlayerId)
+            const fullGameProps = filterFullGameProps(allProps || [])
+            const { data: boxscore } = await supabase.from('nba_boxscores').select('pts, reb, ast, stl, blk, tov, fg3m, ftm').eq('nba_player_id', spotlightPlayerId).eq('game_id', gameId).single()
+            if (boxscore && fullGameProps.length > 0) {
+              for (const prop of fullGameProps) {
+                const result = calculatePropResult(prop.bet_type, prop.line ?? 0, boxscore)
+                if (result) {
+                  propCards.push({
+                    id: nextId(),
+                    section_type: 'prop_card',
+                    title: '',
+                    content: {
+                      player_id: spotlightPlayerId,
+                      player_name: playerName,
+                      bet_type: prop.bet_type,
+                      line: prop.line ?? 0,
+                      actual: result.actualValue,
+                      result: result.result,
+                    } satisfies PropCardContent,
+                    player_id: spotlightPlayerId,
+                    team_tricode: null,
+                  })
+                }
+              }
+            }
+          }
+        }
+      } catch (_) { /* omit props on error */ }
+      sections.push(...propCards)
+
+      setDraft(prev => ({
+        ...prev,
+        person_id: String(spotlightPlayerId),
+        player_ids: [spotlightPlayerId],
+        sections: [...prev.sections, ...sections],
+      }))
+      setSnackbar({ open: true, message: `Auto-generated ${sections.length} sections`, color: 'success' })
+      return
+    }
+
     // ── TOTN / TOTW: lineup card + player highlights ──
     if (dataSourceMode === 'totn' || dataSourceMode === 'totw') {
       const badgeText = dataSourceMode === 'totn' ? 'TEAM OF THE NIGHT' : 'TEAM OF THE WEEK'
+      const clipsPerPlayer = dataSourceMode === 'totn' ? Math.min(10, Math.max(1, totnPlayerClipCount)) : Math.min(10, Math.max(1, totwPlayerClipCount))
 
       // Hero
       sections.push({
@@ -860,26 +1288,35 @@ export default function PostCreator() {
         player_id: null, team_tricode: null,
       })
 
-      // Lineup card from resolved players
+      // Lineup card from resolved players (include highlight clips from game JSON for slideshow)
       if (resolvedPlayers.length > 0) {
+        const toLineupPlayer = (p: typeof resolvedPlayers[0]): LineupPlayer => {
+          const clips = p.nba_player_id
+            ? getPlayerHighlightClips(p.nba_player_id, matchedGameData, clipsPerPlayer).map(c => ({
+                mp4: c.mp4!,
+                description: c.description,
+                action_type: c.actionType,
+                period: c.period,
+                clock: c.clock,
+              }))
+            : undefined
+          return {
+            player_id: p.nba_player_id || 0,
+            name: p.name,
+            fantasy_points: p.fantasy_points,
+            salary: p.salary,
+            team_tricode: p.team_abbreviation || '',
+            position: p.position ?? undefined,
+            jersey_number: p.jersey_number ?? undefined,
+            video_clips: clips?.length ? clips : undefined,
+          }
+        }
         const starters: LineupPlayer[] = resolvedPlayers
           .filter(p => p.role === 'Starter')
-          .map(p => ({
-            player_id: p.nba_player_id || 0,
-            name: p.name,
-            fantasy_points: p.fantasy_points,
-            salary: p.salary,
-            team_tricode: p.team_abbreviation || '',
-          }))
+          .map(toLineupPlayer)
         const bench: LineupPlayer[] = resolvedPlayers
           .filter(p => p.role === 'Bench')
-          .map(p => ({
-            player_id: p.nba_player_id || 0,
-            name: p.name,
-            fantasy_points: p.fantasy_points,
-            salary: p.salary,
-            team_tricode: p.team_abbreviation || '',
-          }))
+          .map(toLineupPlayer)
 
         sections.push({
           id: nextId(), section_type: 'lineup_card', title: badgeText,
@@ -917,9 +1354,9 @@ export default function PostCreator() {
           }
         }
 
-        // Pull best highlight clips from play-by-play
+        // Pull best highlight clips from play-by-play (use same count as lineup)
         const clips = player.nba_player_id
-          ? getPlayerHighlightClips(player.nba_player_id, matchedGameData, 3)
+          ? getPlayerHighlightClips(player.nba_player_id, matchedGameData, clipsPerPlayer)
           : []
         const bestClip = clips[0]
 
@@ -958,19 +1395,37 @@ export default function PostCreator() {
     } else if (matchedGameData.length > 0) {
       const data = matchedGameData[0]
 
-      // Hero
+      // Hero (game recap: score + teams in hero; no separate headline to avoid repetition)
       sections.push({
         id: nextId(), section_type: 'hero', title: '',
-        content: { image_url: '', gradient_overlay: true, badge: 'GAME RECAP', team_tricode: data.teamTricodes[0] || '' } satisfies HeroContent,
-        player_id: null, team_tricode: data.teamTricodes[0] || null,
+        content: {
+          image_url: '',
+          gradient_overlay: true,
+          badge: 'Game Recap',
+          team_tricode: data.teamTricodes[0] || '',
+          score_line: data.finalScore || undefined,
+          team_tricodes: (data.teamTricodes?.length >= 2 ? data.teamTricodes : undefined) as string[] | undefined,
+        } satisfies HeroContent,
+        player_id: null,
+        team_tricode: data.teamTricodes[0] || null,
       })
 
-      // Headline
-      sections.push({
-        id: nextId(), section_type: 'headline', title: '',
-        content: { text: data.matchup || draft.title, subtitle: data.finalScore || draft.subtitle },
-        player_id: null, team_tricode: null,
-      })
+      // Game recap: MP4 highlight carousel from score + story (utility picks best plays; count from slider)
+      if (draft.post_type === 'game_recap') {
+        const recapClips = getHighlightClipsForPostType('game_recap', {
+          gameId: data.gameId,
+          scoreData: data.scoreData || {},
+          story: data.story || {},
+          playByPlay: data.playByPlay || [],
+        }, { maxClips: Math.min(recapClipCount, Math.max(1, recapHighlightCount)) })
+        if (recapClips.length > 0) {
+          sections.push({
+            id: nextId(), section_type: 'video_carousel', title: 'Highlights',
+            content: { clips: recapClips },
+            player_id: null, team_tricode: null,
+          })
+        }
+      }
 
       // Stat comparisons
       if (data.story?.advantages?.length) {
@@ -990,22 +1445,41 @@ export default function PostCreator() {
         }
       }
 
-      // Top players
+      // Top players (game recap: each card gets its own slideshow of that player's highlights)
       const topPlayers = (data.playerStats || [])
         .filter((p: any) => p.pts != null)
         .sort((a: any, b: any) => (b.pts || 0) - (a.pts || 0))
         .slice(0, 5)
+      const playerClipCount = draft.post_type === 'game_recap' ? Math.min(10, Math.max(1, recapPlayerClipCount)) : 3
       for (const p of topPlayers) {
-        const playerId = p.personId || p.player_id
+        const playerId = Number(p.personId || p.player_id)
+        const rawClips = getPlayerHighlightClips(playerId, matchedGameData, playerClipCount)
+        const playerClips = rawClips.length > 0
+          ? sortHighlightClipsChronological(rawClips.map((c) => ({
+              mp4: c.mp4!,
+              description: c.description,
+              action_type: c.actionType || c.subType,
+              period: c.period,
+              clock: c.clock,
+            })))
+          : []
+        const bestClip = playerClips[0]
         sections.push({
           id: nextId(), section_type: 'player_highlight', title: p.name || p.playerName || 'Player',
           content: {
-            player_id: Number(playerId), name: p.name || p.playerName || 'Player',
+            player_id: playerId, name: p.name || p.playerName || 'Player',
             team_tricode: p.teamTricode || p.team_abbreviation || '',
             stats: { pts: p.pts || 0, reb: p.reb || 0, ast: p.ast || 0, stl: p.stl || 0, blk: p.blk || 0, min: p.min || 0 },
             fantasy_points: p.fantasyPoints || p.fantasy_points || undefined,
+            ...(bestClip
+              ? {
+                  video_url: bestClip.mp4,
+                  video_thumbnail: bestClip.mp4.replace('.mp4', '_thumbnail.jpg'),
+                  video_clips: playerClips.length ? playerClips : undefined,
+                }
+              : {}),
           } satisfies PlayerHighlightContent,
-          player_id: Number(playerId) || null, team_tricode: p.teamTricode || p.team_abbreviation || null,
+          player_id: playerId || null, team_tricode: p.teamTricode || p.team_abbreviation || null,
         })
       }
 
@@ -1026,7 +1500,7 @@ export default function PostCreator() {
 
     setDraft(prev => ({ ...prev, sections: [...prev.sections, ...sections] }))
     setSnackbar({ open: true, message: `Auto-generated ${sections.length} sections`, color: 'success' })
-  }, [dataSourceMode, resolvedPlayers, matchedGameData, draft.title, draft.subtitle, draft.metadata])
+  }, [dataSourceMode, resolvedPlayers, matchedGameData, draft.post_type, draft.title, draft.subtitle, draft.metadata, draft.game_date, spotlightPlayerId, spotlightHighlightCount, recapHighlightCount, recapClipCount, recapPlayerClipCount, totnPlayerClipCount, totwPlayerClipCount])
 
   // ─── Save to Supabase ──────────────────────────────────────
 
@@ -1065,7 +1539,7 @@ export default function PostCreator() {
       setSnackbar({ open: true, message: `Post ${status === 'published' ? 'published' : 'saved as draft'}!`, color: 'success' })
       setTimeout(() => {
         if (status === 'published') navigate(`/feed/${insertedPost.slug}`)
-        else navigate('/admin/create-post')
+        else navigate(draftSaveTarget)
       }, 1500)
     } catch (err: any) {
       console.error('Error saving post:', err)
@@ -1076,7 +1550,9 @@ export default function PostCreator() {
   const canProceed = (step: number): boolean => {
     switch (step) {
       case 0: return true
-      case 1: return true
+      case 1:
+        if (draft.post_type === 'player_spotlight' && dataSourceMode === 'game') return matchedGameData.length > 0 && spotlightPlayerId != null
+        return true
       case 2: return draft.title.trim().length > 0 && draft.slug.trim().length > 0
       case 3: return true
       case 4: return draft.title.trim().length > 0
@@ -1084,9 +1560,11 @@ export default function PostCreator() {
     }
   }
 
-  const hasAutoGenData = (dataSourceMode === 'totn' || dataSourceMode === 'totw')
+  const hasAutoGenData = (dataSourceMode === 'totn' || dataSourceMode === 'totw' || dataSourceMode === 'pow' || dataSourceMode === 'pom')
     ? resolvedPlayers.length > 0
-    : matchedGameData.length > 0
+    : draft.post_type === 'player_spotlight'
+      ? matchedGameData.length > 0 && spotlightPlayerId != null
+      : matchedGameData.length > 0
 
   // ─── Render ────────────────────────────────────────────────
 
@@ -1094,7 +1572,7 @@ export default function PostCreator() {
     <Box sx={{ maxWidth: 900, mx: 'auto', px: { xs: 2, md: 3 }, pt: { xs: 'calc(49px + 24px)', md: 'calc((100vh - 40px) / 16 + 24px)' }, pb: 8, minHeight: '100vh' }}>
       {/* Header */}
       <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 3 }}>
-        <IconButton variant="plain" onClick={() => navigate('/feed')}>
+        <IconButton variant="plain" onClick={() => navigate(backTarget)}>
           <ArrowBack />
         </IconButton>
         <Typography level="h3" sx={{ fontWeight: 700, fontFamily: 'serif' }}>Create Post</Typography>
@@ -1120,24 +1598,46 @@ export default function PostCreator() {
             const option = POST_TYPE_OPTIONS.find(o => o.value === type)!
             setDraft(prev => ({ ...prev, post_type: type, tags: option.tags }))
             // Reset data source state when type changes
-            setSelectedRowId(null); setResolvedPlayers([]); setMatchedGameData([]); setGamesForDate([])
+            setSelectedRowId(null); setResolvedPlayers([]); setMatchedGameData([]); setGamesForDate([]); setTotnBoxscores([]); setTotnGamesFeedStatus([])
+            setSpotlightPlayerId(null); setSpotlightHighlightCount(5)
           }} />
         )}
 
         {activeStep === 1 && (
           <StepDataSource
             mode={dataSourceMode}
-            totnRows={totnRows} totwRows={totwRows}
+            totnRows={totnRows} totwRows={totwRows} powRows={powRows} pomRows={pomRows}
             selectedRowId={selectedRowId}
             resolvedPlayers={resolvedPlayers}
             loadingRows={loadingRows} loadingPlayers={loadingPlayers}
             onSelectTotnRow={selectTotnRow} onSelectTotwRow={selectTotwRow}
+            onSelectPowRow={selectPowRow} onSelectPomRow={selectPomRow}
             selectedDate={selectedDate} gamesForDate={gamesForDate}
             loadingGames={loadingGames} loadingGameData={loadingGameData}
             matchedGameData={matchedGameData}
+            totnBoxscores={totnBoxscores}
+            totnGamesFeedStatus={totnGamesFeedStatus}
             onDateSelected={onDateSelected} onSelectGame={selectGame}
             onFileUpload={loadGameFromFile}
             draft={draft}
+            spotlightPlayerId={spotlightPlayerId}
+            spotlightHighlightCount={spotlightHighlightCount}
+            availableSpotlightPlayers={availableSpotlightPlayers}
+            spotlightClipCount={spotlightClipCount}
+            onSpotlightPlayerChange={(personId) => {
+              setSpotlightPlayerId(personId)
+              setDraft(prev => ({ ...prev, person_id: personId ?? undefined }))
+            }}
+            onSpotlightHighlightCountChange={setSpotlightHighlightCount}
+            recapHighlightCount={recapHighlightCount}
+            recapClipCount={recapClipCount}
+            onRecapHighlightCountChange={setRecapHighlightCount}
+            recapPlayerClipCount={recapPlayerClipCount}
+            onRecapPlayerClipCountChange={setRecapPlayerClipCount}
+            totnPlayerClipCount={totnPlayerClipCount}
+            onTotnPlayerClipCountChange={setTotnPlayerClipCount}
+            totwPlayerClipCount={totwPlayerClipCount}
+            onTotwPlayerClipCountChange={setTotwPlayerClipCount}
           />
         )}
 
@@ -1213,22 +1713,47 @@ function StepPostType({ selected, onSelect }: { selected: PostType; onSelect: (t
 // ==========================================================================
 
 function StepDataSource({
-  mode, totnRows, totwRows, selectedRowId, resolvedPlayers,
+  mode, totnRows, totwRows, powRows, pomRows, selectedRowId, resolvedPlayers,
   loadingRows, loadingPlayers,
-  onSelectTotnRow, onSelectTotwRow,
+  onSelectTotnRow, onSelectTotwRow, onSelectPowRow, onSelectPomRow,
   selectedDate, gamesForDate, loadingGames, loadingGameData, matchedGameData,
+  totnBoxscores, totnGamesFeedStatus,
   onDateSelected, onSelectGame, onFileUpload, draft,
+  spotlightPlayerId, spotlightHighlightCount, availableSpotlightPlayers, spotlightClipCount,
+  onSpotlightPlayerChange, onSpotlightHighlightCountChange,
+  recapHighlightCount, recapClipCount, onRecapHighlightCountChange,
+  recapPlayerClipCount, onRecapPlayerClipCountChange,
+  totnPlayerClipCount, onTotnPlayerClipCountChange,
+  totwPlayerClipCount, onTotwPlayerClipCountChange,
 }: {
   mode: string
-  totnRows: any[]; totwRows: any[]
+  totnRows: any[]; totwRows: any[]; powRows: any[]; pomRows: any[]
   selectedRowId: string | null; resolvedPlayers: ResolvedPlayer[]
   loadingRows: boolean; loadingPlayers: boolean
   onSelectTotnRow: (row: any) => void; onSelectTotwRow: (row: any) => void
+  onSelectPowRow: (row: any) => void; onSelectPomRow: (row: any) => void
   selectedDate: string; gamesForDate: NbaGame[]; loadingGames: boolean; loadingGameData: boolean
   matchedGameData: GameData[]
+  totnBoxscores: Array<{ game_id: string; nba_player_id: number; player_name?: string; pts?: number; reb?: number; ast?: number; stl?: number; blk?: number; min?: number | string }>
+  totnGamesFeedStatus: Array<{ gameId: string; inFeed: boolean; hasMp4: boolean }>
   onDateSelected: (date: string) => void; onSelectGame: (game: NbaGame) => void
   onFileUpload: (file: File) => void
   draft: PostDraft
+  spotlightPlayerId: number | null
+  spotlightHighlightCount: number
+  availableSpotlightPlayers: Array<{ personId: number; name: string }>
+  spotlightClipCount: number
+  onSpotlightPlayerChange: (personId: number | null) => void
+  onSpotlightHighlightCountChange: (count: number) => void
+  recapHighlightCount: number
+  recapClipCount: number
+  onRecapHighlightCountChange: (count: number) => void
+  recapPlayerClipCount: number
+  onRecapPlayerClipCountChange: (count: number) => void
+  totnPlayerClipCount: number
+  onTotnPlayerClipCountChange: (count: number) => void
+  totwPlayerClipCount: number
+  onTotwPlayerClipCountChange: (count: number) => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -1321,6 +1846,72 @@ function StepDataSource({
                       No game files with stats found for {draft.game_date}. Upload game JSONs or check that files are in <code>scripts/feed/</code>.
                     </Alert>
                   )}
+
+                  {/* Table: game IDs + nba_boxscores stats per player, ✓ in /feed/, ✓ has mp4 */}
+                  {totnBoxscores.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography level="title-sm" sx={{ mb: 1 }}>Games &amp; stats (nba_boxscores) — /feed/ and MP4 status</Typography>
+                      <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'auto', maxHeight: 360 }}>
+                        <Table size="sm" stickyHeader>
+                          <thead>
+                            <tr>
+                              <th>Game ID</th>
+                              <th>Player</th>
+                              <th style={{ textAlign: 'right' }}>PTS</th>
+                              <th style={{ textAlign: 'right' }}>REB</th>
+                              <th style={{ textAlign: 'right' }}>AST</th>
+                              <th style={{ textAlign: 'right' }}>MIN</th>
+                              <th style={{ textAlign: 'center' }}>In /feed/</th>
+                              <th style={{ textAlign: 'center' }}>Has MP4</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...totnBoxscores]
+                              .sort((a, b) => a.game_id.localeCompare(b.game_id) || (a.player_name || '').localeCompare(b.player_name || ''))
+                              .map((row, i) => {
+                                const status = totnGamesFeedStatus.find(s => s.gameId === row.game_id)
+                                const minVal = row.min != null ? (typeof row.min === 'string' ? parseFloat(row.min) : row.min) : null
+                                return (
+                                  <tr key={`${row.game_id}-${row.nba_player_id}-${i}`}>
+                                    <td><Typography level="body-xs" sx={{ fontFamily: 'monospace' }}>{row.game_id}</Typography></td>
+                                    <td><Typography level="body-sm">{row.player_name ?? resolvedPlayers.find(p => p.nba_player_id === row.nba_player_id)?.name ?? row.nba_player_id}</Typography></td>
+                                    <td style={{ textAlign: 'right' }}>{row.pts ?? '—'}</td>
+                                    <td style={{ textAlign: 'right' }}>{row.reb ?? '—'}</td>
+                                    <td style={{ textAlign: 'right' }}>{row.ast ?? '—'}</td>
+                                    <td style={{ textAlign: 'right' }}>{minVal != null ? minVal.toFixed(1) : '—'}</td>
+                                    <td style={{ textAlign: 'center' }}>{status?.inFeed ? <Check color="success" fontSize="small" /> : '—'}</td>
+                                    <td style={{ textAlign: 'center' }}>{status?.hasMp4 ? <Check color="success" fontSize="small" /> : '—'}</td>
+                                  </tr>
+                                )
+                              })}
+                          </tbody>
+                        </Table>
+                      </Sheet>
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* TOTN: clips per player for lineup + player highlight sections (games that night) */}
+            {resolvedPlayers.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="title-md" sx={{ mb: 2 }}>Player highlights (games that night)</Typography>
+                  <FormControl sx={{ maxWidth: 360 }}>
+                    <FormLabel>Clips per player (1–10)</FormLabel>
+                    <Slider
+                      value={totnPlayerClipCount}
+                      min={1}
+                      max={10}
+                      step={1}
+                      valueLabelDisplay="auto"
+                      onChange={(_e, value) => onTotnPlayerClipCountChange(Array.isArray(value) ? value[0] : value)}
+                    />
+                    <FormHelperText>
+                      Each lineup player gets up to {totnPlayerClipCount} highlight clip{totnPlayerClipCount !== 1 ? 's' : ''} in the lineup card and in their player highlight section (from games that night).
+                    </FormHelperText>
+                  </FormControl>
                 </CardContent>
               </Card>
             )}
@@ -1374,24 +1965,45 @@ function StepDataSource({
 
             {loadingPlayers ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size="sm" /></Box>
-            ) : resolvedPlayers.length > 0 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography level="title-md" sx={{ mb: 1.5 }}>Lineup</Typography>
-                  <Stack gap={0.5}>
-                    {resolvedPlayers.map(p => (
-                      <Stack key={p.id} direction="row" alignItems="center" gap={1} sx={{ py: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
-                        <Chip size="sm" variant={p.role === 'Starter' ? 'solid' : 'outlined'} color={p.role === 'Starter' ? 'primary' : 'neutral'} sx={{ minWidth: 24 }}>{p.slot.toUpperCase()}</Chip>
-                        <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{p.name}</Typography>
-                        <Chip size="sm" variant="soft">{p.team_abbreviation || '?'}</Chip>
-                        <Typography level="body-xs" sx={{ fontWeight: 600, minWidth: 55, textAlign: 'right' }}>{p.fantasy_points.toFixed(1)} FP</Typography>
-                        <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: 'text.tertiary', minWidth: 60, textAlign: 'right' }}>{formatSalary(p.salary)}</Typography>
-                      </Stack>
-                    ))}
-                  </Stack>
-                </CardContent>
-              </Card>
-            )}
+            ) : resolvedPlayers.length > 0 ? (
+              <>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography level="title-md" sx={{ mb: 1.5 }}>Lineup</Typography>
+                    <Stack gap={0.5}>
+                      {resolvedPlayers.map(p => (
+                        <Stack key={p.id} direction="row" alignItems="center" gap={1} sx={{ py: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Chip size="sm" variant={p.role === 'Starter' ? 'solid' : 'outlined'} color={p.role === 'Starter' ? 'primary' : 'neutral'} sx={{ minWidth: 24 }}>{p.slot.toUpperCase()}</Chip>
+                          <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{p.name}</Typography>
+                          <Chip size="sm" variant="soft">{p.team_abbreviation || '?'}</Chip>
+                          <Typography level="body-xs" sx={{ fontWeight: 600, minWidth: 55, textAlign: 'right' }}>{p.fantasy_points.toFixed(1)} FP</Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: 'text.tertiary', minWidth: 60, textAlign: 'right' }}>{formatSalary(p.salary)}</Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </CardContent>
+                </Card>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography level="title-md" sx={{ mb: 2 }}>Player highlights (games that week)</Typography>
+                    <FormControl sx={{ maxWidth: 360 }}>
+                      <FormLabel>Clips per player (1–10)</FormLabel>
+                      <Slider
+                        value={totwPlayerClipCount}
+                        min={1}
+                        max={10}
+                        step={1}
+                        valueLabelDisplay="auto"
+                        onChange={(_e, value) => onTotwPlayerClipCountChange(Array.isArray(value) ? value[0] : value)}
+                      />
+                      <FormHelperText>
+                        Each lineup player gets up to {totwPlayerClipCount} highlight clip{totwPlayerClipCount !== 1 ? 's' : ''} in the lineup card and in their player highlight section (from games that week).
+                      </FormHelperText>
+                    </FormControl>
+                  </CardContent>
+                </Card>
+              </>
+            ) : null}
           </Stack>
         )}
       </Box>
@@ -1440,6 +2052,88 @@ function StepDataSource({
             <Typography level="body-sm" sx={{ color: 'text.tertiary', textAlign: 'center', py: 3 }}>No games found for {selectedDate}</Typography>
           ) : null}
 
+          {/* Game Recap: main carousel + clips per player for top-5 player cards */}
+          {draft.post_type === 'game_recap' && matchedGameData.length > 0 && (
+            <Card variant="outlined">
+              <CardContent>
+                <Typography level="title-md" sx={{ mb: 2 }}>Game Recap</Typography>
+                <Stack gap={2}>
+                  {recapClipCount > 0 && (
+                    <FormControl>
+                      <FormLabel>Game highlights carousel — how many clips? (1–{recapClipCount})</FormLabel>
+                      <Slider
+                        value={Math.min(recapHighlightCount, recapClipCount)}
+                        min={1}
+                        max={recapClipCount}
+                        step={1}
+                        valueLabelDisplay="auto"
+                        onChange={(_e, value) => onRecapHighlightCountChange(Array.isArray(value) ? value[0] : value)}
+                      />
+                      <FormHelperText>
+                        {Math.min(recapHighlightCount, recapClipCount)} clip{Math.min(recapHighlightCount, recapClipCount) !== 1 ? 's' : ''} — algorithm picks best plays from score + story
+                      </FormHelperText>
+                    </FormControl>
+                  )}
+                  <FormControl>
+                    <FormLabel>Clips per player (top 5 cards) — (1–10)</FormLabel>
+                    <Slider
+                      value={recapPlayerClipCount}
+                      min={1}
+                      max={10}
+                      step={1}
+                      valueLabelDisplay="auto"
+                      onChange={(_e, value) => onRecapPlayerClipCountChange(Array.isArray(value) ? value[0] : value)}
+                    />
+                    <FormHelperText>
+                      Each player card gets its own slideshow with up to {recapPlayerClipCount} of their best plays
+                    </FormHelperText>
+                  </FormControl>
+                </Stack>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Player Spotlight: player + highlight count (only when game selected) */}
+          {draft.post_type === 'player_spotlight' && matchedGameData.length > 0 && (
+            <Card variant="outlined">
+              <CardContent>
+                <Typography level="title-md" sx={{ mb: 2 }}>Player Spotlight</Typography>
+                {availableSpotlightPlayers.length === 0 ? (
+                  <Alert color="warning" variant="soft">No players with highlights in this game.</Alert>
+                ) : (
+                  <Stack gap={2}>
+                    <FormControl>
+                      <FormLabel>Select player</FormLabel>
+                      <Select
+                        placeholder="Choose a player"
+                        value={spotlightPlayerId ?? ''}
+                        onChange={(_e, v) => onSpotlightPlayerChange(v == null ? null : (v as number))}
+                      >
+                        {availableSpotlightPlayers.map(({ personId, name }) => (
+                          <Option key={personId} value={personId}>{name}</Option>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    {spotlightPlayerId != null && spotlightClipCount > 0 && (
+                      <FormControl>
+                        <FormLabel>How many highlights? (1–{Math.min(20, spotlightClipCount)})</FormLabel>
+                        <Slider
+                          value={spotlightHighlightCount}
+                          min={1}
+                          max={Math.min(20, spotlightClipCount)}
+                          step={1}
+                          valueLabelDisplay="auto"
+                          onChange={(_e, value) => onSpotlightHighlightCountChange(Array.isArray(value) ? value[0] : value)}
+                        />
+                        <FormHelperText>{spotlightHighlightCount} clip{spotlightHighlightCount !== 1 ? 's' : ''}</FormHelperText>
+                      </FormControl>
+                    )}
+                  </Stack>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           {/* File Upload Fallback */}
           <Divider />
           <Card variant="outlined">
@@ -1454,17 +2148,127 @@ function StepDataSource({
     )
   }
 
-  // ── POW / POM ──
-  if (mode === 'pow' || mode === 'pom') {
+  // ── POW ──
+  if (mode === 'pow') {
     return (
       <Box>
-        <Typography level="h4" sx={{ mb: 1 }}>{mode === 'pow' ? 'Player of the Week' : 'Player of the Month'}</Typography>
+        <Typography level="h4" sx={{ mb: 1 }}>Select Player of the Week</Typography>
         <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
-          Select the award data. This feature will connect to the {mode === 'pow' ? 'nba_pow' : 'nba_pom'} table.
+          Pick an nba_pow row. The featured player will be resolved and post details filled automatically.
         </Typography>
-        <Alert color="neutral" variant="soft">
-          Award row selection coming soon. For now, enter player details manually in the next step and add sections in Step 3.
-        </Alert>
+
+        {loadingRows ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
+        ) : powRows.length === 0 ? (
+          <Alert color="warning" variant="soft">No POW rows found in database.</Alert>
+        ) : (
+          <Stack gap={1.5}>
+            <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'auto', maxHeight: 320 }}>
+              <Table size="sm" stickyHeader>
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}></th>
+                    <th>Week start</th>
+                    <th>Season</th>
+                    <th>Conference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {powRows.map(row => {
+                    const isSelected = row.id === selectedRowId
+                    return (
+                      <tr key={row.id} onClick={() => onSelectPowRow(row)}
+                        style={{ cursor: 'pointer', background: isSelected ? '#e3f2fd' : undefined }}>
+                        <td>{isSelected ? <Check color="success" fontSize="small" /> : null}</td>
+                        <td><Typography level="body-sm" sx={{ fontWeight: isSelected ? 700 : 400 }}>{row.week_start_date}</Typography></td>
+                        <td><Typography level="body-xs">{row.season ?? '—'}</Typography></td>
+                        <td><Typography level="body-xs">{row.conference ?? '—'}</Typography></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </Table>
+            </Sheet>
+
+            {loadingPlayers ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size="sm" /><Typography level="body-sm" sx={{ ml: 2 }}>Resolving player...</Typography></Box>
+            ) : resolvedPlayers.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="title-md" sx={{ mb: 1.5 }}>Featured player — {draft.game_date}</Typography>
+                  <Stack direction="row" alignItems="center" gap={1} sx={{ py: 0.5 }}>
+                    <Chip size="sm" variant="solid" color="primary">POW</Chip>
+                    <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{resolvedPlayers[0].name}</Typography>
+                    <Chip size="sm" variant="soft">{resolvedPlayers[0].team_abbreviation || '?'}</Chip>
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+          </Stack>
+        )}
+      </Box>
+    )
+  }
+
+  // ── POM ──
+  if (mode === 'pom') {
+    return (
+      <Box>
+        <Typography level="h4" sx={{ mb: 1 }}>Select Player of the Month</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
+          Pick an nba_pom row. The featured player will be resolved and post details filled automatically.
+        </Typography>
+
+        {loadingRows ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
+        ) : pomRows.length === 0 ? (
+          <Alert color="warning" variant="soft">No POM rows found in database.</Alert>
+        ) : (
+          <Stack gap={1.5}>
+            <Sheet variant="outlined" sx={{ borderRadius: 'sm', overflow: 'auto', maxHeight: 320 }}>
+              <Table size="sm" stickyHeader>
+                <thead>
+                  <tr>
+                    <th style={{ width: 40 }}></th>
+                    <th>Month</th>
+                    <th>Season</th>
+                    <th>Conference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pomRows.map(row => {
+                    const isSelected = row.id === selectedRowId
+                    const monthName = new Date(Number(row.award_year), Number(row.award_month) - 1).toLocaleString('default', { month: 'long' })
+                    return (
+                      <tr key={row.id} onClick={() => onSelectPomRow(row)}
+                        style={{ cursor: 'pointer', background: isSelected ? '#e3f2fd' : undefined }}>
+                        <td>{isSelected ? <Check color="success" fontSize="small" /> : null}</td>
+                        <td><Typography level="body-sm" sx={{ fontWeight: isSelected ? 700 : 400 }}>{monthName} {row.award_year}</Typography></td>
+                        <td><Typography level="body-xs">{row.season ?? '—'}</Typography></td>
+                        <td><Typography level="body-xs">{row.conference ?? '—'}</Typography></td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </Table>
+            </Sheet>
+
+            {loadingPlayers ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size="sm" /><Typography level="body-sm" sx={{ ml: 2 }}>Resolving player...</Typography></Box>
+            ) : resolvedPlayers.length > 0 && (
+              <Card variant="outlined">
+                <CardContent>
+                  <Typography level="title-md" sx={{ mb: 1.5 }}>Featured player</Typography>
+                  <Stack direction="row" alignItems="center" gap={1} sx={{ py: 0.5 }}>
+                    <Chip size="sm" variant="solid" color="primary">POM</Chip>
+                    <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{resolvedPlayers[0].name}</Typography>
+                    <Chip size="sm" variant="soft">{resolvedPlayers[0].team_abbreviation || '?'}</Chip>
+                  </Stack>
+                </CardContent>
+              </Card>
+            )}
+          </Stack>
+        )}
       </Box>
     )
   }
@@ -1545,6 +2349,22 @@ function StepPostDetails({
           <FormControl>
             <FormLabel>Cover Image URL</FormLabel>
             <Input placeholder="https://..." value={draft.cover_image_url} onChange={(e) => onUpdate({ cover_image_url: e.target.value })} />
+            {(draft.post_type === 'team_of_night' || draft.post_type === 'team_of_week') && (resolvedPlayers.length > 0 || matchedGameData.length > 0 || draft.game_date || draft.team_tricodes.length > 0) && (
+              <Alert size="sm" color="neutral" variant="soft" sx={{ mt: 1.5 }}>
+                <Typography level="body-xs" sx={{ fontWeight: 600, mb: 0.5 }}>Cover image search hints</Typography>
+                <Stack component="ul" sx={{ m: 0, pl: 2, '& li': { mb: 0.25 } }}>
+                  {draft.game_date && <li><strong>Date:</strong> {draft.game_date}</li>}
+                  {draft.team_tricodes.length > 0 && <li><strong>Teams:</strong> {draft.team_tricodes.join(', ')}</li>}
+                  {matchedGameData.length > 0 && (
+                    <li><strong>Matchups:</strong> {matchedGameData.map(g => g.matchup || g.gameId).filter(Boolean).join(' · ') || matchedGameData.map(g => g.gameId).join(', ')}</li>
+                  )}
+                  {matchedGameData.length > 0 && <li><strong>Game IDs:</strong> {matchedGameData.map(g => g.gameId).join(', ')}</li>}
+                  {resolvedPlayers.length > 0 && (
+                    <li><strong>Players:</strong> {resolvedPlayers.slice(0, 12).map(p => p.name).join(', ')}{resolvedPlayers.length > 12 ? ` (+${resolvedPlayers.length - 12} more)` : ''}</li>
+                  )}
+                </Stack>
+              </Alert>
+            )}
           </FormControl>
         </Box>
 
@@ -1754,6 +2574,33 @@ function SectionEditor({ section, onUpdate }: { section: SectionDraft; onUpdate:
         </>
       )}
 
+      {section.section_type === 'video_carousel' && (
+        <>
+          <Typography level="body-sm" sx={{ fontWeight: 600 }}>Clips (MP4 URL + optional play metadata)</Typography>
+          <Stack gap={1.5}>
+            {(content.clips || []).map((clip: { mp4?: string; description?: string; action_type?: string; period?: number; clock?: string }, i: number) => (
+              <Card key={i} variant="outlined" size="sm">
+                <CardContent>
+                  <Stack direction="row" alignItems="flex-start" gap={1}>
+                    <Stack gap={1} sx={{ flex: 1 }}>
+                      <FormControl size="sm"><FormLabel>MP4 URL</FormLabel><Input size="sm" value={clip.mp4 || ''} onChange={(e) => { const clips = [...(content.clips || [])]; clips[i] = { ...clips[i], mp4: e.target.value }; updateContent({ clips }) }} placeholder="https://...nba.com/..." /></FormControl>
+                      <FormControl size="sm"><FormLabel>Description</FormLabel><Input size="sm" value={clip.description || ''} onChange={(e) => { const clips = [...(content.clips || [])]; clips[i] = { ...clips[i], description: e.target.value }; updateContent({ clips }) }} placeholder="e.g. Luka Dončić 3PT" /></FormControl>
+                      <Stack direction="row" gap={1}>
+                        <FormControl size="sm"><FormLabel>Action type</FormLabel><Input size="sm" value={clip.action_type || ''} onChange={(e) => { const clips = [...(content.clips || [])]; clips[i] = { ...clips[i], action_type: e.target.value }; updateContent({ clips }) }} placeholder="2PT, 3PT, dunk" /></FormControl>
+                        <FormControl size="sm"><FormLabel>Period</FormLabel><Input size="sm" type="number" value={clip.period ?? ''} onChange={(e) => { const clips = [...(content.clips || [])]; clips[i] = { ...clips[i], period: Number(e.target.value) || undefined }; updateContent({ clips }) }} /></FormControl>
+                        <FormControl size="sm"><FormLabel>Clock</FormLabel><Input size="sm" value={clip.clock || ''} onChange={(e) => { const clips = [...(content.clips || [])]; clips[i] = { ...clips[i], clock: e.target.value }; updateContent({ clips }) }} placeholder="5:42" /></FormControl>
+                      </Stack>
+                    </Stack>
+                    <IconButton size="sm" color="danger" variant="plain" onClick={() => { const clips = (content.clips || []).filter((_: any, j: number) => j !== i); updateContent({ clips }) }}><Delete /></IconButton>
+                  </Stack>
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+          <Button size="sm" variant="soft" startIcon={<Add />} onClick={() => updateContent({ clips: [...(content.clips || []), { mp4: '', description: '', action_type: '', clock: '' }] })}>Add clip</Button>
+        </>
+      )}
+
       {section.section_type === 'pull_quote' && (
         <>
           <FormControl><FormLabel>Quote Text</FormLabel><Textarea size="sm" minRows={2} value={content.text || ''} onChange={(e) => updateContent({ text: e.target.value })} /></FormControl>
@@ -1908,6 +2755,7 @@ function getDefaultSectionContent(type: SectionType): any {
     case 'lineup_card': return { starters: [], bench: [], total_fantasy_points: 0 }
     case 'stat_comparison': return { title: '', teams: [{ tricode: '', value: 0 }, { tricode: '', value: 0 }] }
     case 'video_clip': return { video_url: '', caption: '' }
+    case 'video_carousel': return { clips: [] }
     case 'chart': return { chart_type: 'radar', chart_props: {} }
     case 'prop_card': return { player_id: 0, player_name: '', bet_type: 'points', line: 0, result: 'pending' }
     case 'injury_card': return { player_id: 0, player_name: '', team_tricode: '', status: 'QUESTIONABLE', injury: '' }

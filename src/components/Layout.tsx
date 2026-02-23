@@ -1,9 +1,6 @@
 import { Outlet, useLocation } from 'react-router-dom'
 import { Box } from '@mui/joy'
 import { useMediaQuery } from '@mui/material'
-import { useEffect } from 'react'
-import TopNavigation from './TopNavigation'
-import MarginBarsWrapper from './MarginBarsWrapper'
 import PersistentAvatarBar from './PersistentAvatarBar'
 import { UserSettingsProvider } from '../contexts/UserSettingsContext'
 
@@ -31,7 +28,7 @@ export default function Layout() {
 
   return (
     <UserSettingsProvider>
-      {/* Outer wrapper: fixed viewport height + scroll. Scroll works whether cursor is over nav or page content. */}
+      {/* Outer wrapper: fixed viewport height + scroll. Frames X–style touch/scroll behavior for better swipe and scroll. */}
       <Box sx={{
         height: '100vh',
         width: '100%',
@@ -42,10 +39,12 @@ export default function Layout() {
         flexDirection: 'column',
         margin: 0,
         padding: 0,
+        // Native-feel scroll on mobile (momentum, no overscroll bounce-through)
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehaviorY: 'contain',
+        touchAction: 'pan-y',
       }}>
-        <TopNavigation />
         {!shouldHideAvatarBar && !isMobile && !isLandscapeMobile && <PersistentAvatarBar />}
-        <MarginBarsWrapper />
         <Box component="main" sx={{
           flex: '1 1 auto',
           width: '100%',

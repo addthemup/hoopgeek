@@ -16,7 +16,8 @@
 # 12. Import player game stats (advanced stats from JSON files)
 # 13. Backfill Team of the Night (nba_totn)
 # 14. Backfill Team of the Week (nba_totw)
-# 15. Fetch injuries (Supabase Edge Function)
+# 15. Scrape draft rankings (tankathon, nbadraft_net, espn, the_athletic → draft_prospects + draft_rankings)
+# 16. Fetch injuries (Supabase Edge Function)
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -39,7 +40,7 @@ mkdir -p "$PROJECT_DIR/logs"
 cd "$PROJECT_DIR"
 
 # Initialize counters
-TOTAL_SCRIPTS=15
+TOTAL_SCRIPTS=16
 SUCCESSFUL=0
 FAILED=0
 FAILED_SCRIPTS=()
@@ -174,7 +175,8 @@ run_script "Scrape NBA Player of the Month (2025-26)" "scripts/setup/scrape_nba_
 run_script "Import Player Game Stats" "scripts/feed/import_player_game_stats.py" 12
 run_script "Backfill Team of the Night (nba_totn)" "scripts/setup/backfill_nba_totn.py" 13
 run_script "Backfill Team of the Week (nba_totw)" "scripts/setup/backfill_nba_totw.py" 14
-run_fetch_injuries_edge 15
+run_script "Scrape Draft Rankings (draft_prospects + draft_rankings)" "scripts/setup/draft-agg/scrape_draft_rankings.py" 15 "--source all"
+run_fetch_injuries_edge 16
 
 # Print summary
 echo ""

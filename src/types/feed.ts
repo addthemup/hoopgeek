@@ -16,6 +16,8 @@ export type PostType =
   | 'prop_prediction'
   | 'prop_results'
   | 'injury_report'
+  | 'upcoming'
+  | 'blog'
 
 export type PostStatus = 'draft' | 'published' | 'archived'
 
@@ -27,6 +29,7 @@ export type SectionType =
   | 'player_highlight'
   | 'stat_comparison'
   | 'video_clip'
+  | 'video_carousel'
   | 'chart'
   | 'rich_text'
   | 'prop_card'
@@ -167,6 +170,7 @@ export type SectionContent =
   | PlayerHighlightContent
   | StatComparisonContent
   | VideoClipContent
+  | VideoCarouselContent
   | ChartContent
   | RichTextContent
   | PropCardContent
@@ -180,6 +184,12 @@ export interface HeroContent {
   gradient_overlay?: boolean
   badge?: string                // e.g. 'TEAM OF THE NIGHT'
   team_tricode?: string
+  /** Game Recap: final score line (e.g. 'LAC 126 – NOP 124') and both team tricodes */
+  score_line?: string
+  team_tricodes?: string[]
+  /** Player Spotlight: name and stats shown in hero */
+  player_name?: string
+  player_stats?: { pts?: number; reb?: number; ast?: number; stl?: number; blk?: number; min?: number }
 }
 
 export interface HeadlineContent {
@@ -195,8 +205,11 @@ export interface LineupPlayer {
   salary?: number
   position?: string
   team_tricode: string
+  jersey_number?: string | number
   headshot_url?: string
   stats?: Record<string, number>
+  /** MP4 highlight clips from game JSON (play-by-play); used for slideshow in lineup cell */
+  video_clips?: HighlightClip[]
 }
 
 export interface LineupCardContent {
@@ -255,6 +268,11 @@ export interface VideoClipContent {
   action_type?: string
   period?: number
   clock?: string
+}
+
+/** Instagram-style carousel of NBA.com MP4 clips with play metadata (period, clock, description, action_type) */
+export interface VideoCarouselContent {
+  clips: HighlightClip[]
 }
 
 export interface ChartContent {
@@ -377,4 +395,14 @@ export interface FeedFilters {
   playerName?: string
   tag?: FeedTag
   dateRange?: { from: string; to: string }
+}
+
+/** Single active filter (post type, team, or player) for feed chip + filtering */
+export type ActiveFilterType = 'post_type' | 'team' | 'player'
+
+export interface ActiveFilter {
+  id: string
+  type: ActiveFilterType
+  value: string
+  label: string
 }

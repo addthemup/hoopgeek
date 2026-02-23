@@ -32,13 +32,14 @@ import {
   Tabs,
   TabList,
   Tab,
+  TabPanel,
   FormControl,
   FormLabel,
   Select,
   Option,
 } from '@mui/joy';
 import { NavigateBefore, NavigateNext, NavigateNext as NavigateNextIcon, Info, CalendarToday, PlayArrow, Queue, PlaylistPlay, CheckCircle, Favorite, Star, Add, FavoriteBorder, Search, EmojiEvents, BarChart, TrendingUp, CalendarMonth, Close, ArrowBack, Analytics, Check, KeyboardArrowRight, Share } from '@mui/icons-material';
-import { FaBasketballBall, FaFilter, FaSort, FaChartBar } from 'react-icons/fa';
+import { FaBasketballBall, FaFilter, FaSort, FaChartBar, FaGlobe, FaArrowLeft, FaArrowRight, FaSortAmountDown } from 'react-icons/fa';
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useMediaQuery } from '@mui/material';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -46,6 +47,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNBAScoreboard } from '../hooks/useNBAScoreboard';
 import { supabase } from '../utils/supabase';
 import { useStandings } from '../hooks/useStandings';
+import { useDraftProspectRankings } from '../hooks/useDraftProspectRankings';
 import { useTodayModuleVisibility } from '../hooks/useTodayModuleVisibility';
 import { useQuery } from '@tanstack/react-query';
 import { useQueryWithPreviousData } from '../hooks/useQueryWithPreviousData';
@@ -3228,8 +3230,8 @@ function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
   );
 }
 
-// Games Carousel Header Component - Positioned like player page header
-function GamesCarouselHeader({
+// Games Carousel Header Component - Positioned like player page header (exported for Feed page)
+export function GamesCarouselHeader({
   selectedDate,
   navigate
 }: {
@@ -3364,13 +3366,7 @@ function GamesCarouselHeader({
   }
 
   if (!filteredGames || filteredGames.length === 0) {
-    return (
-      <Box sx={{ py: 2, textAlign: 'center' }}>
-        <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
-          No games scheduled
-        </Typography>
-      </Box>
-    );
+    return null;
   }
 
   return (
@@ -4254,8 +4250,8 @@ function LeadersSection({
   );
 }
 
-// Players of the Night Section Component
-export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers, compact = false }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[]; compact?: boolean }) {
+// Players of the Night Section Component (showJersey=false when used on /feed/ grid so jerseys only appear in full feed posts)
+export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers, compact = false, showJersey = true }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[]; compact?: boolean; showJersey?: boolean }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
@@ -4600,14 +4596,22 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
                         },
                       }}
                     >
-                      <PlayerJersey
-                        playerName={player.player_name}
-                        jerseyNumber={player.jersey_number}
-                        nbaTeam={player.team}
-                        position={abbreviatePosition(player.player_position)}
-                        size="small"
-                        textColor="#FFFFFF"
-                      />
+                      {showJersey ? (
+                        <PlayerJersey
+                          playerName={player.player_name}
+                          jerseyNumber={player.jersey_number}
+                          nbaTeam={player.team}
+                          position={abbreviatePosition(player.player_position)}
+                          size="small"
+                          textColor="#FFFFFF"
+                        />
+                      ) : (
+                        <Avatar
+                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                          alt={player.player_name}
+                          sx={{ width: 48, height: 48 }}
+                        />
+                      )}
                       <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
                         <Typography 
                           level="body-sm" 
@@ -4690,14 +4694,22 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
                         },
                       }}
                     >
-                      <PlayerJersey
-                        playerName={player.player_name}
-                        jerseyNumber={player.jersey_number}
-                        nbaTeam={player.team}
-                        position={abbreviatePosition(player.player_position)}
-                        size="small"
-                        textColor="#FFFFFF"
-                      />
+                      {showJersey ? (
+                        <PlayerJersey
+                          playerName={player.player_name}
+                          jerseyNumber={player.jersey_number}
+                          nbaTeam={player.team}
+                          position={abbreviatePosition(player.player_position)}
+                          size="small"
+                          textColor="#FFFFFF"
+                        />
+                      ) : (
+                        <Avatar
+                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                          alt={player.player_name}
+                          sx={{ width: 48, height: 48 }}
+                        />
+                      )}
                       <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
                         <Typography 
                           level="body-sm" 
@@ -4732,14 +4744,15 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
   );
 }
 
-// Team of the Week Section Component
+// Team of the Week Section Component (showJersey=false when used on /feed/ grid so jerseys only appear in full feed posts)
 export function TeamOfWeekSection({ 
   navigate, 
   hideHeader,
   weekStartDate,
   weekEndDate,
   weekNumber,
-  weekName
+  weekName,
+  showJersey = true
 }: { 
   navigate: (path: string) => void; 
   hideHeader?: boolean;
@@ -4747,6 +4760,7 @@ export function TeamOfWeekSection({
   weekEndDate?: string;
   weekNumber?: number;
   weekName?: string;
+  showJersey?: boolean;
 }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -4941,9 +4955,73 @@ export function TeamOfWeekSection({
     );
   };
 
-  // Separate starters and bench
+  // Separate starters and bench; bench split into two rows
   const starters = sortedPlayers.filter(p => p.lineup_order !== undefined && p.lineup_order !== null && p.lineup_order <= 5);
   const bench = sortedPlayers.filter(p => !p.lineup_order || p.lineup_order > 5);
+  const benchMid = Math.ceil(bench.length / 2);
+  const benchRow2 = bench.slice(0, benchMid);
+  const benchRow3 = bench.slice(benchMid);
+
+  const playerCard = (player: any) => {
+    const playerKey = player.player_id || player.nba_player_id;
+    return (
+      <Card
+        key={playerKey}
+        variant="outlined"
+        onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
+        sx={{
+          bgcolor: '#0f0f0f',
+          borderColor: '#2a2a2a',
+          cursor: 'pointer',
+          transition: 'all 0.3s ease',
+          p: 1.5,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          '&:hover': {
+            borderColor: '#FFC72C',
+            transform: 'translateY(-4px)',
+            boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
+          },
+        }}
+      >
+        {showJersey ? (
+          <PlayerJersey
+            playerName={player.player_name}
+            jerseyNumber={player.jersey_number}
+            nbaTeam={player.team}
+            position={abbreviatePosition(player.player_position)}
+            size="small"
+            textColor="#FFFFFF"
+          />
+        ) : (
+          <Avatar
+            src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+            alt={player.player_name}
+            sx={{ width: 48, height: 48 }}
+          />
+        )}
+        <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
+          <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 800, fontSize: '1rem', mb: 0.5 }}>
+            {player.avg_fantasy_points.toFixed(1)} FP
+          </Typography>
+          <Typography level="body-xs" sx={{ color: '#B0B0B0', fontSize: '0.75rem' }}>
+            {player.games_played} games
+          </Typography>
+          <Typography level="body-xs" sx={{ color: '#B0B0B0', fontSize: '0.7rem', mt: 0.25 }}>
+            ${(player.salary / 1000).toFixed(1)}K
+          </Typography>
+        </Box>
+      </Card>
+    );
+  };
+
+  const rowGridSx = {
+    display: 'grid',
+    gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)' },
+    gap: 2,
+    justifyItems: 'stretch',
+  };
 
   return (
     <Box sx={{ bgcolor: '#000000' }}>
@@ -4954,210 +5032,41 @@ export function TeamOfWeekSection({
       ) : (
         <>
           {!hideHeader && (
-            <Typography 
-              level="title-lg" 
-              sx={{ 
-                color: '#FFFFFF', 
-                fontWeight: 800, 
-                mb: 3,
-                fontSize: '1.25rem',
-              }}
-            >
+            <Typography level="title-lg" sx={{ color: '#FFFFFF', fontWeight: 800, mb: 3, fontSize: '1.25rem' }}>
               {weekString}
             </Typography>
           )}
-          
-          {/* Starters Section */}
+
+          {/* Row 1: Starters */}
           {starters.length > 0 && (
-            <Box sx={{ mb: 4 }}>
-              <Typography 
-                level="title-sm" 
-                sx={{ 
-                  color: '#FFC72C', 
-                  fontWeight: 700,
-                  mb: 2,
-                  fontSize: '0.875rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
+            <Box sx={{ mb: 3 }}>
+              <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 2, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Starters
               </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: 'repeat(auto-fill, minmax(100px, 1fr))',
-                    sm: 'repeat(auto-fill, minmax(120px, 1fr))',
-                    md: 'repeat(5, 1fr)',
-                  },
-                  gap: 2,
-                }}
-              >
-                {starters.map((player) => {
-                const playerKey = player.player_id || player.nba_player_id;
-                return (
-                    <Card
-                      key={playerKey}
-                      variant="outlined"
-                      onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
-                      sx={{
-                        bgcolor: '#0f0f0f',
-                        borderColor: '#2a2a2a',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        p: 1.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        '&:hover': {
-                          borderColor: '#FFC72C',
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
-                        },
-                      }}
-                    >
-                      <PlayerJersey
-                        playerName={player.player_name}
-                        jerseyNumber={player.jersey_number}
-                        nbaTeam={player.team}
-                        position={abbreviatePosition(player.player_position)}
-                        size="small"
-                        textColor="#FFFFFF"
-                      />
-                      <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
-                        <Typography 
-                          level="body-sm" 
-                          sx={{ 
-                            color: '#FFC72C', 
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            mb: 0.5,
-                          }}
-                        >
-                          {player.avg_fantasy_points.toFixed(1)} FP
-                        </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                            fontSize: '0.75rem',
-                          }}
-                        >
-                          {player.games_played} games
-                              </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                            fontSize: '0.7rem',
-                            mt: 0.25,
-                          }}
-                        >
-                          ${(player.salary / 1000).toFixed(1)}K
-                        </Typography>
-                      </Box>
-                    </Card>
-                  );
-                })}
+              <Box sx={rowGridSx}>
+                {starters.map(playerCard)}
               </Box>
             </Box>
           )}
 
-          {/* Bench Section */}
-          {bench.length > 0 && (
-            <Box>
-              <Typography 
-                level="title-sm" 
-                sx={{ 
-                  color: '#FFC72C', 
-                  fontWeight: 700,
-                  mb: 2,
-                  fontSize: '0.875rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
+          {/* Row 2: Bench (first half) */}
+          {benchRow2.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 2, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Bench
-                            </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: 'repeat(auto-fill, minmax(100px, 1fr))',
-                    sm: 'repeat(auto-fill, minmax(120px, 1fr))',
-                    md: 'repeat(auto-fill, minmax(120px, 1fr))',
-                  },
-                  gap: 2,
-                }}
-              >
-                {bench.map((player) => {
-                  const playerKey = player.player_id || player.nba_player_id;
-                  return (
-                    <Card
-                      key={playerKey}
-                      variant="outlined"
-                      onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
-                      sx={{
-                        bgcolor: '#0f0f0f',
-                        borderColor: '#2a2a2a',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        p: 1.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        '&:hover': {
-                          borderColor: '#FFC72C',
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
-                        },
-                      }}
-                    >
-                      <PlayerJersey
-                        playerName={player.player_name}
-                        jerseyNumber={player.jersey_number}
-                        nbaTeam={player.team}
-                        position={abbreviatePosition(player.player_position)}
-                        size="small"
-                        textColor="#FFFFFF"
-                      />
-                      <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
-                        <Typography 
-                          level="body-sm" 
-                          sx={{ 
-                            color: '#FFC72C', 
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            mb: 0.5,
-                          }}
-                        >
-                          {player.avg_fantasy_points.toFixed(1)} FP
-                        </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                              fontSize: '0.75rem',
-                          }}
-                        >
-                          {player.games_played} games
-                        </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                            fontSize: '0.7rem',
-                            mt: 0.25,
-                          }}
-                        >
-                          ${(player.salary / 1000).toFixed(1)}K
-                            </Typography>
-                          </Box>
-                    </Card>
-                  );
-                })}
-                        </Box>
+              </Typography>
+              <Box sx={rowGridSx}>
+                {benchRow2.map(playerCard)}
+              </Box>
+            </Box>
+          )}
+
+          {/* Row 3: Bench (second half) */}
+          {benchRow3.length > 0 && (
+            <Box>
+              <Box sx={rowGridSx}>
+                {benchRow3.map(playerCard)}
+              </Box>
             </Box>
           )}
         </>
@@ -7767,115 +7676,281 @@ function PropPredictionsModal({
   );
 }
 
-// Standings Module
-export function StandingsModule({ 
-  standings, 
-  standingsLoading, 
-  navigate 
-}: { 
-  standings: any; 
-  standingsLoading: boolean; 
+// NBA draft lottery odds by pick position (1 = worst record). Top 4% and #1 Ovr% per tankathon-style.
+const LOTTERY_TOP4_PCT = [52.1, 52.1, 52.1, 48.1, 42.1, 37.2, 32.0, 26.3, 20.3, 13.9, 9.4, 7.1, 4.8, 2.4];
+const LOTTERY_ONE_OVR_PCT = [14.0, 14.0, 14.0, 12.5, 10.5, 9.0, 7.5, 6.0, 4.5, 3.0, 2.0, 1.5, 1.0, 0.5];
+
+// Standings Module — 4 tabs: East, West, Overall (Aggregate), Tank. Team logo instead of tricode.
+export function StandingsModule({
+  standings,
+  standingsLoading,
+  navigate,
+  onAddFilter,
+}: {
+  standings: any;
+  standingsLoading: boolean;
   navigate: (path: string) => void;
+  onAddFilter?: (filter: { type: 'post_type' | 'team' | 'player'; value: string; label: string }) => void;
 }) {
-  const [conference, setConference] = useState<'east' | 'west'>('east');
-  
+  const [tabIndex, setTabIndex] = useState(0);
+  const { data: draftRankings, isLoading: draftRankingsLoading } = useDraftProspectRankings({ limit: 30 });
+
+  const handleTeamClick = (team: any) => {
+    const tricode = team.team_abbreviation || team.abbreviation;
+    if (tricode) onAddFilter?.({ type: 'team', value: tricode, label: tricode });
+    if (onAddFilter) return;
+    if (!team.team_id) return;
+    supabase
+      .from('nba_teams')
+      .select('id')
+      .eq('team_id', team.team_id)
+      .single()
+      .then(({ data: teamData, error }) => {
+        if (error) return;
+        if (teamData?.id) navigate(`/team/${teamData.id}`);
+      });
+  };
+
+  const tableCell = (children: React.ReactNode, sx = {}) => (
+    <td>
+      <Typography level="body-sm" sx={{ color: '#E0E0E0', ...sx }}>{children}</Typography>
+    </td>
+  );
+
+  const teamLogoCell = (team: any) => (
+    <td>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        <Avatar
+          src={getTeamLogoUrl(team.team_abbreviation || team.abbreviation || '')}
+          alt={team.team_abbreviation || team.abbreviation}
+          sx={{ width: 28, height: 28 }}
+        >
+          {(team.team_abbreviation || team.abbreviation || '?').charAt(0)}
+        </Avatar>
+      </Box>
+    </td>
+  );
+
+  const east = standings?.east || [];
+  const west = standings?.west || [];
+  const overall = useMemo(() => {
+    const all = [...east, ...west];
+    all.sort((a, b) => {
+      const pctA = a.win_percentage ?? 0;
+      const pctB = b.win_percentage ?? 0;
+      if (pctB !== pctA) return pctB - pctA;
+      return (b.wins ?? 0) - (a.wins ?? 0);
+    });
+    const leader = all[0];
+    const leaderW = leader?.wins ?? 0;
+    const leaderL = leader?.losses ?? 0;
+    return all.map((t, i) => {
+      const w = t.wins ?? 0;
+      const l = t.losses ?? 0;
+      const gb = leader ? (leaderW - w) + (l - leaderL) / 2 : 0;
+      return { ...t, overallRank: i + 1, gamesBehindOverall: gb };
+    });
+  }, [east, west]);
+
+  const tankOrder = useMemo(() => {
+    const all = [...east, ...west];
+    all.sort((a, b) => {
+      const pctA = a.win_percentage ?? 0;
+      const pctB = b.win_percentage ?? 0;
+      return pctA - pctB; // worst first
+    });
+    const leader = all[0]; // worst team (tank leader)
+    const leaderW = leader?.wins ?? 0;
+    const leaderL = leader?.losses ?? 0;
+    return all.map((t, i) => {
+      const w = t.wins ?? 0;
+      const l = t.losses ?? 0;
+      const gb = leader ? (w - leaderW) + (leaderL - l) / 2 : 0; // GB behind worst (more wins = further from #1 pick)
+      const pick = i + 1;
+      const top4 = pick <= 14 ? LOTTERY_TOP4_PCT[pick - 1] : null;
+      const oneOvr = pick <= 14 ? LOTTERY_ONE_OVR_PCT[pick - 1] : null;
+      return { ...t, pick, tankGb: gb, top4Pct: top4, oneOvrPct: oneOvr };
+    });
+  }, [east, west]);
+
+  const tabSx = {
+    color: '#FFFFFF',
+    fontWeight: 600,
+    '&.Mui-selected': { color: '#FFC72C' },
+    '&:hover': { color: '#FFC72C' },
+  };
+
   return (
     <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
       <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
-            Standings
-          </Typography>
-          <Stack direction="row" spacing={1}>
-            <Button
-              size="sm"
-              variant={conference === 'east' ? 'solid' : 'outlined'}
-              onClick={() => setConference('east')}
-            >
-              East
-            </Button>
-            <Button
-              size="sm"
-              variant={conference === 'west' ? 'solid' : 'outlined'}
-              onClick={() => setConference('west')}
-            >
+        <Tabs
+          value={tabIndex}
+          onChange={(_e, v) => setTabIndex(v === null ? 0 : (v as number))}
+          sx={{
+            '& .MuiTabList-root': { borderColor: '#333333', width: '100%', mx: 0 },
+            '& .MuiTab-root': { ...tabSx, flex: 1, minWidth: 0, px: 1 },
+          }}
+        >
+          <TabList variant="plain" size="sm" sx={{ width: '100%', '& button': { flex: 1 } }}>
+            <Tab value={0}>
+              <FaGlobe style={{ marginRight: 6, fontSize: '1rem' }} />
+              Overall
+            </Tab>
+            <Tab value={1}>
+              <FaArrowLeft style={{ marginRight: 6, fontSize: '1rem' }} />
               West
-            </Button>
-          </Stack>
-        </Box>
-        
-        {standingsLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : standings && standings[conference] ? (
-          <Table hoverRow size="sm">
-            <thead>
-              <tr>
-                <th style={{ color: '#FFFFFF' }}>Team</th>
-                <th style={{ color: '#FFFFFF' }}>W</th>
-                <th style={{ color: '#FFFFFF' }}>L</th>
-                <th style={{ color: '#FFFFFF' }}>PCT</th>
-              </tr>
-            </thead>
-            <tbody>
-              {standings[conference].slice(0, 8).map((team: any, index: number) => (
-                <tr 
-                  key={team.team_id || index}
-                  style={{ cursor: 'pointer' }}
-                  onClick={async () => {
-                    if (!team.team_id) return;
-                    try {
-                      const { data: teamData, error } = await supabase
-                        .from('nba_teams')
-                        .select('id')
-                        .eq('team_id', team.team_id)
-                        .single();
+            </Tab>
+            <Tab value={2}>
+              <FaArrowRight style={{ marginRight: 6, fontSize: '1rem' }} />
+              East
+            </Tab>
+            <Tab value={3}>
+              <FaSortAmountDown style={{ marginRight: 6, fontSize: '1rem' }} />
+              Tank
+            </Tab>
+          </TabList>
 
-                      if (error) {
-                        console.error('Error handling team click:', error);
-                        return;
-                      }
-
-                      if (teamData?.id) {
-                        navigate(`/team/${teamData.id}`);
-                      }
-                    } catch (error) {
-                      console.error('Error handling team click:', error);
-                    }
-                  }}
-                >
-                  <td>
-                    <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                      {team.team_abbreviation || team.abbreviation}
-                    </Typography>
-                  </td>
-                  <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      {team.wins || team.w}
-                    </Typography>
-                  </td>
-                  <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      {team.losses || team.l}
-                    </Typography>
-                  </td>
-                  <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      {team.win_percentage ? team.win_percentage.toFixed(3) : 'N/A'}
-                    </Typography>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : (
-          <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
-            <Typography sx={{ color: '#FFFFFF' }}>
-              No standings data available.
-            </Typography>
-          </Alert>
-        )}
+          {standingsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress sx={{ color: '#FFC72C' }} />
+            </Box>
+          ) : !standings ? (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', mt: 2 }}>
+              <Typography sx={{ color: '#FFFFFF' }}>No standings data available.</Typography>
+            </Alert>
+          ) : (
+            <>
+              <TabPanel value={0} sx={{ p: 0, pt: 1 }}>
+                <Table hoverRow size="sm">
+                  <thead>
+                    <tr>
+                      <th style={{ color: '#FFFFFF', width: 32 }}>#</th>
+                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
+                      <th style={{ color: '#FFFFFF' }}>W-L</th>
+                      <th style={{ color: '#FFFFFF' }}>PCT</th>
+                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {overall.map((team: any) => (
+                      <tr key={team.team_id} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                        <td><Typography level="body-sm" sx={{ color: '#E0E0E0', fontWeight: 600 }}>{team.overallRank}</Typography></td>
+                        {teamLogoCell(team)}
+                        {tableCell(`${team.wins ?? 0}-${team.losses ?? 0}`)}
+                        {tableCell(team.win_percentage ? team.win_percentage.toFixed(3) : '—')}
+                        {tableCell(team.gamesBehindOverall === 0 ? '—' : `${team.gamesBehindOverall.toFixed(1)}`, { textAlign: 'right' })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TabPanel>
+              <TabPanel value={1} sx={{ p: 0, pt: 1 }}>
+                <Table hoverRow size="sm">
+                  <thead>
+                    <tr>
+                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
+                      <th style={{ color: '#FFFFFF' }}>W</th>
+                      <th style={{ color: '#FFFFFF' }}>L</th>
+                      <th style={{ color: '#FFFFFF' }}>PCT</th>
+                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {west.map((team: any, index: number) => (
+                      <tr key={team.team_id || index} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                        {teamLogoCell(team)}
+                        {tableCell(team.wins ?? team.w)}
+                        {tableCell(team.losses ?? team.l)}
+                        {tableCell(team.win_percentage ? team.win_percentage.toFixed(3) : '—')}
+                        {tableCell(team.games_behind === 0 ? '—' : `${(team.games_behind ?? 0).toFixed(1)}`, { textAlign: 'right' })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TabPanel>
+              <TabPanel value={2} sx={{ p: 0, pt: 1 }}>
+                <Table hoverRow size="sm">
+                  <thead>
+                    <tr>
+                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
+                      <th style={{ color: '#FFFFFF' }}>W</th>
+                      <th style={{ color: '#FFFFFF' }}>L</th>
+                      <th style={{ color: '#FFFFFF' }}>PCT</th>
+                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {east.map((team: any, index: number) => (
+                      <tr key={team.team_id || index} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                        {teamLogoCell(team)}
+                        {tableCell(team.wins ?? team.w)}
+                        {tableCell(team.losses ?? team.l)}
+                        {tableCell(team.win_percentage ? team.win_percentage.toFixed(3) : '—')}
+                        {tableCell(team.games_behind === 0 ? '—' : `${(team.games_behind ?? 0).toFixed(1)}`, { textAlign: 'right' })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TabPanel>
+              <TabPanel value={3} sx={{ p: 0, pt: 1 }}>
+                <Table hoverRow size="sm">
+                  <thead>
+                    <tr>
+                      <th style={{ color: '#FFFFFF', width: 36 }}>Pick</th>
+                      <th style={{ color: '#FFFFFF', width: 56 }}></th>
+                      <th style={{ color: '#FFFFFF' }}>Prospect</th>
+                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>#1 Ovr</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tankOrder.slice(0, 14).map((team: any, index: number) => {
+                      const prospect = draftRankings?.[index];
+                      return (
+                        <tr key={team.team_id || index} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                          <td><Typography level="body-sm" sx={{ color: '#E0E0E0', fontWeight: 600 }}>{team.pick}</Typography></td>
+                          <td>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
+                              <Avatar
+                                src={getTeamLogoUrl(team.team_abbreviation || team.abbreviation || '')}
+                                alt={team.team_abbreviation || team.abbreviation}
+                                sx={{ width: 28, height: 28 }}
+                              >
+                                {(team.team_abbreviation || team.abbreviation || '?').charAt(0)}
+                              </Avatar>
+                              <Typography level="body-xs" sx={{ color: '#E0E0E0' }}>{`${team.wins ?? 0}-${team.losses ?? 0}`}</Typography>
+                            </Box>
+                          </td>
+                          <td onClick={(e) => { e.stopPropagation(); if (prospect?.id) navigate(`/prospect/${prospect.id}`); }}>
+                            {draftRankingsLoading ? (
+                              <Typography level="body-sm" sx={{ color: '#888' }}>—</Typography>
+                            ) : prospect ? (
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25, py: 0.5, '&:hover': { '& .prospect-name': { color: '#FFC72C', textDecoration: 'underline' } } }}>
+                                <Typography className="prospect-name" level="body-sm" sx={{ color: '#E0E0E0', fontWeight: 600 }}>
+                                  {prospect.player_name_full}
+                                </Typography>
+                                <Typography level="body-xs" sx={{ color: '#888' }}>
+                                  {prospect.school_team || '—'}
+                                </Typography>
+                                <Typography level="body-xs" sx={{ color: '#888' }}>
+                                  {prospect.position_primary || '—'}
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Typography level="body-sm" sx={{ color: '#888' }}>—</Typography>
+                            )}
+                          </td>
+                          {tableCell(team.tankGb === 0 ? '—' : team.tankGb.toFixed(1), { textAlign: 'right' })}
+                          {tableCell(team.oneOvrPct != null ? `${team.oneOvrPct}%` : '—', { textAlign: 'right' })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </Table>
+              </TabPanel>
+            </>
+          )}
+        </Tabs>
       </CardContent>
     </Card>
   );
@@ -7964,6 +8039,7 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
           <Table hoverRow size="sm">
             <thead>
               <tr>
+                <th style={{ color: '#FFFFFF', width: 64 }}></th>
                 <th style={{ color: '#FFFFFF' }}>Player</th>
                 <th style={{ color: '#FFFFFF' }}>Team</th>
                 <th style={{ width: '40px' }}></th>
@@ -7971,9 +8047,10 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
             </thead>
             <tbody>
               {favoritePlayers.map((player: any) => {
-                const teamAbbr = playerTeams?.get(player.nba_players?.nba_player_id);
-                const isPlayingToday = teamAbbr && todayTeamAbbreviations.has(teamAbbr);
-                
+                const teamAbbr = playerTeams?.get(player.nba_players?.nba_player_id) || player.nba_players?.team_abbreviation || 'FA';
+                const fullName = player.nba_players?.name || 'Unknown';
+                const nbaPlayerId = player.nba_players?.nba_player_id;
+
                 return (
                   <tr 
                     key={player.id}
@@ -7984,14 +8061,23 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
                       }
                     }}
                   >
+                    <td style={{ verticalAlign: 'middle', padding: '8px' }}>
+                      <Avatar
+                        src={nbaPlayerId ? `https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png` : undefined}
+                        alt={fullName}
+                        sx={{ width: 56, height: 56 }}
+                      >
+                        {fullName.charAt(0)}
+                      </Avatar>
+                    </td>
                     <td>
                       <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                        {player.nba_players?.name || 'Unknown'}
+                        {fullName}
                       </Typography>
                     </td>
                     <td>
                       <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                        {teamAbbr || player.nba_players?.team_abbreviation || 'FA'}
+                        {teamAbbr}
                       </Typography>
                     </td>
                     <td style={{ padding: '8px', textAlign: 'right' }}>
@@ -8975,13 +9061,15 @@ export function LiveTeamOfNightModule({
   );
 }
 
-// Team of the Night Module
+// Team of the Night Module (showJersey=false when used on /feed/ grid)
 export function TeamOfNightModule({ 
   navigate, 
-  selectedDate 
+  selectedDate,
+  showJersey = true
 }: { 
   navigate: (path: string) => void; 
   selectedDate: Dayjs;
+  showJersey?: boolean;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
 
@@ -9002,14 +9090,20 @@ export function TeamOfNightModule({
       }}
     >
       <CardContent>
-        <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} compact={true} />
+        <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} compact={true} showJersey={showJersey} />
       </CardContent>
     </Card>
   );
 }
 
 // Leaders Module
-export function LeadersModule({ navigate }: { navigate: (path: string) => void }) {
+export function LeadersModule({
+  navigate,
+  onAddFilter,
+}: {
+  navigate: (path: string) => void;
+  onAddFilter?: (filter: { type: 'post_type' | 'team' | 'player'; value: string; label: string }) => void;
+}) {
   const availableCategories = ['PTS', 'REB', 'AST', 'STL', 'BLK', 'FG_PCT', 'FG3_PCT', 'FT_PCT'];
   const [categoryIndex, setCategoryIndex] = useState(0);
   const activeCategory = availableCategories[categoryIndex];
@@ -9140,13 +9234,19 @@ export function LeadersModule({ navigate }: { navigate: (path: string) => void }
                   : leader.value.toFixed(1);
 
                 return (
-                  <tr 
+                  <tr
                     key={leader.id}
                     style={{ cursor: 'pointer' }}
                     onClick={() => {
-                      if (leader.player_id) {
-                        navigate(`/player/${leader.player_id}`);
+                      if (leader.nba_player_id != null && leader.player_name) {
+                        onAddFilter?.({
+                          type: 'player',
+                          value: String(leader.nba_player_id),
+                          label: leader.player_name,
+                        });
                       }
+                      if (onAddFilter) return;
+                      if (leader.player_id) navigate(`/player/${leader.player_id}`);
                     }}
                   >
                     <td>

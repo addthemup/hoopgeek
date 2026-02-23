@@ -4,7 +4,7 @@ import { supabase } from '../utils/supabase';
 import { getTeamColors } from '../utils/nbaTeamColors';
 import { getTeamLogoUrl } from '../utils/nbaTeamLogos';
 import { FANDUEL_SCORING } from '../utils/fantasyScoring';
-import { hexToRgba } from './MarginBars';
+import { hexToRgba } from '../utils/colorUtils';
 
 interface LiveGameBoxScoreProps {
   gameId: string;

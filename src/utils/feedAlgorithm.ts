@@ -131,6 +131,8 @@ const POST_TYPE_PRIORITY: Record<PostType, number> = {
   prop_results:      8,
   prop_prediction:   6,
   injury_report:     4,
+  upcoming:          5,
+  blog:              5,
 }
 
 // ─── Engagement score ───────────────────────────────────────

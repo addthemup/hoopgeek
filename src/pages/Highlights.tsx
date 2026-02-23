@@ -15,11 +15,9 @@ import {
   CardContent,
   Chip,
   CircularProgress,
-  Input,
   IconButton,
   AspectRatio,
 } from '@mui/joy'
-import Search from '@mui/icons-material/Search'
 import Favorite from '@mui/icons-material/Favorite'
 import ChatBubbleOutline from '@mui/icons-material/ChatBubbleOutline'
 import Visibility from '@mui/icons-material/Visibility'
@@ -30,6 +28,8 @@ import { useAuth } from '../hooks/useAuth'
 import { useFavoritePlayers, useFavoriteTeams } from '../hooks/useUserSettings'
 import { orderPostsByAlgorithm } from '../utils/feedAlgorithm'
 import type { FeedPost, PostType, FeedFilterType } from '../types/feed'
+import type { ActiveFilter } from '../types/feed'
+import FeedModulesGrid from '../components/Feed/FeedModulesGrid'
 
 // ─── Constants ──────────────────────────────────────────────
 
@@ -43,6 +43,8 @@ const POST_TYPE_LABELS: Record<PostType, string> = {
   prop_prediction: 'Prop Prediction',
   prop_results: 'Prop Results',
   injury_report: 'Injury Report',
+  upcoming: 'Upcoming',
+  blog: 'Blog',
 }
 
 const POST_TYPE_COLORS: Record<PostType, string> = {
@@ -55,6 +57,8 @@ const POST_TYPE_COLORS: Record<PostType, string> = {
   prop_prediction: '#FB923C',
   prop_results: '#10B981',
   injury_report: '#EF4444',
+  upcoming: '#8B5CF6',
+  blog: '#0EA5E9',
 }
 
 const FILTER_OPTIONS: { value: FeedFilterType; label: string }[] = [
@@ -68,6 +72,8 @@ const FILTER_OPTIONS: { value: FeedFilterType; label: string }[] = [
   { value: 'prop_prediction', label: 'Props' },
   { value: 'prop_results', label: 'Results' },
   { value: 'injury_report', label: 'Injuries' },
+  { value: 'upcoming', label: 'Upcoming' },
+  { value: 'blog', label: 'Blog' },
 ]
 
 // ─── Data fetching ──────────────────────────────────────────
@@ -279,7 +285,7 @@ function FeedCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
 
 // ─── Empty state ────────────────────────────────────────────
 
-function EmptyState({ filter }: { filter: FeedFilterType }) {
+function EmptyState({ hasActiveFilters }: { hasActiveFilters: boolean }) {
   return (
     <Box
       sx={{
@@ -296,10 +302,12 @@ function EmptyState({ filter }: { filter: FeedFilterType }) {
           mb: 1,
         }}
       >
-        {filter === 'all' ? 'No stories yet' : `No ${POST_TYPE_LABELS[filter as PostType] ?? filter} stories yet`}
+        {hasActiveFilters ? 'No stories match your filters' : 'No stories yet'}
       </Typography>
       <Typography level="body-md" sx={{ color: '#888', maxWidth: 400, mx: 'auto' }}>
-        Stories will appear here once games resume. The NBA is currently on All-Star break.
+        {hasActiveFilters
+          ? 'Try removing some filters to see more posts.'
+          : 'Stories will appear here once games resume. The NBA is currently on All-Star break.'}
       </Typography>
     </Box>
   )
@@ -314,8 +322,35 @@ export default function Highlights() {
   const { data: favPlayers } = useFavoritePlayers(user?.id)
   const { data: favTeams } = useFavoriteTeams(user?.id)
 
-  const [activeFilter, setActiveFilter] = useState<FeedFilterType>('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
+
+  const addFilter = useCallback((filter: Omit<ActiveFilter, 'id'>) => {
+    const id = `${filter.type}:${filter.value}`
+    setActiveFilters((prev) => (prev.some((f) => f.id === id) ? prev : [...prev, { ...filter, id }]))
+  }, [])
+
+  const removeFilter = useCallback((id: string) => {
+    setActiveFilters((prev) => prev.filter((f) => f.id !== id))
+  }, [])
+
+  // Apply active filters: show post if it matches ANY selected filter (OR across all filters)
+  const filteredPosts = useMemo(() => {
+    if (!posts) return []
+    if (activeFilters.length === 0) return posts
+
+    const postTypeValues = new Set(activeFilters.filter((f) => f.type === 'post_type').map((f) => f.value))
+    const teamValues = new Set(activeFilters.filter((f) => f.type === 'team').map((f) => f.value))
+    const playerValues = new Set(activeFilters.filter((f) => f.type === 'player').map((f) => parseInt(f.value, 10)))
+
+    return posts.filter((post) => {
+      if (postTypeValues.size > 0 && postTypeValues.has(post.post_type)) return true
+      const postTeams = post.team_tricodes ?? []
+      if (teamValues.size > 0 && postTeams.some((t) => teamValues.has(t))) return true
+      const postPlayerIds = (post.player_ids ?? []).map((id) => (typeof id === 'string' ? parseInt(id, 10) : id))
+      if (playerValues.size > 0 && postPlayerIds.some((id) => playerValues.has(id))) return true
+      return false
+    })
+  }, [posts, activeFilters])
 
   // Build algorithm options
   const algorithmOptions = useMemo(() => {
@@ -325,37 +360,22 @@ export default function Highlights() {
     const favoriteTeamTricodes = new Set<string>(
       (favTeams ?? []).map((ft: any) => ft.nba_teams?.abbreviation ?? ft.abbreviation).filter(Boolean)
     )
-
+    const postTypeFilter = activeFilters.find((f) => f.type === 'post_type')
     return {
       favoritePlayerIds,
       favoriteTeamTricodes,
       isUserLoggedIn: !!user,
       filters: {
-        postType: activeFilter,
+        postType: (postTypeFilter?.value as FeedFilterType) ?? 'all',
       },
-      seed: Math.floor(Date.now() / (1000 * 60 * 30)), // Changes every 30 min
+      seed: Math.floor(Date.now() / (1000 * 60 * 30)),
     }
-  }, [favPlayers, favTeams, user, activeFilter])
+  }, [favPlayers, favTeams, user, activeFilters])
 
-  // Apply algorithm
+  // Apply algorithm to filtered posts
   const orderedPosts = useMemo(() => {
-    if (!posts) return []
-    let result = orderPostsByAlgorithm(posts, algorithmOptions)
-
-    // Client-side search
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase()
-      result = result.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.subtitle?.toLowerCase().includes(q) ||
-          p.description?.toLowerCase().includes(q) ||
-          p.team_tricodes?.some((t) => t.toLowerCase().includes(q))
-      )
-    }
-
-    return result
-  }, [posts, algorithmOptions, searchQuery])
+    return orderPostsByAlgorithm(filteredPosts, algorithmOptions)
+  }, [filteredPosts, algorithmOptions])
 
   const handlePostClick = useCallback(
     (post: FeedPost) => {
@@ -364,112 +384,76 @@ export default function Highlights() {
     [navigate]
   )
 
-  // ─── Render ─────────────────────────────────────────────
+  // ─── Filter chips in drawer: toggle post_type filters ────────
 
-  return (
+  const filterChips = (
     <Box
       sx={{
-        maxWidth: 1200,
-        mx: 'auto',
-        px: { xs: 1.5, sm: 2, md: 3 },
-        pt: { xs: 2, md: 3 },
-        pb: 6,
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 1,
+        '& .feed-filter-chip': {
+          cursor: 'pointer',
+          flexShrink: 0,
+          fontWeight: 600,
+          fontSize: '0.75rem',
+          letterSpacing: '0.03em',
+        },
       }}
     >
-      {/* Page header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          level="h2"
-          sx={{
-            fontFamily: '"Libre Baskerville", serif',
-            fontWeight: 700,
-            color: '#FFFFFF',
-            fontSize: { xs: '1.5rem', md: '2rem' },
-            letterSpacing: '-0.02em',
-          }}
-        >
-          Feed
-        </Typography>
-        <Typography level="body-sm" sx={{ color: '#888', mt: 0.5 }}>
-          NBA stories, highlights, and analysis
-        </Typography>
-      </Box>
+      {FILTER_OPTIONS.map((opt) => {
+        const isPostType = opt.value !== 'all'
+        const filterId = isPostType ? `post_type:${opt.value}` : null
+        const isActive = isPostType && activeFilters.some((f) => f.id === filterId)
+        const chipColor =
+          opt.value === 'all' ? '#FFC72C' : POST_TYPE_COLORS[opt.value as PostType] ?? '#FFC72C'
 
-      {/* Search bar */}
-      <Box sx={{ mb: 2 }}>
-        <Input
-          placeholder="Search stories..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          startDecorator={<Search sx={{ color: '#666' }} />}
-          sx={{
-            bgcolor: '#111',
-            borderColor: '#222',
-            color: '#FFF',
-            '&:hover': { borderColor: '#444' },
-            '&::before': { display: 'none' },
-            '--Input-focusedHighlight': '#FFC72C33',
-          }}
-        />
-      </Box>
+        return (
+          <Chip
+            key={opt.value}
+            className="feed-filter-chip"
+            size="md"
+            variant={isActive ? 'solid' : 'outlined'}
+            onClick={() => {
+              if (opt.value === 'all') {
+                setActiveFilters((prev) => prev.filter((f) => f.type !== 'post_type'))
+              } else if (isActive && filterId) {
+                removeFilter(filterId)
+              } else if (isPostType) {
+                addFilter({ type: 'post_type', value: opt.value, label: opt.label })
+              }
+            }}
+            sx={{
+              ...(isActive
+                ? {
+                    bgcolor: chipColor,
+                    color: '#000',
+                    '&:hover': { bgcolor: chipColor },
+                  }
+                : {
+                    borderColor: '#333',
+                    color: '#AAA',
+                    '&:hover': { borderColor: chipColor, color: chipColor },
+                  }),
+            }}
+          >
+            {opt.label}
+          </Chip>
+        )
+      })}
+    </Box>
+  )
 
-      {/* Filter chips */}
-      <Box
-        sx={{
-          display: 'flex',
-          gap: 1,
-          mb: 3,
-          overflowX: 'auto',
-          pb: 1,
-          // Hide scrollbar
-          '&::-webkit-scrollbar': { display: 'none' },
-          scrollbarWidth: 'none',
-        }}
-      >
-        {FILTER_OPTIONS.map((opt) => {
-          const isActive = activeFilter === opt.value
-          const chipColor =
-            opt.value === 'all' ? '#FFC72C' : POST_TYPE_COLORS[opt.value as PostType] ?? '#FFC72C'
+  // ─── Render ─────────────────────────────────────────────
 
-          return (
-            <Chip
-              key={opt.value}
-              size="md"
-              variant={isActive ? 'solid' : 'outlined'}
-              onClick={() => setActiveFilter(opt.value)}
-              sx={{
-                cursor: 'pointer',
-                flexShrink: 0,
-                fontWeight: 600,
-                fontSize: '0.75rem',
-                letterSpacing: '0.03em',
-                ...(isActive
-                  ? {
-                      bgcolor: chipColor,
-                      color: '#000',
-                      '&:hover': { bgcolor: chipColor },
-                    }
-                  : {
-                      borderColor: '#333',
-                      color: '#AAA',
-                      '&:hover': { borderColor: chipColor, color: chipColor },
-                    }),
-              }}
-            >
-              {opt.label}
-            </Chip>
-          )
-        })}
-      </Box>
-
-      {/* Loading */}
+  const feedPostsContent = (
+    <Box>
       {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 12 }}>
           <CircularProgress size="lg" sx={{ '--CircularProgress-trackColor': '#222', '--CircularProgress-progressColor': '#FFC72C' }} />
         </Box>
       )}
 
-      {/* Error */}
       {error && (
         <Box sx={{ textAlign: 'center', py: 8 }}>
           <Typography level="body-lg" sx={{ color: '#EF4444' }}>
@@ -478,12 +462,10 @@ export default function Highlights() {
         </Box>
       )}
 
-      {/* Empty state */}
       {!isLoading && !error && orderedPosts.length === 0 && (
-        <EmptyState filter={activeFilter} />
+        <EmptyState hasActiveFilters={activeFilters.length > 0} />
       )}
 
-      {/* Card grid */}
       {!isLoading && orderedPosts.length > 0 && (
         <Box
           sx={{
@@ -501,6 +483,27 @@ export default function Highlights() {
           ))}
         </Box>
       )}
+    </Box>
+  )
+
+  return (
+    <Box
+      sx={{
+        maxWidth: 1200,
+        mx: 'auto',
+        px: { xs: 1.5, sm: 2, md: 3 },
+        pt: { xs: 2, md: 3 },
+        pb: 6,
+      }}
+    >
+      <FeedModulesGrid
+        filterDrawerContent={filterChips}
+        activeFilters={activeFilters}
+        onAddFilter={addFilter}
+        onRemoveFilter={removeFilter}
+      >
+        {feedPostsContent}
+      </FeedModulesGrid>
     </Box>
   )
 }

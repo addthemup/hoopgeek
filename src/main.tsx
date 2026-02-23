@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CssVarsProvider } from '@mui/joy/styles'
+import CssBaseline from '@mui/joy/CssBaseline'
 import { newspaperTheme } from './theme'
 import DarkModeForce from './DarkModeForce.tsx'
-import { MarginBarsProvider } from './contexts/MarginBarsContext'
 import App from './App.tsx'
 import './index.css'
 import './App.css'
@@ -28,6 +28,7 @@ createRoot(document.getElementById('root')!).render(
         modeStorageKey="hoopgeek-mode"
         disableTransitionOnChange={false}
       >
+        <CssBaseline />
         <DarkModeForce>
           <BrowserRouter
             future={{
@@ -35,9 +36,7 @@ createRoot(document.getElementById('root')!).render(
               v7_relativeSplatPath: true,
             }}
           >
-            <MarginBarsProvider>
             <App />
-            </MarginBarsProvider>
           </BrowserRouter>
         </DarkModeForce>
       </CssVarsProvider>

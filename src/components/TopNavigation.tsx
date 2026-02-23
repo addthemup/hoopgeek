@@ -34,10 +34,6 @@ import {
   Person,
   AttachMoney,
   DynamicFeed,
-  MonetizationOn,
-  Analytics,
-  PlayArrow,
-  CalendarToday,
 } from '@mui/icons-material'
 import { useAuth } from '../hooks/useAuth'
 import { usePlayerSearch, SearchResult, PlayerSearchResult, TeamSearchResult } from '../hooks/usePlayerSearch'
@@ -128,12 +124,6 @@ export default function TopNavigation() {
 
   const navigationItems: NavigationItem[] = [
     {
-      id: 'feed',
-      label: 'Feed',
-      icon: <PlayArrow />,
-      path: '/feed',
-    },
-    {
       id: 'dfs',
       label: 'DFS',
       icon: <AttachMoney />,
@@ -144,34 +134,10 @@ export default function TopNavigation() {
     // Only show admin items on desktop (not mobile)
     ...(isSuperAdmin && !isMobile ? [
       {
-        id: 'content',
-        label: 'Content',
+        id: 'admin',
+        label: 'Admin',
         icon: <DynamicFeed />,
-        path: '/admin/create-post',
-      },
-      {
-        id: 'dfs-admin',
-        label: 'DFS Admin',
-        icon: <MonetizationOn />,
-        path: '/admin/dfs',
-      },
-      {
-        id: 'analytics',
-        label: 'Analytics',
-        icon: <Analytics />,
-        path: '/admin/analytics',
-      },
-      {
-        id: 'today-admin',
-        label: 'Today Admin',
-        icon: <CalendarToday />,
-        path: '/admin/today',
-      },
-      {
-        id: 'feed-admin',
-        label: 'Feed Admin',
-        icon: <DynamicFeed />,
-        path: '/admin/feed',
+        path: '/admin',
       },
     ] : [])
   ]
@@ -195,11 +161,10 @@ export default function TopNavigation() {
   }
 
 
-  // Get current active tab index for bottom nav (Fantasy tab disabled)
+  // Get current active tab index for bottom nav (Home = feed, DFS)
   const getActiveTabIndex = () => {
-    if (location.pathname === '/today') return 0
-    if (location.pathname === '/feed' || location.pathname === '/feed/') return 1
-    if (location.pathname.startsWith('/dfs')) return 2
+    if (location.pathname === '/feed' || location.pathname === '/feed/') return 0
+    if (location.pathname.startsWith('/dfs')) return 1
     return 0
   }
 
@@ -214,7 +179,7 @@ export default function TopNavigation() {
     const index = typeof value === 'number' ? value : parseInt(value as string, 10)
     setActiveTabIndex(index)
     
-    const paths = ['/today', '/feed', '/dfs']
+    const paths = ['/feed', '/dfs']
     if (paths[index]) {
       navigate(paths[index])
     }
@@ -258,7 +223,7 @@ export default function TopNavigation() {
           }}>
             {/* Logo - Desktop Only */}
             <Box 
-              onClick={() => handleNavigation('/today')}
+              onClick={() => handleNavigation('/feed')}
               sx={{ 
                 cursor: 'pointer',
                 display: { xs: 'none', md: 'flex' },
@@ -293,13 +258,13 @@ export default function TopNavigation() {
                 justifyContent: 'flex-start',
               }}
             >
-              {/* Home Icon */}
+              {/* Home Icon -> /feed */}
               <IconButton
-                variant={isActivePath('/today') ? 'soft' : 'plain'}
-                onClick={() => handleNavigation('/today')}
+                variant={isActivePath('/feed') ? 'soft' : 'plain'}
+                onClick={() => handleNavigation('/feed')}
                 sx={{
-                  color: isActivePath('/today') ? '#FFD700' : 'rgba(232, 230, 224, 0.7)',
-                  bgcolor: isActivePath('/today') ? 'rgba(255, 215, 0, 0.1)' : 'transparent',
+                  color: isActivePath('/feed') ? '#FFD700' : 'rgba(232, 230, 224, 0.7)',
+                  bgcolor: isActivePath('/feed') ? 'rgba(255, 215, 0, 0.1)' : 'transparent',
                   '--IconButton-size': '40px',
                   transition: 'all 0.2s',
                   '&:hover': {
@@ -348,13 +313,13 @@ export default function TopNavigation() {
                 ml: { md: 3 },
               }}
             >
-              {/* Home Icon */}
+              {/* Home Icon -> /feed */}
               <IconButton
-                variant={isActivePath('/today') ? 'soft' : 'plain'}
-                onClick={() => handleNavigation('/today')}
+                variant={isActivePath('/feed') ? 'soft' : 'plain'}
+                onClick={() => handleNavigation('/feed')}
                 sx={{
-                  color: isActivePath('/today') ? '#FFD700' : 'rgba(232, 230, 224, 0.7)',
-                  bgcolor: isActivePath('/today') ? 'rgba(255, 215, 0, 0.1)' : 'transparent',
+                  color: isActivePath('/feed') ? '#FFD700' : 'rgba(232, 230, 224, 0.7)',
+                  bgcolor: isActivePath('/feed') ? 'rgba(255, 215, 0, 0.1)' : 'transparent',
                   '--IconButton-size': '40px',
                   transition: 'all 0.2s',
                   '&:hover': {
@@ -394,7 +359,8 @@ export default function TopNavigation() {
             </Box>
 
 
-            {/* Integrated Search Bar - Desktop Only - Moved to right */}
+            {/* Integrated Search Bar - Desktop Only - Hidden on /feed/ (search is beside More button there) */}
+            {!(location.pathname === '/feed' || location.pathname === '/feed/') && (
             <Box
               ref={searchInputRef}
               onClick={(e) => {
@@ -455,6 +421,8 @@ export default function TopNavigation() {
                     const firstResult = searchResults[0]
                     if (firstResult.type === 'player') {
                       navigate(`/player/${firstResult.id}`)
+                    } else if (firstResult.type === 'prospect') {
+                      navigate(`/prospect/${firstResult.id}`)
                     } else {
                       navigate(`/team/${firstResult.id}`)
                     }
@@ -501,9 +469,10 @@ export default function TopNavigation() {
               />
 
             </Box>
+            )}
 
-            {/* Search Results Dropdown - Rendered via Portal to escape all stacking contexts */}
-            {typeof document !== 'undefined' ? createPortal(
+            {/* Search Results Dropdown - Rendered via Portal (hidden on /feed/) */}
+            {!(location.pathname === '/feed' || location.pathname === '/feed/') && typeof document !== 'undefined' ? createPortal(
               <AnimatePresence>
                 {searchFocused && searchQuery.length >= 2 ? (
                   <Box
@@ -544,6 +513,8 @@ export default function TopNavigation() {
                                 e.preventDefault()
                                 if (result.type === 'player') {
                                   navigate(`/player/${result.id}`)
+                                } else if (result.type === 'prospect') {
+                                  navigate(`/prospect/${result.id}`)
                                 } else {
                                   navigate(`/team/${result.id}`)
                                 }
@@ -572,6 +543,21 @@ export default function TopNavigation() {
                                     </Typography>
                                     <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
                                       {result.team_name || 'Free Agent'} • {result.position || 'N/A'}
+                                    </Typography>
+                                  </ListItemContent>
+                                </>
+                              ) : result.type === 'prospect' ? (
+                                <>
+                                  <Avatar
+                                    size="sm"
+                                    sx={{ mr: 1.5, bgcolor: 'neutral.700' }}
+                                  />
+                                  <ListItemContent>
+                                    <Typography level="title-sm" sx={{ color: 'text.primary', fontWeight: 600 }}>
+                                      {result.name}
+                                    </Typography>
+                                    <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                                      {result.school_team || '—'} • {result.position_primary || 'N/A'}
                                     </Typography>
                                   </ListItemContent>
                                 </>
@@ -718,62 +704,52 @@ export default function TopNavigation() {
                 </ListItemDecorator>
                 Home
               </Tab>
+              
+              {/* Center Search Button - Hidden on /feed/ (mobile feed has no search bar) */}
+              {!(location.pathname === '/feed' || location.pathname === '/feed/') && (
+                <Box
+                  sx={{
+                    position: 'absolute',
+                    left: '50%',
+                    top: '-28px',
+                    transform: 'translateX(-50%)',
+                    zIndex: 10,
+                  }}
+                >
+                  <IconButton
+                    variant="plain"
+                    onClick={() => {
+                      setSearchModalOpen(true)
+                      setTimeout(() => {
+                        mobileSearchInputRef.current?.focus()
+                      }, 100)
+                    }}
+                    sx={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: '50%',
+                      bgcolor: 'rgba(255, 255, 255, 0.1)',
+                      color: 'rgba(255, 255, 255, 0.8)',
+                      border: '2px solid rgba(255, 255, 255, 0.2)',
+                      '&:hover': {
+                        bgcolor: 'rgba(255, 215, 0, 0.2)',
+                        color: '#FFD700',
+                        borderColor: '#FFD700',
+                        transform: 'scale(1.1)',
+                        boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
+                      },
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <Search sx={{ fontSize: '1.5rem' }} />
+                  </IconButton>
+                </Box>
+              )}
+              
               <Tab
                 disableIndicator
                 orientation="vertical"
                 {...(activeTabIndex === 1 && { color: 'primary' })}
-                sx={{ flex: 1 }}
-              >
-                <ListItemDecorator>
-                  <PlayArrow />
-                </ListItemDecorator>
-                Feed
-              </Tab>
-              
-              {/* Center Search Button - Floating above tabs */}
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: '50%',
-                  top: '-28px',
-                  transform: 'translateX(-50%)',
-                  zIndex: 10,
-                }}
-              >
-                <IconButton
-                  variant="plain"
-                  onClick={() => {
-                    setSearchModalOpen(true)
-                    // Focus input after modal opens
-                    setTimeout(() => {
-                      mobileSearchInputRef.current?.focus()
-                    }, 100)
-                  }}
-                  sx={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: '50%',
-                    bgcolor: 'rgba(255, 255, 255, 0.1)',
-                    color: 'rgba(255, 255, 255, 0.8)',
-                    border: '2px solid rgba(255, 255, 255, 0.2)',
-                    '&:hover': {
-                      bgcolor: 'rgba(255, 215, 0, 0.2)',
-                      color: '#FFD700',
-                      borderColor: '#FFD700',
-                      transform: 'scale(1.1)',
-                      boxShadow: '0 4px 12px rgba(255, 215, 0, 0.3)',
-                    },
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <Search sx={{ fontSize: '1.5rem' }} />
-                </IconButton>
-              </Box>
-              
-              <Tab
-                disableIndicator
-                orientation="vertical"
-                {...(activeTabIndex === 2 && { color: 'primary' })}
                 sx={{ flex: 1 }}
               >
                 <ListItemDecorator>
@@ -835,6 +811,8 @@ export default function TopNavigation() {
                   const firstResult = searchResults[0]
                   if (firstResult.type === 'player') {
                     navigate(`/player/${firstResult.id}`)
+                  } else if (firstResult.type === 'prospect') {
+                    navigate(`/prospect/${firstResult.id}`)
                   } else {
                     navigate(`/team/${firstResult.id}`)
                   }
@@ -894,6 +872,8 @@ export default function TopNavigation() {
                         setTimeout(() => {
                           if (result.type === 'player') {
                             navigate(`/player/${result.id}`)
+                          } else if (result.type === 'prospect') {
+                            navigate(`/prospect/${result.id}`)
                           } else {
                             navigate(`/team/${result.id}`)
                           }
@@ -922,6 +902,21 @@ export default function TopNavigation() {
                             </Typography>
                             <Typography level="body-sm" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
                               {result.team_name || 'Free Agent'} • {result.position || 'N/A'}
+                            </Typography>
+                          </ListItemContent>
+                        </>
+                      ) : result.type === 'prospect' ? (
+                        <>
+                          <Avatar
+                            size="md"
+                            sx={{ mr: 2, bgcolor: 'neutral.700', width: 48, height: 48 }}
+                          />
+                          <ListItemContent>
+                            <Typography level="title-md" sx={{ color: '#fff', fontWeight: 600 }}>
+                              {result.name}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ color: 'rgba(255, 255, 255, 0.7)' }}>
+                              {result.school_team || '—'} • {result.position_primary || 'N/A'}
                             </Typography>
                           </ListItemContent>
                         </>

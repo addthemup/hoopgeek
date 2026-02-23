@@ -35,6 +35,7 @@ import Send from '@mui/icons-material/Send'
 import Reply from '@mui/icons-material/Reply'
 import { supabase } from '../utils/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { FANDUEL_SCORING } from '../utils/fantasyScoring'
 import {
   toggleLike,
   toggleBookmark,
@@ -57,6 +58,7 @@ import type {
   PlayerHighlightContent,
   StatComparisonContent,
   VideoClipContent,
+  VideoCarouselContent,
   RichTextContent,
   PropCardContent,
   InjuryCardContent,
@@ -66,7 +68,10 @@ import type {
   DataOverlay,
   LineupPlayer,
 } from '../types/feed'
+import ChevronLeft from '@mui/icons-material/ChevronLeft'
+import ChevronRight from '@mui/icons-material/ChevronRight'
 import { getTeamPrimaryColor } from '../utils/nbaTeamColors'
+import PlayerJersey from '../components/PlayerJersey'
 
 // ─── Type badge colors ──────────────────────────────────────
 
@@ -80,6 +85,8 @@ const POST_TYPE_COLORS: Record<PostType, string> = {
   prop_prediction: '#FB923C',
   prop_results: '#10B981',
   injury_report: '#EF4444',
+  upcoming: '#8B5CF6',
+  blog: '#0EA5E9',
 }
 
 const POST_TYPE_LABELS: Record<PostType, string> = {
@@ -92,6 +99,8 @@ const POST_TYPE_LABELS: Record<PostType, string> = {
   prop_prediction: 'Prop Prediction',
   prop_results: 'Prop Results',
   injury_report: 'Injury Report',
+  upcoming: 'Upcoming',
+  blog: 'Blog',
 }
 
 // ─── Data hooks ─────────────────────────────────────────────
@@ -135,20 +144,43 @@ function usePostSections(postId: string | undefined) {
 
 // ─── Section renderers ──────────────────────────────────────
 
+function formatMinStat(min: number): string {
+  if (min == null || min < 0) return '—'
+  const m = Math.floor(min)
+  const s = Math.round((min % 1) * 60)
+  return s > 0 ? `${m}:${String(s).padStart(2, '0')}` : String(m)
+}
+
 function HeroSection({ content }: { content: HeroContent }) {
+  const stats = content.player_stats
+  const statRows = stats
+    ? [
+        { label: 'pts', value: stats.pts },
+        { label: 'reb', value: stats.reb },
+        { label: 'ast', value: stats.ast },
+        { label: 'stl', value: stats.stl },
+        { label: 'blk', value: stats.blk },
+        { label: 'min', value: stats.min != null ? formatMinStat(stats.min) : undefined },
+      ].filter((r) => r.value !== undefined && r.value !== null)
+    : []
+
   return (
     <Box
       sx={{
         position: 'relative',
         width: '100%',
-        minHeight: { xs: 200, md: 300 },
+        minHeight: { xs: 200, md: 10 },
         background: content.image_url
           ? `url(${content.image_url}) center/cover`
           : `linear-gradient(135deg, ${content.team_tricode ? getTeamPrimaryColor(content.team_tricode) ?? '#333' : '#333'} 0%, #111 100%)`,
         display: 'flex',
-        alignItems: 'flex-end',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-end',
         borderRadius: '12px',
         overflow: 'hidden',
+        p: 3,
+        pb: 3,
       }}
     >
       {content.gradient_overlay && (
@@ -178,6 +210,82 @@ function HeroSection({ content }: { content: HeroContent }) {
           {content.badge}
         </Chip>
       )}
+      {/* Game Recap: badge + score line + team chips (no matchup text repeat) */}
+      {content.score_line != null && (
+        <Box sx={{ position: 'relative', zIndex: 1, width: '100%' }}>
+          <Typography
+            sx={{
+              color: '#FFF',
+              fontWeight: 700,
+              fontSize: { xs: '1.5rem', md: '1.75rem' },
+              lineHeight: 1.2,
+              letterSpacing: '0.02em',
+            }}
+          >
+            {content.score_line}
+          </Typography>
+          {content.team_tricodes && content.team_tricodes.length >= 2 && (
+            <Stack direction="row" gap={1} sx={{ mt: 1 }}>
+              {content.team_tricodes.map((tri) => (
+                <Chip
+                  key={tri}
+                  size="sm"
+                  variant="soft"
+                  sx={{
+                    bgcolor: 'rgba(255,255,255,0.15)',
+                    color: '#FFF',
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {tri}
+                </Chip>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      )}
+      {/* Player Spotlight: name + team + stats */}
+      {content.player_name && !content.score_line && (
+        <Box sx={{ position: 'relative', zIndex: 1, width: '100%' }}>
+          <Typography
+            sx={{
+              color: '#FFF',
+              fontWeight: 700,
+              fontSize: { xs: '1.25rem', md: '1.5rem' },
+              lineHeight: 1.2,
+            }}
+          >
+            {content.player_name}
+          </Typography>
+          {content.team_tricode && (
+            <Typography
+              sx={{
+                color: 'rgba(255,255,255,0.85)',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                mt: 0.5,
+              }}
+            >
+              {content.team_tricode}
+            </Typography>
+          )}
+          {statRows.length > 0 && (
+            <Stack direction="row" flexWrap="wrap" gap={2} sx={{ mt: 1.5 }}>
+              {statRows.map(({ label, value }) => (
+                <Box key={label} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    {label}
+                  </Typography>
+                  <Typography sx={{ color: '#FFF', fontWeight: 700, fontSize: '0.95rem' }}>
+                    {typeof value === 'number' ? value : value}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      )}
     </Box>
   )
 }
@@ -206,51 +314,119 @@ function HeadlineSection({ content }: { content: HeadlineContent }) {
   )
 }
 
-function LineupCardSection({ content }: { content: LineupCardContent }) {
-  const renderPlayer = (player: LineupPlayer, idx: number) => (
+const LINEUP_GRID_SX = {
+  display: 'grid',
+  gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' },
+  gap: 2,
+}
+
+/** Single lineup player cell: slideshow of MP4 highlights when video_clips exist, else jersey only */
+function LineupPlayerCell({ player, idx }: { player: LineupPlayer; idx: number }) {
+  const clips = player.video_clips?.length ? player.video_clips : []
+  const [clipIndex, setClipIndex] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const currentClip = clips[clipIndex]
+
+  // When clip index changes, play the new clip
+  useEffect(() => {
+    if (!currentClip?.mp4 || !videoRef.current) return
+    const v = videoRef.current
+    v.src = currentClip.mp4
+    v.load()
+    v.play().catch(() => {})
+  }, [clipIndex, currentClip?.mp4])
+
+  const goNext = useCallback(() => {
+    setClipIndex(i => (i + 1) % clips.length)
+  }, [clips.length])
+
+  return (
     <Box
       key={player.player_id || idx}
       sx={{
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 1.5,
-        py: 1,
-        borderBottom: '1px solid #1a1a1a',
+        textAlign: 'center',
+        p: 1.5,
+        borderRadius: 'sm',
+        bgcolor: 'rgba(255,255,255,0.03)',
+        border: '1px solid #222',
       }}
     >
-      <Avatar
-        src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.player_id}.png`}
-        alt={player.name}
-        sx={{ width: 40, height: 40 }}
-      />
-      <Box sx={{ flex: 1 }}>
-        <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600 }}>
-          {player.name}
-        </Typography>
-        <Typography level="body-xs" sx={{ color: '#888' }}>
-          {player.team_tricode} · {player.position ?? ''}
-        </Typography>
-      </Box>
-      <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 700 }}>
+      {clips.length > 0 ? (
+        <Box sx={{ width: '100%', borderRadius: 'sm', overflow: 'hidden', bgcolor: '#000' }}>
+          <video
+            ref={videoRef}
+            src={currentClip?.mp4}
+            muted
+            autoPlay
+            playsInline
+            style={{ width: '100%', display: 'block', aspectRatio: '16/10', objectFit: 'cover' }}
+            onEnded={goNext}
+          />
+          {clips.length > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, py: 0.5 }}>
+              {clips.map((_, i) => (
+                <Box
+                  key={i}
+                  sx={{
+                    width: 4,
+                    height: 4,
+                    borderRadius: '50%',
+                    bgcolor: i === clipIndex ? '#FFC72C' : 'rgba(255,255,255,0.3)',
+                  }}
+                />
+              ))}
+            </Box>
+          )}
+        </Box>
+      ) : (
+        <PlayerJersey
+          playerName={player.name}
+          jerseyNumber={player.jersey_number}
+          nbaTeam={player.team_tricode}
+          position={player.position}
+          size="small"
+          textColor="#FFFFFF"
+        />
+      )}
+      <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600, mt: 1, lineHeight: 1.2 }}>
+        {player.name}
+      </Typography>
+      <Typography level="body-xs" sx={{ color: '#888', mt: 0.25 }}>
+        {player.team_tricode}{player.position ? ` · ${player.position}` : ''}
+      </Typography>
+      <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 700, mt: 0.5 }}>
         {player.fantasy_points?.toFixed(1)} FP
       </Typography>
     </Box>
+  )
+}
+
+function LineupCardSection({ content }: { content: LineupCardContent }) {
+  const renderPlayer = (player: LineupPlayer, idx: number) => (
+    <LineupPlayerCell player={player} idx={idx} />
   )
 
   return (
     <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222' }}>
       <CardContent>
-        <Typography level="title-sm" sx={{ color: '#FFC72C', mb: 1, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+        <Typography level="title-sm" sx={{ color: '#FFC72C', mb: 1.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
           Starters
         </Typography>
-        {content.starters?.map(renderPlayer)}
+        <Box sx={LINEUP_GRID_SX}>
+          {content.starters?.map(renderPlayer)}
+        </Box>
 
         {content.bench && content.bench.length > 0 && (
           <>
-            <Typography level="title-sm" sx={{ color: '#A78BFA', mt: 2, mb: 1, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <Typography level="title-sm" sx={{ color: '#A78BFA', mt: 3, mb: 1.5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
               Bench
             </Typography>
-            {content.bench.map(renderPlayer)}
+            <Box sx={LINEUP_GRID_SX}>
+              {content.bench.map(renderPlayer)}
+            </Box>
           </>
         )}
 
@@ -273,11 +449,130 @@ function LineupCardSection({ content }: { content: LineupCardContent }) {
   )
 }
 
+/** Stat keys in display order: MIN PTS REB AST BLK STL. FP is computed from these via FanDuel. */
+const PLAYER_CARD_STAT_ORDER = ['min', 'pts', 'reb', 'ast', 'blk', 'stl'] as const
+
+function playerCardFantasyPoints(content: PlayerHighlightContent): number {
+  if (content.fantasy_points != null) return content.fantasy_points
+  const s = content.stats || {}
+  return FANDUEL_SCORING.calculatePoints({
+    pts: s.pts ?? 0,
+    reb: s.reb ?? 0,
+    ast: s.ast ?? 0,
+    stl: s.stl ?? 0,
+    blk: s.blk ?? 0,
+    tov: s.tov ?? 0,
+  } as any)
+}
+
 function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }) {
+  const clips = content.video_clips?.length ? content.video_clips : []
+  const [clipIndex, setClipIndex] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const currentClip = clips[clipIndex]
+
+  useEffect(() => {
+    if (!currentClip?.mp4 || !videoRef.current) return
+    const v = videoRef.current
+    v.src = currentClip.mp4
+    v.load()
+    v.play().catch(() => {})
+  }, [clipIndex, currentClip?.mp4])
+
+  // Pause when this section scrolls out of view (so the previous highlight stops when you scroll to the next)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || clips.length === 0) return
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.intersectionRatio < 0.25 && videoRef.current) {
+            videoRef.current.pause()
+          }
+        }
+      },
+      { threshold: [0, 0.25, 0.5, 1], rootMargin: '0px' }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [clips.length])
+
+  const goNext = useCallback(() => {
+    if (clips.length <= 1) return
+    setClipIndex((i) => (i + 1) % clips.length)
+  }, [clips.length])
+
+  const fp = playerCardFantasyPoints(content)
+  const stats = content.stats || {}
+  const orderedStats = PLAYER_CARD_STAT_ORDER.filter((key) => stats[key] != null).map((key) => ({
+    key: key.toUpperCase(),
+    value: stats[key],
+  }))
+
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
-      {/* Video thumbnail */}
-      {content.video_thumbnail && (
+    <Box ref={containerRef}>
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
+      {/* This player's highlight slideshow when video_clips exist; else static thumbnail */}
+      {clips.length > 0 ? (
+        <Box sx={{ position: 'relative', width: '100%', bgcolor: '#000' }}>
+          <video
+            ref={videoRef}
+            src={currentClip?.mp4}
+            muted
+            autoPlay
+            playsInline
+            style={{ width: '100%', display: 'block', aspectRatio: '16/10', objectFit: 'cover' }}
+            onEnded={goNext}
+          />
+          {content.data_overlays && content.data_overlays.length > 0 && (
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 1,
+                p: 1,
+                background: 'linear-gradient(to top, rgba(0,0,0,0.9), transparent)',
+              }}
+            >
+              {content.data_overlays.map((overlay: DataOverlay, i: number) => (
+                <Chip
+                  key={i}
+                  size="sm"
+                  sx={{
+                    bgcolor: 'rgba(0,0,0,0.7)',
+                    color: overlay.color ?? '#FFC72C',
+                    fontWeight: 700,
+                    fontSize: '0.65rem',
+                    backdropFilter: 'blur(4px)',
+                  }}
+                >
+                  {overlay.label}: {overlay.value}
+                </Chip>
+              ))}
+            </Box>
+          )}
+          {clips.length > 1 && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, py: 0.5 }}>
+            {clips.map((_, i) => (
+              <Box
+                key={i}
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  bgcolor: i === clipIndex ? '#FFC72C' : 'rgba(255,255,255,0.3)',
+                }}
+              />
+            ))}
+          </Box>
+          )}
+        </Box>
+      ) : content.video_thumbnail ? (
         <Box
           sx={{
             position: 'relative',
@@ -285,7 +580,6 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
             background: `url(${content.video_thumbnail}) center/cover`,
           }}
         >
-          {/* Data overlays */}
           {content.data_overlays && (
             <Box
               sx={{
@@ -317,32 +611,32 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
             </Box>
           )}
         </Box>
-      )}
+      ) : null}
 
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+      <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, textAlign: 'center' }}>
         <Avatar
           src={content.headshot_url ?? `https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
           alt={content.name}
           sx={{ width: 56, height: 56 }}
         />
-        <Box sx={{ flex: 1 }}>
-          <Typography level="title-md" sx={{ color: '#FFF', fontWeight: 700 }}>
-            {content.name}
-          </Typography>
-          <Typography level="body-xs" sx={{ color: '#888' }}>
-            {content.team_tricode}
-            {content.fantasy_points != null && ` · ${content.fantasy_points.toFixed(1)} FP`}
-          </Typography>
-        </Box>
+        <Typography level="title-md" sx={{ color: '#FFF', fontWeight: 700 }}>
+          {content.name}
+        </Typography>
+        <Typography level="body-md" sx={{ color: '#FFC72C', fontWeight: 700 }}>
+          {fp.toFixed(1)} FP
+        </Typography>
+        <Typography level="body-xs" sx={{ color: '#888' }}>
+          {content.team_tricode}
+        </Typography>
       </CardContent>
 
-      {/* Stat line */}
-      {content.stats && (
+      {/* Stat line: MIN PTS REB AST BLK STL */}
+      {orderedStats.length > 0 && (
         <Box sx={{ display: 'flex', justifyContent: 'space-around', px: 2, pb: 2 }}>
-          {Object.entries(content.stats).map(([key, val]) => (
+          {orderedStats.map(({ key, value }) => (
             <Box key={key} sx={{ textAlign: 'center' }}>
               <Typography level="body-lg" sx={{ color: '#FFC72C', fontWeight: 700 }}>
-                {val}
+                {value}
               </Typography>
               <Typography level="body-xs" sx={{ color: '#666', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {key}
@@ -352,6 +646,7 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
         </Box>
       )}
     </Card>
+    </Box>
   )
 }
 
@@ -418,6 +713,129 @@ function VideoClipSection({ content }: { content: VideoClipContent }) {
         </Typography>
       )}
     </Box>
+  )
+}
+
+/** Instagram-style carousel of MP4 clips with play metadata (period, clock, description). MUI Joy only. */
+function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
+  const clips = content.clips?.filter((c) => c.mp4) ?? []
+  const [index, setIndex] = useState(0)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const current = clips[index]
+
+  useEffect(() => {
+    if (!current?.mp4 || !videoRef.current) return
+    const v = videoRef.current
+    v.src = current.mp4
+    v.load()
+    v.play().catch(() => {})
+  }, [index, current?.mp4])
+
+  if (clips.length === 0) {
+    return (
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222' }}>
+        <CardContent>
+          <Typography level="body-sm" sx={{ color: '#666' }}>No clips in this carousel.</Typography>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const goPrev = () => setIndex((i) => (i - 1 + clips.length) % clips.length)
+  const goNext = () => setIndex((i) => (i + 1) % clips.length)
+
+  return (
+    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
+      <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+        {clips.length > 1 && (
+          <IconButton
+            variant="soft"
+            color="neutral"
+            size="sm"
+            onClick={goPrev}
+            sx={{
+              position: 'absolute',
+              left: 8,
+              zIndex: 2,
+              bgcolor: 'rgba(0,0,0,0.6)',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
+            }}
+          >
+            <ChevronLeft />
+          </IconButton>
+        )}
+        <Box sx={{ width: '100%', aspectRatio: '9/16', maxHeight: 420, mx: clips.length > 1 ? 5 : 0 }}>
+          <video
+            ref={videoRef}
+            src={current?.mp4}
+            muted={false}
+            controls
+            playsInline
+            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'contain', background: '#000' }}
+            onEnded={goNext}
+          />
+        </Box>
+        {clips.length > 1 && (
+          <IconButton
+            variant="soft"
+            color="neutral"
+            size="sm"
+            onClick={goNext}
+            sx={{
+              position: 'absolute',
+              right: 8,
+              zIndex: 2,
+              bgcolor: 'rgba(0,0,0,0.6)',
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
+            }}
+          >
+            <ChevronRight />
+          </IconButton>
+        )}
+      </Box>
+      {(current?.description || (current?.period != null && current?.clock)) && (
+        <CardContent sx={{ py: 1, px: 1.5 }}>
+          <Stack direction="row" alignItems="center" flexWrap="wrap" gap={1}>
+            {current.period != null && current.clock != null && (
+              <Chip size="sm" variant="soft" sx={{ fontSize: '0.7rem' }}>
+                Q{current.period} {current.clock}
+              </Chip>
+            )}
+            {current.action_type && (
+              <Chip size="sm" variant="outlined" sx={{ fontSize: '0.7rem' }}>
+                {current.action_type}
+              </Chip>
+            )}
+            {current.description && (
+              <Typography level="body-sm" sx={{ color: '#AAA', flex: 1, minWidth: 0 }}>
+                {current.description}
+              </Typography>
+            )}
+          </Stack>
+        </CardContent>
+      )}
+      {clips.length > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, pb: 1 }}>
+          {clips.map((_, i) => (
+            <Box
+              key={i}
+              onClick={() => setIndex(i)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setIndex(i)}
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                bgcolor: i === index ? '#FFC72C' : 'rgba(255,255,255,0.35)',
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+              }}
+            />
+          ))}
+        </Box>
+      )}
+    </Card>
   )
 }
 
@@ -694,6 +1112,7 @@ function SectionRenderer({ section }: { section: FeedPostSection }) {
       {section_type === 'player_highlight' && <PlayerHighlightSection content={content as PlayerHighlightContent} />}
       {section_type === 'stat_comparison' && <StatComparisonSection content={content as StatComparisonContent} />}
       {section_type === 'video_clip' && <VideoClipSection content={content as VideoClipContent} />}
+      {section_type === 'video_carousel' && <VideoCarouselSection content={content as VideoCarouselContent} />}
       {section_type === 'rich_text' && <RichTextSection content={content as RichTextContent} />}
       {section_type === 'prop_card' && <PropCardSection content={content as PropCardContent} />}
       {section_type === 'injury_card' && <InjuryCardSection content={content as InjuryCardContent} />}
@@ -916,9 +1335,6 @@ export default function PostStory() {
     )
   }
 
-  const typeColor = POST_TYPE_COLORS[post.post_type] ?? '#FFC72C'
-  const typeLabel = POST_TYPE_LABELS[post.post_type] ?? post.post_type
-
   return (
     <Box sx={{ maxWidth: 720, mx: 'auto', px: { xs: 2, md: 0 }, pt: 2, pb: 12 }}>
       {/* Back button */}
@@ -929,74 +1345,7 @@ export default function PostStory() {
         <ArrowBack />
       </IconButton>
 
-      {/* Post header */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-          <Chip
-            size="sm"
-            sx={{
-              bgcolor: `${typeColor}22`,
-              color: typeColor,
-              fontWeight: 700,
-              fontSize: '0.65rem',
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-            }}
-          >
-            {typeLabel}
-          </Chip>
-          {post.game_date && (
-            <Typography level="body-xs" sx={{ color: '#888' }}>
-              {new Date(post.game_date).toLocaleDateString('en-US', {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-                year: 'numeric',
-              })}
-            </Typography>
-          )}
-        </Box>
-
-        <Typography
-          level="h2"
-          sx={{
-            fontFamily: '"Libre Baskerville", serif',
-            fontWeight: 700,
-            color: '#FFFFFF',
-            fontSize: { xs: '1.5rem', md: '2rem' },
-            lineHeight: 1.25,
-            mb: 1,
-          }}
-        >
-          {post.title}
-        </Typography>
-
-        {post.subtitle && (
-          <Typography level="body-lg" sx={{ color: '#AAAAAA', lineHeight: 1.5 }}>
-            {post.subtitle}
-          </Typography>
-        )}
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 2 }}>
-          <Typography level="body-xs" sx={{ color: '#666' }}>
-            By {post.author_name}
-          </Typography>
-          {post.team_tricodes?.map((tri) => (
-            <Chip
-              key={tri}
-              size="sm"
-              variant="outlined"
-              sx={{ borderColor: '#333', color: '#CCC', fontSize: '0.6rem', height: 20 }}
-            >
-              {tri}
-            </Chip>
-          ))}
-        </Box>
-      </Box>
-
-      <Divider sx={{ borderColor: '#222', mb: 3 }} />
-
-      {/* Sections */}
+      {/* Sections (hero with gradient is first) */}
       <Box ref={contentRef}>
         {(sections ?? []).map((section) => (
           <SectionRenderer key={section.id} section={section} />

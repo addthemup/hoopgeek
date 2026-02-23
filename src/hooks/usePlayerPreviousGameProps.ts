@@ -174,7 +174,7 @@ export function usePlayerPreviousGameProps(playerId: string, playerName: string)
       let hits = 0;
       let misses = 0;
       
-      // Format bet type name (same as in MarginPlayerProps)
+      // Format bet type name
       const formatBetType = (betType: string): string => {
         const betTypeMap: Record<string, string> = {
           'points': 'PTS',

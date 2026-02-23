@@ -31,6 +31,14 @@ html {
   width: 100%;
   margin: 0;
   padding: 0;
+  /* Smooth scroll when navigating in-page (respects prefers-reduced-motion) */
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {

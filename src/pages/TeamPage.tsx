@@ -23,6 +23,7 @@ import { useTeamDashPtShots } from '../hooks/useTeamDashPtShots'
 import { useTeamEstimatedMetrics } from '../hooks/useTeamEstimatedMetrics'
 import { useTeamPlayerDashboard } from '../hooks/useTeamPlayerDashboard'
 import { useMediaQuery } from '@mui/material'
+import TeamFourFactors from '../components/TeamFourFactors'
 
 interface TeamData {
   id: string
@@ -777,6 +778,11 @@ export default function TeamPage() {
             </Card>
           </Grid>
         </Grid>
+
+        {/* Four Factors Section */}
+        <Box sx={{ mt: 4 }}>
+          <TeamFourFactors teamId={teamData.team_id} />
+        </Box>
       </Box>
     </Box>
   )

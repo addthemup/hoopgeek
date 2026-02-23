@@ -33,7 +33,7 @@ export default function PlayerPropsOverlay({ playerProps, propsIcon }: PlayerPro
 
   const hitRatePercent = Math.round(playerProps.hitRate * 100)
 
-  // Format bet type for display - match MarginPlayerProps format
+  // Format bet type for display
   const formatBetType = (betType: string): string => {
     const betTypeMap: Record<string, string> = {
       'points': 'PTS',
@@ -139,7 +139,7 @@ export default function PlayerPropsOverlay({ playerProps, propsIcon }: PlayerPro
       }
     })
 
-    // Sort by common prop order (same as MarginPlayerProps)
+    // Sort by common prop order
     const propOrder = ['PTS', 'REB', 'AST', 'STL', 'BLK', '3PM', 'TOV', 'STOCKS', 'PTS+AST', 'PTS+REB', 'PAR', 'REB+AST']
     categories.sort((a, b) => {
       const aDisplay = formatBetType(a.bet_type)

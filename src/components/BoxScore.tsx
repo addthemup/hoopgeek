@@ -11,7 +11,7 @@ import {
 import { PlayArrow } from '@mui/icons-material';
 import { getTeamLogoUrl } from '../utils/nbaTeamLogos';
 import { getTeamColors } from '../utils/nbaTeamColors';
-import { hexToRgba } from './MarginBars';
+import { hexToRgba } from '../utils/colorUtils';
 import LoadingAvatar from './LoadingAvatar';
 
 interface PlayerStats {
