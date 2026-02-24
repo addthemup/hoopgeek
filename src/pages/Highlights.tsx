@@ -7,7 +7,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   Typography,
@@ -17,14 +17,22 @@ import {
   CircularProgress,
   IconButton,
   AspectRatio,
+  Modal,
+  ModalDialog,
+  Button,
+  Stack,
+  Divider,
 } from '@mui/joy'
 import Favorite from '@mui/icons-material/Favorite'
 import ChatBubbleOutline from '@mui/icons-material/ChatBubbleOutline'
 import Visibility from '@mui/icons-material/Visibility'
 import BookmarkBorder from '@mui/icons-material/BookmarkBorder'
 import FilterList from '@mui/icons-material/FilterList'
+import Close from '@mui/icons-material/Close'
+import WarningRounded from '@mui/icons-material/WarningRounded'
 import { supabase } from '../utils/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useIsAdmin } from '../hooks/useIsAdmin'
 import { useFavoritePlayers, useFavoriteTeams } from '../hooks/useUserSettings'
 import { orderPostsByAlgorithm } from '../utils/feedAlgorithm'
 import type { FeedPost, PostType, FeedFilterType } from '../types/feed'
@@ -98,7 +106,14 @@ function useFeedPosts() {
 
 // ─── Feed Card ──────────────────────────────────────────────
 
-function FeedCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
+export { POST_TYPE_LABELS, POST_TYPE_COLORS }
+
+export function FeedCard({ post, onClick, isAdmin, onDelete }: {
+  post: FeedPost
+  onClick: () => void
+  isAdmin?: boolean
+  onDelete?: (post: FeedPost) => void
+}) {
   const typeColor = POST_TYPE_COLORS[post.post_type] ?? '#FFC72C'
   const typeLabel = POST_TYPE_LABELS[post.post_type] ?? post.post_type
 
@@ -124,13 +139,43 @@ function FeedCard({ post, onClick }: { post: FeedPost; onClick: () => void }) {
         cursor: 'pointer',
         transition: 'all 0.25s ease',
         overflow: 'hidden',
+        position: 'relative',
         '&:hover': {
           borderColor: typeColor,
           transform: 'translateY(-2px)',
           boxShadow: `0 8px 24px rgba(0,0,0,0.4), 0 0 0 1px ${typeColor}22`,
         },
+        '&:hover .admin-delete-btn': { opacity: 1 },
       }}
     >
+      {/* Admin delete button */}
+      {isAdmin && onDelete && (
+        <IconButton
+          className="admin-delete-btn"
+          size="sm"
+          variant="solid"
+          color="danger"
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete(post)
+          }}
+          sx={{
+            position: 'absolute',
+            top: 8,
+            right: 8,
+            zIndex: 10,
+            opacity: 0,
+            transition: 'opacity 0.15s',
+            minWidth: 28,
+            minHeight: 28,
+            borderRadius: '50%',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          }}
+        >
+          <Close sx={{ fontSize: 16 }} />
+        </IconButton>
+      )}
+
       {/* Cover image */}
       {post.cover_image_url && (
         <AspectRatio ratio="16/9" sx={{ borderRadius: 0 }}>
@@ -318,11 +363,15 @@ function EmptyState({ hasActiveFilters }: { hasActiveFilters: boolean }) {
 export default function Highlights() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const { data: isAdmin } = useIsAdmin()
+  const queryClient = useQueryClient()
   const { data: posts, isLoading, error } = useFeedPosts()
   const { data: favPlayers } = useFavoritePlayers(user?.id)
   const { data: favTeams } = useFavoriteTeams(user?.id)
 
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([])
+  const [deleteTarget, setDeleteTarget] = useState<FeedPost | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const addFilter = useCallback((filter: Omit<ActiveFilter, 'id'>) => {
     const id = `${filter.type}:${filter.value}`
@@ -383,6 +432,25 @@ export default function Highlights() {
     },
     [navigate]
   )
+
+  const handleDeletePost = useCallback(async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      // Delete sections first (cascade should handle this, but be explicit)
+      await supabase.from('feed_post_sections').delete().eq('post_id', deleteTarget.id)
+      // Delete the post
+      const { error: delErr } = await supabase.from('feed_posts').delete().eq('id', deleteTarget.id)
+      if (delErr) throw delErr
+      // Invalidate cache so the feed refreshes
+      queryClient.invalidateQueries({ queryKey: ['feed-posts-v2'] })
+      setDeleteTarget(null)
+    } catch (err) {
+      console.error('Failed to delete post:', err)
+    } finally {
+      setDeleting(false)
+    }
+  }, [deleteTarget, queryClient])
 
   // ─── Filter chips in drawer: toggle post_type filters ────────
 
@@ -479,7 +547,13 @@ export default function Highlights() {
           }}
         >
           {orderedPosts.map((post) => (
-            <FeedCard key={post.id} post={post} onClick={() => handlePostClick(post)} />
+            <FeedCard
+              key={post.id}
+              post={post}
+              onClick={() => handlePostClick(post)}
+              isAdmin={!!isAdmin}
+              onDelete={isAdmin ? setDeleteTarget : undefined}
+            />
           ))}
         </Box>
       )}
@@ -504,6 +578,77 @@ export default function Highlights() {
       >
         {feedPostsContent}
       </FeedModulesGrid>
+
+      {/* Admin delete confirmation modal */}
+      <Modal open={!!deleteTarget} onClose={() => !deleting && setDeleteTarget(null)}>
+        <ModalDialog
+          variant="outlined"
+          role="alertdialog"
+          sx={{ maxWidth: 420, bgcolor: '#111', borderColor: '#333' }}
+        >
+          <Typography
+            level="title-lg"
+            startDecorator={<WarningRounded sx={{ color: '#EF4444' }} />}
+            sx={{ color: '#FFF' }}
+          >
+            Delete Post
+          </Typography>
+          <Divider sx={{ borderColor: '#222' }} />
+          <Typography level="body-sm" sx={{ color: '#CCC', my: 1 }}>
+            Are you sure you want to permanently delete this post?
+          </Typography>
+          {deleteTarget && (
+            <Card variant="outlined" size="sm" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', mb: 2 }}>
+              <CardContent sx={{ p: 1.5, gap: 0.5 }}>
+                <Stack direction="row" gap={0.5} alignItems="center">
+                  <Chip
+                    size="sm"
+                    sx={{
+                      bgcolor: `${POST_TYPE_COLORS[deleteTarget.post_type] ?? '#FFC72C'}22`,
+                      color: POST_TYPE_COLORS[deleteTarget.post_type] ?? '#FFC72C',
+                      fontWeight: 700,
+                      fontSize: '0.6rem',
+                    }}
+                  >
+                    {POST_TYPE_LABELS[deleteTarget.post_type] ?? deleteTarget.post_type}
+                  </Chip>
+                  {deleteTarget.game_date && (
+                    <Typography level="body-xs" sx={{ color: '#888' }}>{deleteTarget.game_date}</Typography>
+                  )}
+                </Stack>
+                <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600 }}>
+                  {deleteTarget.title}
+                </Typography>
+                {deleteTarget.subtitle && (
+                  <Typography level="body-xs" sx={{ color: '#AAA' }}>{deleteTarget.subtitle}</Typography>
+                )}
+              </CardContent>
+            </Card>
+          )}
+          <Typography level="body-xs" sx={{ color: '#EF4444', mb: 2 }}>
+            This will delete the post, all its sections, and engagement data. This cannot be undone.
+          </Typography>
+          <Stack direction="row" gap={1} justifyContent="flex-end">
+            <Button
+              variant="outlined"
+              color="neutral"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+              sx={{ color: '#CCC', borderColor: '#444' }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="solid"
+              color="danger"
+              onClick={handleDeletePost}
+              loading={deleting}
+            >
+              Delete Post
+            </Button>
+          </Stack>
+        </ModalDialog>
+      </Modal>
     </Box>
   )
 }

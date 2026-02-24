@@ -37,6 +37,9 @@ export type SectionType =
   | 'pull_quote'
   | 'gallery'
   | 'box_score'
+  | 'game_log'
+  | 'post_link'
+  | 'tweet_embed'
 
 // ─── Feed tag values ────────────────────────────────────────
 export type FeedTag = 'highlights' | 'awards' | 'props' | 'injuries' | 'recap' | 'analysis'
@@ -178,6 +181,9 @@ export type SectionContent =
   | PullQuoteContent
   | GalleryContent
   | BoxScoreContent
+  | GameLogContent
+  | PostLinkContent
+  | TweetEmbedContent
 
 export interface HeroContent {
   image_url?: string
@@ -342,6 +348,53 @@ export interface BoxScoreContent {
     tricode: string
     players: BoxScorePlayer[]
   }
+}
+
+export interface GameLogRow {
+  game_date: string
+  matchup: string
+  min: string | number | null
+  pts: number
+  reb: number
+  ast: number
+  stl: number
+  blk: number
+  tov: number
+  fgm: number
+  fga: number
+  fg3m: number
+  fg3a: number
+  ftm: number
+  fta: number
+  plus_minus: number | null
+}
+
+export interface GameLogContent {
+  player_name: string
+  player_id: number
+  team_tricode: string
+  period_label: string
+  rows: GameLogRow[]
+  averages: Record<string, number>
+}
+
+export interface PostLinkContent {
+  post_id: string
+  slug: string
+  title: string
+  subtitle?: string
+  post_type: PostType
+  cover_image_url?: string
+  context?: string              // e.g. "This player was on the Team of the Week"
+  game_date?: string
+  team_tricodes?: string[]
+}
+
+export interface TweetEmbedContent {
+  tweet_url: string             // full URL: https://x.com/user/status/...
+  tweet_id?: string             // numeric status ID (extracted from URL if omitted)
+  caption?: string              // editorial label shown above the embed, e.g. "Source:"
+  fallback_text?: string        // displayed if the embed fails to load
 }
 
 // =====================================================================

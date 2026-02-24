@@ -64,6 +64,10 @@ import { usePlayerHighlights } from '../hooks/usePlayerHighlights';
 import { LineChart } from '@mui/x-charts/LineChart';
 import { calculatePropResult } from '../utils/playerPropsCalculator';
 import { filterFullGameProps } from '../utils/playerPropsFilter';
+import PlayerPageLayout from '../components/Feed/PlayerPageLayout';
+import type { PlayerDrawerModule } from '../components/Feed/PlayerPageLayout';
+import { FeedCard } from './Highlights';
+import type { FeedPost } from '../types/feed';
 
 interface PlayerPageProps {
   playerId: string;
@@ -126,6 +130,33 @@ export default function PlayerPage({
 
   // Fetch player awards (POW, POM, TOTN, TOTW)
   const { data: awardsData, isLoading: awardsLoading } = usePlayerAwards(playerId);
+
+  // Fetch feed posts relevant to this player (by nba_player_id or person_id)
+  const nbaPlayerId = playerData?.player?.nba_player_id;
+  const { data: playerFeedPosts, isLoading: feedPostsLoading } = useQuery<FeedPost[]>({
+    queryKey: ['player-feed-posts', nbaPlayerId, playerId],
+    queryFn: async () => {
+      if (!nbaPlayerId) return [];
+
+      // Query posts where player_ids contains this player OR person_id matches
+      const { data, error: feedErr } = await supabase
+        .from('feed_posts')
+        .select('*')
+        .eq('status', 'published')
+        .or(`player_ids.cs.{${nbaPlayerId}},person_id.eq.${nbaPlayerId}`)
+        .order('published_at', { ascending: false })
+        .limit(50);
+
+      if (feedErr) {
+        console.error('Error fetching player feed posts:', feedErr);
+        return [];
+      }
+
+      return (data ?? []) as FeedPost[];
+    },
+    enabled: !!nbaPlayerId,
+    staleTime: 1000 * 60 * 2,
+  });
 
   // Build fast lookup sets for game log award icons
   const awardLookups = useMemo(() => {
@@ -820,22 +851,8 @@ export default function PlayerPage({
 
   if (loading) {
     return (
-      <Box sx={{ 
-        bgcolor: '#000000',
-        minHeight: '100vh',
-        overflowX: 'hidden',
-        width: '100%',
-      }}>
-        <Box sx={{ 
-          maxWidth: { xs: '100%', sm: 805, md: 1035 },
-          mx: 'auto', 
-          pt: { xs: 2, md: 3 },
-          pb: 2,
-          px: { xs: 0, sm: 2, md: 2 },
-          width: '100%',
-          boxSizing: 'border-box',
-          overflowX: 'hidden',
-        }}>
+      <PlayerPageLayout drawerModules={[]}>
+        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
@@ -844,59 +861,31 @@ export default function PlayerPage({
           </Box>
           <Typography sx={{ color: '#FFFFFF' }}>Loading player data...</Typography>
         </Box>
-      </Box>
+      </PlayerPageLayout>
     );
   }
 
   if (error) {
     return (
-      <Box sx={{ 
-        bgcolor: '#000000',
-        minHeight: '100vh',
-        overflowX: 'hidden',
-        width: '100%',
-      }}>
-        <Box sx={{ 
-          maxWidth: { xs: '100%', sm: 805, md: 1035 },
-          mx: 'auto', 
-          pt: { xs: 2, md: 3 },
-          pb: 2,
-          px: { xs: 0, sm: 2, md: 2 },
-          width: '100%',
-          boxSizing: 'border-box',
-          overflowX: 'hidden',
-        }}>
+      <PlayerPageLayout drawerModules={[]}>
+        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
             </Button>
           </Box>
-        <Alert color="danger" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
-          <Typography sx={{ color: '#FFFFFF' }}>Error loading player data: {error.message}</Typography>
-        </Alert>
+          <Alert color="danger" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+            <Typography sx={{ color: '#FFFFFF' }}>Error loading player data: {error.message}</Typography>
+          </Alert>
         </Box>
-      </Box>
+      </PlayerPageLayout>
     );
   }
 
   if (!playerData) {
     return (
-      <Box sx={{ 
-        bgcolor: '#000000',
-        minHeight: '100vh',
-        overflowX: 'hidden',
-        width: '100%',
-      }}>
-        <Box sx={{ 
-          maxWidth: { xs: '100%', sm: 805, md: 1035 },
-          mx: 'auto', 
-          pt: { xs: 2, md: 3 },
-          pb: 2,
-          px: { xs: 0, sm: 2, md: 2 },
-          width: '100%',
-          boxSizing: 'border-box',
-          overflowX: 'hidden',
-        }}>
+      <PlayerPageLayout drawerModules={[]}>
+        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
@@ -906,7 +895,7 @@ export default function PlayerPage({
             <Typography sx={{ color: '#FFFFFF' }}>No player data found</Typography>
           </Alert>
         </Box>
-      </Box>
+      </PlayerPageLayout>
     );
   }
 
@@ -984,14 +973,183 @@ export default function PlayerPage({
     }
   };
 
+  // ─── Build drawer modules for PlayerPageLayout ────────────────────
+  const gameLogsDrawer = (
+    <Box>
+      {gameLogsLoading ? (
+        <LinearProgress sx={{ width: '100%' }} />
+      ) : gameLogsData && gameLogsData.gameLogs.length > 0 ? (
+        <>
+          <Box sx={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', width: '100%' }}>
+            <Table hoverRow size="sm" sx={{ minWidth: 600, bgcolor: '#000000' }}>
+              <thead>
+                <tr>
+                  <th style={{ color: '#FFFFFF', width: 28, minWidth: 28, padding: '6px 2px', textAlign: 'center' }} />
+                  <th style={{ color: '#FFFFFF' }}>Date</th>
+                  <th style={{ color: '#FFFFFF', width: 56, minWidth: 56 }}>Opp</th>
+                  <th style={{ color: '#FFFFFF' }}>Min</th>
+                  <th style={{ color: '#FFFFFF' }}>FP</th>
+                  <th style={{ color: '#FFFFFF' }}>PTS</th>
+                  <th style={{ color: '#FFFFFF' }}>REB</th>
+                  <th style={{ color: '#FFFFFF' }}>AST</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gameLogsData.gameLogs.slice(0, 10).map((game: any, index: number) => {
+                  const formattedDate = formatESTDate(game.game_date, 'date');
+                  const opponentTricode = game.opponent || '';
+                  const didNotPlay = !game.played;
+                  const gameDate = game.game_date || '';
+                  const hasTotn = awardLookups.isTotn(gameDate);
+                  return (
+                    <tr key={game.game_id || index}>
+                      <td style={{ padding: '6px 2px', textAlign: 'center', verticalAlign: 'middle' }}>{hasTotn && <FaMoon style={{ fontSize: 11, color: '#C0C0C0' }} title="Team of the Night" />}</td>
+                      <td><Typography level="body-sm" sx={{ color: didNotPlay ? '#666' : '#CCC', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }} onClick={() => handleGameLogClick(game.game_id)}>{formattedDate}</Typography></td>
+                      <td style={{ verticalAlign: 'middle' }}>
+                        {opponentTricode ? (
+                          <Box component="img" src={getTeamLogoUrl(opponentTricode)} alt={opponentTricode} sx={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+                        ) : <Typography level="body-sm" sx={{ color: '#666' }}>—</Typography>}
+                      </td>
+                      <td><Typography level="body-sm" sx={{ color: didNotPlay ? '#666' : '#CCC' }}>{game.min ?? '—'}</Typography></td>
+                      <td>{didNotPlay ? <Typography level="body-sm" sx={{ color: '#666' }}>—</Typography> : <Typography level="body-sm" sx={{ fontWeight: 'bold', color: 'danger.500' }}>{calculateFantasyPoints({ pts: game.pts || 0, reb: game.reb || 0, ast: game.ast || 0, stl: game.stl || 0, blk: game.blk || 0, tov: game.tov || 0 } as any, FANDUEL_SCORING).toFixed(1)}</Typography>}</td>
+                      <td><Typography level="body-sm" sx={{ fontWeight: didNotPlay ? 'normal' : 'bold', color: didNotPlay ? '#666' : 'primary.500' }}>{game.pts ?? '—'}</Typography></td>
+                      <td><Typography level="body-sm" sx={{ fontWeight: didNotPlay ? 'normal' : 'bold', color: didNotPlay ? '#666' : 'success.500' }}>{game.reb ?? '—'}</Typography></td>
+                      <td><Typography level="body-sm" sx={{ fontWeight: didNotPlay ? 'normal' : 'bold', color: didNotPlay ? '#666' : 'warning.500' }}>{game.ast ?? '—'}</Typography></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </Box>
+          <Typography level="body-xs" sx={{ color: '#888', mt: 1, textAlign: 'center' }}>
+            Showing latest 10 of {gameLogsData.gameLogs.length} games
+          </Typography>
+        </>
+      ) : (
+        <Typography level="body-sm" sx={{ color: '#999', py: 2 }}>No game logs available</Typography>
+      )}
+    </Box>
+  );
+
+  const propsDrawer = (
+    <Box>
+      {propsLoading ? (
+        <LinearProgress sx={{ width: '100%' }} />
+      ) : playerPropsData && playerPropsData.length > 0 ? (
+        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+          {playerPropsData.length} game(s) with prop data available.
+        </Typography>
+      ) : (
+        <Typography level="body-sm" sx={{ color: '#999', py: 2 }}>No prop data available</Typography>
+      )}
+    </Box>
+  );
+
+  const statsDrawer = (
+    <Box>
+      <Box sx={{ mb: 2 }}>
+        <PlayerPerformanceTrends playerId={playerId} seasonYear={selectedSeason} teamAbbreviation={playerData?.player.team_abbreviation} />
+      </Box>
+      <Box sx={{ mb: 2, height: 300 }}>
+        <AdvancedMetricsRadarChart playerId={playerId} seasonYear={selectedSeason} teamAbbreviation={playerData?.player.team_abbreviation} playerPosition={playerData?.player.position} />
+      </Box>
+    </Box>
+  );
+
+  const infoDrawer = (
+    <Box>
+      <Stack spacing={2}>
+        {playerData?.player.height && (
+          <Box>
+            <Typography level="body-xs" sx={{ color: '#CCC', mb: 0.5 }}>Height</Typography>
+            <Typography level="body-md" sx={{ color: '#FFF', fontWeight: 600 }}>
+              {formatHeight(playerData.player.height)}{playerData.player.weight && ` • ${playerData.player.weight} lbs`}
+            </Typography>
+          </Box>
+        )}
+        {playerData?.player.college && (
+          <Box>
+            <Typography level="body-xs" sx={{ color: '#CCC', mb: 0.5 }}>College</Typography>
+            <Typography level="body-md" sx={{ color: '#FFF', fontWeight: 600 }}>{playerData.player.college}</Typography>
+          </Box>
+        )}
+        {playerData?.player.draft_year && (
+          <Box>
+            <Typography level="body-xs" sx={{ color: '#CCC', mb: 0.5 }}>Drafted</Typography>
+            <Typography level="body-md" sx={{ color: '#FFF', fontWeight: 600 }}>
+              {playerData.player.draft_year} • Rd {playerData.player.draft_round} • Pick {playerData.player.draft_number}
+            </Typography>
+          </Box>
+        )}
+        {playerData?.player?.nba_hoopshype_salaries?.[0] && (
+          <Box>
+            <Typography level="body-xs" sx={{ color: '#CCC', mb: 0.5 }}>Contract</Typography>
+            <Typography level="body-md" sx={{ color: '#FFF', fontWeight: 600 }}>
+              {playerData.player.nba_hoopshype_salaries[0].contract_years_remaining || 0} yrs remaining
+              {playerData.player.nba_hoopshype_salaries[0].salary_2025_26 && <> • ${(playerData.player.nba_hoopshype_salaries[0].salary_2025_26 / 1000000).toFixed(1)}M</>}
+            </Typography>
+          </Box>
+        )}
+      </Stack>
+    </Box>
+  );
+
+  const injuriesDrawer = (
+    <Box>
+      {playerData?.latestInjury && playerData.latestInjury.is_current ? (
+        <Box sx={{ p: 2, bgcolor: '#1a1a1a', borderRadius: '8px', border: '1px solid #333' }}>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+            <Chip size="md" variant="solid" color={playerData.latestInjury.injury_status === 'Out' ? 'danger' : 'warning'} sx={{ fontWeight: 'bold' }}>
+              {playerData.latestInjury.injury_status}
+            </Chip>
+          </Stack>
+          {playerData.latestInjury.injury_type && <Typography level="body-md" sx={{ color: '#FFF', mb: 0.5 }}>{playerData.latestInjury.injury_type.replace(/^Injury\/Illness\s*-\s*/i, '')}</Typography>}
+          {playerData.latestInjury.date_updated && <Typography level="body-xs" sx={{ color: '#999' }}>Updated: {new Date(playerData.latestInjury.date_updated).toLocaleDateString()}</Typography>}
+        </Box>
+      ) : (
+        <Typography level="body-sm" sx={{ color: '#10B981', py: 2 }}>No current injuries</Typography>
+      )}
+      {playerData?.injuryHistory && playerData.injuryHistory.length > 0 && (
+        <Typography level="body-xs" sx={{ color: '#999', mt: 1 }}>{playerData.injuryHistory.length} injury record(s) on file</Typography>
+      )}
+    </Box>
+  );
+
+  const awardsDrawer = (
+    <Box>
+      {awardsLoading ? (
+        <LinearProgress sx={{ width: '100%' }} />
+      ) : !awardsData || (awardsData.pow.length === 0 && awardsData.pom.length === 0 && awardsData.totn.length === 0 && awardsData.totw.length === 0) ? (
+        <Typography level="body-sm" sx={{ color: '#999', py: 2 }}>No awards recorded yet</Typography>
+      ) : (
+        <Stack spacing={1.5}>
+          {awardsData.pom.length > 0 && <Typography level="body-sm" sx={{ color: '#FFF' }}>Player of the Month ({awardsData.pom.length})</Typography>}
+          {awardsData.pow.length > 0 && <Typography level="body-sm" sx={{ color: '#FFF' }}>Player of the Week ({awardsData.pow.length})</Typography>}
+          {awardsData.totn.length > 0 && <Typography level="body-sm" sx={{ color: '#FFF' }}>Team of the Night ({awardsData.totn.length})</Typography>}
+          {awardsData.totw.length > 0 && <Typography level="body-sm" sx={{ color: '#FFF' }}>Team of the Week ({awardsData.totw.length})</Typography>}
+        </Stack>
+      )}
+    </Box>
+  );
+
+  const drawerModules: PlayerDrawerModule[] = [
+    { name: 'game_logs', content: gameLogsDrawer },
+    { name: 'props', content: propsDrawer },
+    { name: 'stats', content: statsDrawer },
+    { name: 'info', content: infoDrawer },
+    { name: 'injuries', content: injuriesDrawer },
+    { name: 'awards', content: awardsDrawer },
+  ];
+
   return (
+    <PlayerPageLayout drawerModules={drawerModules}>
     <Box sx={{ 
       bgcolor: '#000000',
       minHeight: '100vh',
       overflowX: 'hidden',
       width: '100%',
     }}>
-      {/* Main Container - Consistent with Home/Dashboard width */}
+      {/* Main Container */}
       {/* No avatar bar on player page, need padding for nav bar only */}
       <Box sx={{ 
         maxWidth: { xs: '100%', sm: 805, md: 1035 },
@@ -1300,8 +1458,50 @@ export default function PlayerPage({
           </Box>
         </Box>
 
-        {/* Dashboard Section - Full Width Below with Tabs */}
-        <Box sx={{ mt: 0, px: { xs: 2, sm: 0 } }}>
+        {/* Player Posts Feed */}
+        <Box sx={{ mt: 2, px: { xs: 2, sm: 0 } }}>
+          {feedPostsLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+              <CircularProgress size="lg" sx={{ '--CircularProgress-trackColor': '#222', '--CircularProgress-progressColor': '#FFC72C' }} />
+            </Box>
+          )}
+
+          {!feedPostsLoading && (!playerFeedPosts || playerFeedPosts.length === 0) && (
+            <Box sx={{ textAlign: 'center', py: 8, px: 4 }}>
+              <Typography level="h3" sx={{ color: '#FFFFFF', fontFamily: '"Libre Baskerville", serif', mb: 1 }}>
+                No stories yet
+              </Typography>
+              <Typography level="body-md" sx={{ color: '#888', maxWidth: 400, mx: 'auto' }}>
+                Stories featuring {playerData?.player?.name || 'this player'} will appear here.
+              </Typography>
+            </Box>
+          )}
+
+          {!feedPostsLoading && playerFeedPosts && playerFeedPosts.length > 0 && (
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: 'repeat(2, 1fr)',
+                  md: 'repeat(3, 1fr)',
+                },
+                gap: { xs: 2, md: 2.5 },
+              }}
+            >
+              {playerFeedPosts.map((post) => (
+                <FeedCard
+                  key={post.id}
+                  post={post}
+                  onClick={() => navigate(`/feed/${post.slug}`)}
+                />
+              ))}
+            </Box>
+          )}
+        </Box>
+
+        {/* === Legacy tabs below (kept but hidden; content now lives in the drawer) === */}
+        {false && <Box sx={{ mt: 0, px: { xs: 2, sm: 0 } }}>
           <Tabs value={activeTab} onChange={(_, value) => setActiveTab(value as number)} sx={{ width: '100%' }}>
             <TabList
               sx={{
@@ -2574,7 +2774,7 @@ export default function PlayerPage({
               </Box>
             )}
           </Tabs>
-        </Box>
+        </Box>}
 
         {/* Team Lineup Modal (TOTN / TOTW) */}
         <TeamLineupModal
@@ -2655,6 +2855,7 @@ export default function PlayerPage({
         Game highlight not found
       </Snackbar>
     </Box>
+    </PlayerPageLayout>
   );
 }
 

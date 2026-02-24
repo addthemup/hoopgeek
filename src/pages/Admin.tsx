@@ -8,15 +8,16 @@ import { Box, Alert, Typography, CircularProgress } from '@mui/joy';
 import AdminLayout from '../components/Feed/AdminLayout';
 import { useIsAdmin } from '../hooks/useIsAdmin';
 import AdminFeed from './AdminFeed';
+import AdminPlayer from './AdminPlayer';
 import PostCreator from './PostCreator';
 import AdminDFS from './AdminDFS';
 import AdminAnalytics from './AdminAnalytics';
 
-export type AdminView = 'ui' | 'create-post' | 'dfs' | 'analytics';
+export type AdminView = 'ui' | 'player' | 'create-post' | 'dfs' | 'analytics';
 
 function AdminContent() {
   const [searchParams] = useSearchParams();
-  const view = (searchParams.get('view') as AdminView) || 'ui';
+  const view = (searchParams.get('view') as AdminView) || 'create-post';
   const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
 
   if (isAdminLoading) {
@@ -58,6 +59,8 @@ function AdminContent() {
   }
 
   switch (view) {
+    case 'player':
+      return <AdminPlayer />;
     case 'create-post':
       return <PostCreator returnPath="/admin" />;
     case 'dfs':

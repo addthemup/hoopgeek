@@ -22,6 +22,7 @@ import Add from '@mui/icons-material/Add';
 import MonetizationOn from '@mui/icons-material/MonetizationOn';
 import Analytics from '@mui/icons-material/Analytics';
 import Dashboard from '@mui/icons-material/Dashboard';
+import Person from '@mui/icons-material/Person';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PlayerTeamSearchBar from '../PlayerTeamSearchBar';
 import { useAuth } from '../../hooks/useAuth';
@@ -32,7 +33,7 @@ export interface AdminLayoutProps {
   children: React.ReactNode;
 }
 
-type AdminView = 'ui' | 'create-post' | 'dfs' | 'analytics';
+type AdminView = 'ui' | 'player' | 'create-post' | 'dfs' | 'analytics';
 
 const drawerBtnActiveSx = { bgcolor: '#FFC72C', color: '#000', '&:hover': { bgcolor: '#FFD700' } };
 const drawerBtnInactiveSx = { color: '#FFFFFF', '&:hover': { borderColor: 'primary.500', color: 'primary.500' } };
@@ -40,7 +41,7 @@ const drawerBtnInactiveSx = { color: '#FFFFFF', '&:hover': { borderColor: 'prima
 export default function AdminLayout({ children }: AdminLayoutProps) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const activeView = (searchParams.get('view') as AdminView) || 'ui';
+  const activeView = (searchParams.get('view') as AdminView) || 'create-post';
   const isMobile = useMediaQuery('(max-width: 900px)');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { signOut } = useAuth();
@@ -96,19 +97,6 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             Quick actions
           </Typography>
           <Button
-            variant={activeView === 'ui' ? 'solid' : 'outlined'}
-            color="neutral"
-            fullWidth
-            startDecorator={<Dashboard />}
-            onClick={() => {
-              setDrawerOpen(false);
-              navigate('/admin');
-            }}
-            sx={activeView === 'ui' ? drawerBtnActiveSx : drawerBtnInactiveSx}
-          >
-            UI
-          </Button>
-          <Button
             variant={activeView === 'create-post' ? 'solid' : 'outlined'}
             color="neutral"
             fullWidth
@@ -146,6 +134,32 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             sx={activeView === 'analytics' ? drawerBtnActiveSx : drawerBtnInactiveSx}
           >
             View analytics
+          </Button>
+          <Button
+            variant={activeView === 'ui' ? 'solid' : 'outlined'}
+            color="neutral"
+            fullWidth
+            startDecorator={<Dashboard />}
+            onClick={() => {
+              setDrawerOpen(false);
+              navigate('/admin?view=ui');
+            }}
+            sx={activeView === 'ui' ? drawerBtnActiveSx : drawerBtnInactiveSx}
+          >
+            FEED UI
+          </Button>
+          <Button
+            variant={activeView === 'player' ? 'solid' : 'outlined'}
+            color="neutral"
+            fullWidth
+            startDecorator={<Person />}
+            onClick={() => {
+              setDrawerOpen(false);
+              navigate('/admin?view=player');
+            }}
+            sx={activeView === 'player' ? drawerBtnActiveSx : drawerBtnInactiveSx}
+          >
+            PLAYER UI
           </Button>
           <Box sx={{ flex: 1, minHeight: 16 }} />
           <Button

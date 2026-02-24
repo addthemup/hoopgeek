@@ -65,6 +65,9 @@ import type {
   PullQuoteContent,
   GalleryContent,
   BoxScoreContent,
+  GameLogContent,
+  PostLinkContent,
+  TweetEmbedContent,
   DataOverlay,
   LineupPlayer,
 } from '../types/feed'
@@ -840,9 +843,15 @@ function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
 }
 
 function RichTextSection({ content }: { content: RichTextContent }) {
-  // Simple markdown rendering (bold, headings, paragraphs)
+  const navigate = useNavigate()
+
   const html = useMemo(() => {
     let md = content.markdown || ''
+    // Inline post links: {{post:/feed/slug|Display Text}} → clickable link
+    md = md.replace(
+      /\{\{post:\/feed\/([^\s|]+)\|([^}]+)\}\}/g,
+      '<a href="/feed/$1" class="post-link" data-post-slug="$1" style="color:#FFC72C;text-decoration:underline;cursor:pointer;font-weight:600;">$2</a>'
+    )
     md = md.replace(/^### (.+)$/gm, '<h4 style="color:#FFC72C;margin:12px 0 4px;">$1</h4>')
     md = md.replace(/^## (.+)$/gm, '<h3 style="color:#FFF;margin:16px 0 8px;">$1</h3>')
     md = md.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#FFF;">$1</strong>')
@@ -850,11 +859,194 @@ function RichTextSection({ content }: { content: RichTextContent }) {
     return `<p style="margin:8px 0;">${md}</p>`
   }, [content.markdown])
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    const link = target.closest('a[data-post-slug]') as HTMLAnchorElement | null
+    if (link) {
+      e.preventDefault()
+      const slug = link.dataset.postSlug
+      if (slug) navigate(`/feed/${slug}`)
+    }
+  }, [navigate])
+
   return (
     <Box
-      sx={{ color: '#CCC', lineHeight: 1.7, '& h3': { fontFamily: '"Libre Baskerville", serif' } }}
+      onClick={handleClick}
+      sx={{
+        color: '#CCC',
+        lineHeight: 1.7,
+        '& h3': { fontFamily: '"Libre Baskerville", serif' },
+        '& .post-link:hover': { color: '#FFD54F' },
+      }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
+  )
+}
+
+function PostLinkSection({ content }: { content: PostLinkContent }) {
+  const navigate = useNavigate()
+  const typeColors: Record<string, string> = {
+    game_recap: '#FFC72C', player_spotlight: '#60A5FA', team_of_night: '#F59E0B',
+    team_of_week: '#A78BFA', player_of_week: '#34D399', player_of_month: '#F472B6',
+    prop_prediction: '#FB923C', prop_results: '#10B981', injury_report: '#EF4444',
+    upcoming: '#8B5CF6', blog: '#0EA5E9',
+  }
+  const color = typeColors[content.post_type] || '#FFC72C'
+  const typeLabel = content.post_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
+  return (
+    <Card
+      variant="outlined"
+      onClick={() => navigate(`/feed/${content.slug}`)}
+      sx={{
+        bgcolor: '#0a0a0a',
+        borderColor: `${color}44`,
+        borderLeft: `3px solid ${color}`,
+        cursor: 'pointer',
+        transition: 'all 0.15s',
+        '&:hover': { borderColor: color, transform: 'translateX(4px)', bgcolor: '#111' },
+      }}
+    >
+      <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+        {content.cover_image_url && (
+          <Box
+            component="img"
+            src={content.cover_image_url}
+            alt=""
+            sx={{ width: 72, height: 48, borderRadius: 'sm', objectFit: 'cover', flexShrink: 0 }}
+          />
+        )}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {content.context && (
+            <Typography level="body-xs" sx={{ color: '#888', mb: 0.5, fontStyle: 'italic' }}>
+              {content.context}
+            </Typography>
+          )}
+          <Stack direction="row" gap={0.5} alignItems="center" sx={{ mb: 0.5 }}>
+            <Chip size="sm" sx={{ bgcolor: `${color}22`, color, fontWeight: 700, fontSize: '0.6rem' }}>
+              {typeLabel}
+            </Chip>
+            {content.team_tricodes?.map(t => (
+              <Chip key={t} size="sm" variant="outlined" sx={{ fontSize: '0.6rem' }}>{t}</Chip>
+            ))}
+          </Stack>
+          <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600 }} noWrap>
+            {content.title}
+          </Typography>
+          {content.subtitle && (
+            <Typography level="body-xs" sx={{ color: '#AAA' }} noWrap>
+              {content.subtitle}
+            </Typography>
+          )}
+        </Box>
+      </CardContent>
+    </Card>
+  )
+}
+
+function TweetEmbedSection({ content }: { content: TweetEmbedContent }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [error, setError] = useState(false)
+
+  const tweetId = useMemo(() => {
+    if (content.tweet_id) return content.tweet_id
+    const match = content.tweet_url?.match(/status\/(\d+)/)
+    return match?.[1] || null
+  }, [content.tweet_url, content.tweet_id])
+
+  useEffect(() => {
+    if (!tweetId || !containerRef.current) return
+    setLoaded(false)
+    setError(false)
+
+    const renderTweet = () => {
+      const twttr = (window as any).twttr
+      if (!twttr?.widgets || !containerRef.current) return
+      containerRef.current.innerHTML = ''
+      twttr.widgets
+        .createTweet(tweetId, containerRef.current, {
+          theme: 'dark',
+          align: 'center',
+          dnt: true,
+        })
+        .then((el: HTMLElement | undefined) => {
+          if (el) setLoaded(true)
+          else setError(true)
+        })
+        .catch(() => setError(true))
+    }
+
+    const scriptId = 'twitter-widgets-js'
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script')
+      script.id = scriptId
+      script.src = 'https://platform.twitter.com/widgets.js'
+      script.async = true
+      script.onload = renderTweet
+      document.head.appendChild(script)
+    } else if ((window as any).twttr?.widgets) {
+      renderTweet()
+    } else {
+      const poll = setInterval(() => {
+        if ((window as any).twttr?.widgets) {
+          clearInterval(poll)
+          renderTweet()
+        }
+      }, 100)
+      return () => clearInterval(poll)
+    }
+  }, [tweetId])
+
+  return (
+    <Box>
+      {content.caption && (
+        <Typography
+          level="body-xs"
+          sx={{ color: '#888', mb: 1, fontStyle: 'italic', textAlign: 'center' }}
+        >
+          {content.caption}
+        </Typography>
+      )}
+
+      <Box ref={containerRef} sx={{ display: 'flex', justifyContent: 'center', minHeight: 100 }} />
+
+      {!loaded && !error && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
+          <CircularProgress size="sm" />
+        </Box>
+      )}
+
+      {error && (
+        <Card
+          variant="outlined"
+          component="a"
+          href={content.tweet_url}
+          target="_blank"
+          rel="noopener noreferrer"
+          sx={{
+            bgcolor: '#0a0a0a',
+            borderColor: '#333',
+            textDecoration: 'none',
+            cursor: 'pointer',
+            '&:hover': { borderColor: '#1D9BF0' },
+          }}
+        >
+          <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box
+              component="svg"
+              viewBox="0 0 24 24"
+              sx={{ width: 20, height: 20, fill: '#FFF', flexShrink: 0 }}
+            >
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+            </Box>
+            <Typography level="body-sm" sx={{ color: '#CCC' }}>
+              {content.fallback_text || 'View post on X'}
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+    </Box>
   )
 }
 
@@ -1082,6 +1274,106 @@ function BoxScoreSection({ content }: { content: BoxScoreContent }) {
   )
 }
 
+function GameLogSection({ content }: { content: GameLogContent }) {
+  const rows = content.rows ?? []
+  const avgs = content.averages ?? {}
+  const gp = avgs.gp ?? rows.length
+
+  if (rows.length === 0) {
+    return (
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222' }}>
+        <CardContent>
+          <Typography level="body-sm" sx={{ color: '#666' }}>No game log data available.</Typography>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const thStyle: React.CSSProperties = {
+    color: '#888', padding: '6px 8px', textAlign: 'right',
+    borderBottom: '1px solid #222', fontWeight: 600, fontSize: '0.7rem', whiteSpace: 'nowrap',
+  }
+  const thLeft: React.CSSProperties = { ...thStyle, textAlign: 'left' }
+  const tdStyle: React.CSSProperties = { color: '#CCC', padding: '5px 8px', textAlign: 'right', fontSize: '0.75rem', borderBottom: '1px solid #1a1a1a' }
+  const tdLeft: React.CSSProperties = { ...tdStyle, textAlign: 'left' }
+
+  return (
+    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'auto' }}>
+      <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+        <Box sx={{ px: 2, pt: 2, pb: 1.5 }}>
+          <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700 }}>
+            {content.player_name} — Game Log
+          </Typography>
+          <Typography level="body-xs" sx={{ color: '#888' }}>
+            {content.period_label} &middot; {gp} game{gp !== 1 ? 's' : ''}
+          </Typography>
+        </Box>
+        <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+          <thead>
+            <tr>
+              <th style={thLeft}>Date</th>
+              <th style={thLeft}>Matchup</th>
+              <th style={thStyle}>MIN</th>
+              <th style={thStyle}>PTS</th>
+              <th style={thStyle}>REB</th>
+              <th style={thStyle}>AST</th>
+              <th style={thStyle}>STL</th>
+              <th style={thStyle}>BLK</th>
+              <th style={thStyle}>TOV</th>
+              <th style={thStyle}>FG</th>
+              <th style={thStyle}>3PT</th>
+              <th style={thStyle}>FT</th>
+              <th style={thStyle}>+/-</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={tdLeft}>{r.game_date}</td>
+                <td style={{ ...tdLeft, fontWeight: 500, color: '#FFF' }}>{r.matchup}</td>
+                <td style={tdStyle}>{r.min ?? '—'}</td>
+                <td style={{ ...tdStyle, color: '#FFC72C', fontWeight: 700 }}>{r.pts}</td>
+                <td style={tdStyle}>{r.reb}</td>
+                <td style={tdStyle}>{r.ast}</td>
+                <td style={tdStyle}>{r.stl}</td>
+                <td style={tdStyle}>{r.blk}</td>
+                <td style={tdStyle}>{r.tov}</td>
+                <td style={tdStyle}>{r.fgm}-{r.fga}</td>
+                <td style={tdStyle}>{r.fg3m}-{r.fg3a}</td>
+                <td style={tdStyle}>{r.ftm}-{r.fta}</td>
+                <td style={{
+                  ...tdStyle,
+                  color: (r.plus_minus ?? 0) >= 0 ? '#10B981' : '#EF4444',
+                }}>
+                  {r.plus_minus != null ? `${r.plus_minus >= 0 ? '+' : ''}${r.plus_minus}` : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr style={{ borderTop: '2px solid #333' }}>
+              <td colSpan={2} style={{ ...tdLeft, fontWeight: 700, color: '#FFF' }}>
+                Averages ({gp} GP)
+              </td>
+              <td style={tdStyle}>—</td>
+              <td style={{ ...tdStyle, color: '#FFC72C', fontWeight: 700 }}>{avgs.ppg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.rpg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.apg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.spg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.bpg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.topg?.toFixed(1) ?? '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.fg_pct != null ? `${avgs.fg_pct.toFixed(1)}%` : '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.fg3_pct != null ? `${avgs.fg3_pct.toFixed(1)}%` : '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{avgs.ft_pct != null ? `${avgs.ft_pct.toFixed(1)}%` : '—'}</td>
+              <td style={tdStyle}>—</td>
+            </tr>
+          </tfoot>
+        </Box>
+      </CardContent>
+    </Card>
+  )
+}
+
 // ─── Section router ─────────────────────────────────────────
 
 function SectionRenderer({ section }: { section: FeedPostSection }) {
@@ -1119,6 +1411,9 @@ function SectionRenderer({ section }: { section: FeedPostSection }) {
       {section_type === 'pull_quote' && <PullQuoteSection content={content as PullQuoteContent} />}
       {section_type === 'gallery' && <GallerySection content={content as GalleryContent} />}
       {section_type === 'box_score' && <BoxScoreSection content={content as BoxScoreContent} />}
+      {section_type === 'game_log' && <GameLogSection content={content as GameLogContent} />}
+      {section_type === 'post_link' && <PostLinkSection content={content as PostLinkContent} />}
+      {section_type === 'tweet_embed' && <TweetEmbedSection content={content as TweetEmbedContent} />}
       {section_type === 'chart' && (
         <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 3, textAlign: 'center' }}>
           <Typography level="body-sm" sx={{ color: '#888' }}>

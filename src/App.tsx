@@ -239,6 +239,7 @@ function App() {
           {/* Admin Routes — single /admin with ?view= for create-post, dfs, analytics */}
           <Route path="admin" element={<Admin />} />
           <Route path="admin/feed" element={<Navigate to="/admin" replace />} />
+          <Route path="admin/player" element={<Navigate to="/admin?view=player" replace />} />
           <Route path="admin/create-post" element={<Navigate to="/admin?view=create-post" replace />} />
           <Route path="admin/create-post/game/:gameId" element={<AdminContentGame />} />
           <Route path="admin/dfs" element={<Navigate to="/admin?view=dfs" replace />} />
