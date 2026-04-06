@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500806",
+  "gameMetadata": {
+    "date": "2026-02-20T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612742,
+      "abbreviation": "DAL",
+      "city": "Dallas",
+      "name": "Mavericks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.423,
+        "ft_pct": 0.724,
+        "fg3_pct": 0.32,
+        "ast": 21,
+        "reb": 45,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612750,
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "name": "Timberwolves",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 122,
+      "stats": {
+        "fg_pct": 0.475,
+        "ft_pct": 0.632,
+        "fg3_pct": 0.381,
+        "ast": 28,
+        "reb": 54,
+        "tov": 19
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500806",
+      "LAST_GAME_ID": "0022400614",
+      "LAST_GAME_DATE_EST": "2025-01-22T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612750,
+      "LAST_GAME_HOME_TEAM_CITY": "Minnesota",
+      "LAST_GAME_HOME_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIN",
+      "LAST_GAME_HOME_TEAM_POINTS": 115,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612742,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Dallas",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Mavericks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DAL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 114
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500806": {
+      "team_stats": {}
+    }
+  }
+}

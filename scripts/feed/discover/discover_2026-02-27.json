@@ -1,0 +1,30 @@
+{
+  "date": "2026-02-27",
+  "games": [
+    {
+      "game_id": "0022500858",
+      "matchup": "DET vs. CLE",
+      "date": "2026-02-27"
+    },
+    {
+      "game_id": "0022500861",
+      "matchup": "MEM @ DAL",
+      "date": "2026-02-27"
+    },
+    {
+      "game_id": "0022500859",
+      "matchup": "BOS vs. BKN",
+      "date": "2026-02-27"
+    },
+    {
+      "game_id": "0022500862",
+      "matchup": "OKC vs. DEN",
+      "date": "2026-02-27"
+    },
+    {
+      "game_id": "0022500860",
+      "matchup": "MIL vs. NYK",
+      "date": "2026-02-27"
+    }
+  ]
+}

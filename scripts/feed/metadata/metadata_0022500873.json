@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500873",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 101,
+      "stats": {
+        "fg_pct": 0.402,
+        "ft_pct": 0.692,
+        "fg3_pct": 0.351,
+        "ast": 23,
+        "reb": 38,
+        "tov": 17
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 135,
+      "stats": {
+        "fg_pct": 0.554,
+        "ft_pct": 0.783,
+        "fg3_pct": 0.375,
+        "ast": 36,
+        "reb": 54,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500873": {
+      "team_stats": {}
+    }
+  }
+}

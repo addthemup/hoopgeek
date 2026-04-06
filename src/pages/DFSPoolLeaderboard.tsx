@@ -18,6 +18,7 @@ import { ArrowBack, EmojiEvents, TrendingUp, Refresh } from '@mui/icons-material
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
 import { calculateFantasyPoints, FANDUEL_SCORING } from '../utils/fantasyScoring';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
 
 interface PoolEntry {
   entry_id: string;
@@ -238,7 +239,7 @@ export default function DFSPoolLeaderboard() {
 
   if (poolLoading || leaderboardLoading) {
     return (
-      <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3 }}>
+      <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', p: 3 }}>
         <LinearProgress />
         <Typography level="body-sm" sx={{ mt: 2, textAlign: 'center' }}>
           Loading leaderboard...
@@ -249,7 +250,7 @@ export default function DFSPoolLeaderboard() {
 
   if (!pool) {
     return (
-      <Box sx={{ maxWidth: 1200, mx: 'auto', p: 3, textAlign: 'center' }}>
+      <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', p: 3, textAlign: 'center' }}>
         <Typography level="h4">Pool not found</Typography>
         <Button onClick={() => navigate('/dfs')} sx={{ mt: 2 }}>
           Back to DFS
@@ -259,7 +260,7 @@ export default function DFSPoolLeaderboard() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', p: { xs: 2, md: 3 } }}>
+    <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', p: { xs: 2, md: 3 } }}>
       {/* Header */}
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 3 }}>
         <IconButton onClick={() => navigate('/dfs')} variant="outlined">

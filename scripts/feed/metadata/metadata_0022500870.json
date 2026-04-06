@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500870",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612749,
+      "abbreviation": "MIL",
+      "city": "Milwaukee",
+      "name": "Bucks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 97,
+      "stats": {
+        "fg_pct": 0.368,
+        "ft_pct": 0.824,
+        "fg3_pct": 0.283,
+        "ast": 26,
+        "reb": 45,
+        "tov": 19
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 120,
+      "stats": {
+        "fg_pct": 0.512,
+        "ft_pct": 0.696,
+        "fg3_pct": 0.367,
+        "ast": 34,
+        "reb": 50,
+        "tov": 18
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500870": {
+      "team_stats": {}
+    }
+  }
+}

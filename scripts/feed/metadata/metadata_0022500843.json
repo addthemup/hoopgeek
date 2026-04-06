@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500843",
+  "gameMetadata": {
+    "date": "2026-02-25T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612759,
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "name": "Spurs",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.465,
+        "ft_pct": 0.565,
+        "fg3_pct": 0.436,
+        "ast": 28,
+        "reb": 40,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612761,
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "name": "Raptors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 107,
+      "stats": {
+        "fg_pct": 0.422,
+        "ft_pct": 0.852,
+        "fg3_pct": 0.348,
+        "ast": 17,
+        "reb": 50,
+        "tov": 12
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500843",
+      "LAST_GAME_ID": "0022401197",
+      "LAST_GAME_DATE_EST": "2025-04-13T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612761,
+      "LAST_GAME_HOME_TEAM_CITY": "Toronto",
+      "LAST_GAME_HOME_TEAM_NAME": "Raptors",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "TOR",
+      "LAST_GAME_HOME_TEAM_POINTS": 118,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612759,
+      "LAST_GAME_VISITOR_TEAM_CITY": "San Antonio",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Spurs",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 125
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500843": {
+      "team_stats": {}
+    }
+  }
+}

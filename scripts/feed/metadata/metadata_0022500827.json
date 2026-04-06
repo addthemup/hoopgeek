@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500827",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612753,
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "name": "Magic",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.482,
+        "ft_pct": 0.742,
+        "fg3_pct": 0.348,
+        "ast": 25,
+        "reb": 43,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612746,
+      "abbreviation": "LAC",
+      "city": "LA",
+      "name": "Clippers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 109,
+      "stats": {
+        "fg_pct": 0.482,
+        "ft_pct": 0.857,
+        "fg3_pct": 0.217,
+        "ast": 18,
+        "reb": 43,
+        "tov": 9
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500827",
+      "LAST_GAME_ID": "0022401091",
+      "LAST_GAME_DATE_EST": "2025-03-31T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612746,
+      "LAST_GAME_HOME_TEAM_CITY": "LA",
+      "LAST_GAME_HOME_TEAM_NAME": "Clippers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAC",
+      "LAST_GAME_HOME_TEAM_POINTS": 96,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612753,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Orlando",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Magic",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "ORL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 87
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500827": {
+      "team_stats": {}
+    }
+  }
+}

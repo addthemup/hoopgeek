@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500931",
+  "gameMetadata": {
+    "date": "2026-03-09T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 101,
+      "stats": {
+        "fg_pct": 0.459,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.289,
+        "ast": 20,
+        "reb": 42,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612739,
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "name": "Cavaliers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 115,
+      "stats": {
+        "fg_pct": 0.452,
+        "ft_pct": 0.92,
+        "fg3_pct": 0.364,
+        "ast": 28,
+        "reb": 41,
+        "tov": 9
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500931",
+      "LAST_GAME_ID": "0022400631",
+      "LAST_GAME_DATE_EST": "2025-01-24T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612739,
+      "LAST_GAME_HOME_TEAM_CITY": "Cleveland",
+      "LAST_GAME_HOME_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CLE",
+      "LAST_GAME_HOME_TEAM_POINTS": 129,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612755,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_VISITOR_TEAM_NAME": "76ers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHI",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 132
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500931": {
+      "team_stats": {}
+    }
+  }
+}

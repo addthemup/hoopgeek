@@ -25,115 +25,29 @@ import {
   Collections,
   TableChart,
   Link as LinkIcon,
+  MonetizationOn,
 } from '@mui/icons-material'
 import type { SectionType, FeedTag } from '../../../types/feed'
 import type { PostTypeOption } from './types'
 
 // ─── Post type options (step 0) ────────────────────────────
 
+// Order: row 1 Upcoming | Game Recap | Blog; row 2 Injury | Prop Prediction | Prop Results;
+// row 3 Team of the Week | TOTN | Draft; row 4 POW | POM | Player Spotlight
 export const POST_TYPE_OPTIONS: PostTypeOption[] = [
-  {
-    value: 'game_recap',
-    label: 'Game Recap',
-    description: 'Full story for a completed NBA game — score, highlights, advantages, play-by-play.',
-    icon: <SportsSoccer />,
-    color: '#FFC72C',
-    tags: ['recap', 'highlights'],
-    dataSourceMode: 'game',
-  },
-  {
-    value: 'player_spotlight',
-    label: 'Player Spotlight',
-    description: 'Standout performance from a single player with stats, highlights, and analysis.',
-    icon: <Person />,
-    color: '#60A5FA',
-    tags: ['highlights'],
-    dataSourceMode: 'game',
-  },
-  {
-    value: 'team_of_night',
-    label: 'Team of the Night',
-    description: 'Daily best-performing lineup with player highlights and data overlays.',
-    icon: <Groups />,
-    color: '#F59E0B',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'totn',
-  },
-  {
-    value: 'team_of_week',
-    label: 'Team of the Week',
-    description: 'Weekly best lineup — same model as TOTN but across 7 days.',
-    icon: <CalendarMonth />,
-    color: '#A78BFA',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'totw',
-  },
-  {
-    value: 'player_of_week',
-    label: 'Player of the Week',
-    description: 'Weekly MVP spotlight with cumulative stats and key moments.',
-    icon: <Star />,
-    color: '#34D399',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'pow',
-  },
-  {
-    value: 'player_of_month',
-    label: 'Player of the Month',
-    description: 'Monthly MVP spotlight with in-depth analysis.',
-    icon: <EmojiEvents />,
-    color: '#F472B6',
-    tags: ['awards', 'analysis'],
-    dataSourceMode: 'pom',
-  },
-  {
-    value: 'prop_prediction',
-    label: 'Prop Prediction',
-    description: 'Pre-game prop predictions with confidence levels and trends.',
-    icon: <Casino />,
-    color: '#FB923C',
-    tags: ['props'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'prop_results',
-    label: 'Prop Results',
-    description: 'Post-game results for prop predictions — overs, unders, pushes.',
-    icon: <TrendingUp />,
-    color: '#10B981',
-    tags: ['props'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'injury_report',
-    label: 'Injury Report',
-    description: 'Daily injury updates — who\'s out, questionable, or returning.',
-    icon: <LocalHospital />,
-    color: '#EF4444',
-    tags: ['injuries'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'upcoming',
-    label: 'Upcoming',
-    description: 'Preview or teaser for upcoming games, events, or content.',
-    icon: <Schedule />,
-    color: '#8B5CF6',
-    tags: ['recap'],
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'blog',
-    label: 'Blog',
-    description: 'Editorial or long-form article with rich text and media.',
-    icon: <Article />,
-    color: '#0EA5E9',
-    tags: ['analysis'],
-    dataSourceMode: 'manual',
-  },
+  { value: 'upcoming', label: 'Upcoming', description: 'Game preview — matchup stats, injuries, props, key players, and related posts.', icon: <Schedule />, color: '#8B5CF6', tags: ['recap'], dataSourceMode: 'matchup' },
+  { value: 'game_recap', label: 'Game Recap', description: 'Full story for a completed NBA game — score, highlights, advantages, play-by-play.', icon: <SportsSoccer />, color: '#FFC72C', tags: ['recap', 'highlights'], dataSourceMode: 'game' },
+  { value: 'blog', label: 'Blog', description: 'Editorial or long-form article with rich text and media.', icon: <Article />, color: '#0EA5E9', tags: ['analysis'], dataSourceMode: 'manual' },
+  { value: 'injury_report', label: 'Injury Report', description: 'Daily injury updates — who\'s out, questionable, or returning.', icon: <LocalHospital />, color: '#EF4444', tags: ['injuries'], dataSourceMode: 'matchup' },
+  { value: 'prop_prediction', label: 'Prop Prediction', description: 'Pre-game prop predictions with confidence levels and trends.', icon: <Casino />, color: '#FB923C', tags: ['props'], dataSourceMode: 'matchup' },
+  { value: 'prop_results', label: 'Prop Results', description: 'Post-game results for prop predictions — overs, unders, pushes.', icon: <TrendingUp />, color: '#10B981', tags: ['props'], dataSourceMode: 'matchup' },
+  { value: 'team_of_week', label: 'Team of the Week', description: 'Weekly best lineup — same model as TOTN but across 7 days.', icon: <CalendarMonth />, color: '#A78BFA', tags: ['awards', 'highlights'], dataSourceMode: 'totw' },
+  { value: 'team_of_night', label: 'Team of the Night', description: 'Daily best-performing lineup with player highlights and data overlays.', icon: <Groups />, color: '#F59E0B', tags: ['awards', 'highlights'], dataSourceMode: 'totn' },
+  { value: 'draft', label: 'Draft', description: 'Tank race snapshot — standings (worst-first) + draft prospect rankings. Frozen aggregate from daily maintenance.', icon: <TrendingUp />, color: '#6366F1', tags: ['analysis'], dataSourceMode: 'manual' },
+  { value: 'player_of_week', label: 'Player of the Week', description: 'Weekly MVP spotlight with cumulative stats and key moments.', icon: <Star />, color: '#34D399', tags: ['awards', 'highlights'], dataSourceMode: 'pow' },
+  { value: 'player_of_month', label: 'Player of the Month', description: 'Monthly MVP spotlight with in-depth analysis.', icon: <EmojiEvents />, color: '#F472B6', tags: ['awards', 'analysis'], dataSourceMode: 'pom' },
+  { value: 'player_spotlight', label: 'Player Spotlight', description: 'Standout performance from a single player with stats, highlights, and analysis.', icon: <Person />, color: '#60A5FA', tags: ['highlights'], dataSourceMode: 'game' },
+  { value: 'dfs', label: 'DFS', description: 'DFS pools, entries, leaderboards — snapshot from dfs backend. Auto-generate from dfs_* tables.', icon: <MonetizationOn />, color: '#22C55E', tags: ['analysis'], dataSourceMode: 'manual' },
 ]
 
 // ─── Section type options (step 3 add modal) ───────────────
@@ -183,7 +97,7 @@ export function getDefaultSectionContent(type: SectionType): any {
     case 'pull_quote': return { text: '', icon: 'chart' }
     case 'gallery': return { images: [] }
     case 'box_score': return { home: { tricode: '', players: [] }, away: { tricode: '', players: [] } }
-    case 'post_link': return { post_id: '', slug: '', title: '', post_type: 'game_recap', context: '' }
+    case 'post_link': return { post_id: '', slug: '', title: '', post_type: 'game_recap', context: '', preview_text: '' }
     case 'tweet_embed': return { tweet_url: '', caption: '', fallback_text: '' }
     default: return {}
   }

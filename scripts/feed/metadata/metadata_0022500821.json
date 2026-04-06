@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500821",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612742,
+      "abbreviation": "DAL",
+      "city": "Dallas",
+      "name": "Mavericks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 134,
+      "stats": {
+        "fg_pct": 0.543,
+        "ft_pct": 0.656,
+        "fg3_pct": 0.393,
+        "ast": 29,
+        "reb": 45,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612754,
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "name": "Pacers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 130,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.476,
+        "ast": 37,
+        "reb": 39,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500821",
+      "LAST_GAME_ID": "0022400998",
+      "LAST_GAME_DATE_EST": "2025-03-19T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612754,
+      "LAST_GAME_HOME_TEAM_CITY": "Indiana",
+      "LAST_GAME_HOME_TEAM_NAME": "Pacers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "IND",
+      "LAST_GAME_HOME_TEAM_POINTS": 135,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612742,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Dallas",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Mavericks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DAL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 131
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500821": {
+      "team_stats": {}
+    }
+  }
+}

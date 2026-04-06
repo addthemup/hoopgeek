@@ -30,6 +30,7 @@ import {
 } from '@mui/joy'
 import { Edit, Save, Cancel, Settings as SettingsIcon } from '@mui/icons-material'
 import { LeagueSettings, UpdateLeagueSettingsFormData, DEFAULT_LEAGUE_SETTINGS } from '../types/leagueSettings'
+import { CONTENT_MAX_WIDTH } from '../constants/layout'
 
 interface LeagueSettingsProps {
   league: LeagueSettings
@@ -839,7 +840,7 @@ export default function LeagueSettingsManager({ league, isCommissioner, onUpdate
   )
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto', py: 4 }}>
+    <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', py: 4 }}>
       <Typography level="h2" sx={{ mb: 4, textAlign: 'center' }}>
         <SettingsIcon sx={{ mr: 2 }} />
         League Settings

@@ -123,7 +123,13 @@ export default function TodayModulesGrid({
     } else if (moduleName === 'team_of_night_past') {
       // Past: only show on past dates
       shouldRender = dateState === 'past';
-    } else if (moduleName === 'prop_predictions') {
+    } else if (
+      moduleName === 'prop_predictions' ||
+      moduleName === 'prop_predictions_over' ||
+      moduleName === 'prop_predictions_under' ||
+      moduleName === 'prop_predictions_team_confidence' ||
+      moduleName === 'prop_predictions_player_confidence'
+    ) {
       // Only show for present/today dates
       shouldRender = dateState === 'present';
     } else if (moduleName === 'prop_performance') {
@@ -150,8 +156,14 @@ export default function TodayModulesGrid({
   // Calculate effective grid size based on dateState and module type
   const getEffectiveGridSize = (moduleName: string, baseSize: number): number => {
     // Prop Predictions: smaller on past dates (1/3), larger on present/future (2/3)
-    if (moduleName === 'prop_predictions') {
-      return dateState === 'past' ? 4 : 8;
+    if (
+      moduleName === 'prop_predictions' ||
+      moduleName === 'prop_predictions_over' ||
+      moduleName === 'prop_predictions_under' ||
+      moduleName === 'prop_predictions_team_confidence' ||
+      moduleName === 'prop_predictions_player_confidence'
+    ) {
+      return dateState === 'past' ? 4 : 6;
     }
     
     // Team of the Night modules: use the baseSize from config (respects admin settings)
@@ -199,11 +211,71 @@ export default function TodayModulesGrid({
               }
               return null;
             case 'prop_predictions':
-              // Only show for present dates
               if (dateState === 'present') {
                 return (
                   <Grid key={name} xs={12} md={effectiveGridSize}>
-                    <PropPredictionsModule 
+                    <PropPredictionsModule
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                      nbaScoreboard={nbaScoreboard}
+                      embedMode="full"
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'prop_predictions_over':
+              if (dateState === 'present') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPredictionsModule
+                      embedMode="over"
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                      nbaScoreboard={nbaScoreboard}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'prop_predictions_under':
+              if (dateState === 'present') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPredictionsModule
+                      embedMode="under"
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                      nbaScoreboard={nbaScoreboard}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'prop_predictions_team_confidence':
+              if (dateState === 'present') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPredictionsModule
+                      embedMode="team_confidence"
+                      selectedDate={selectedDate}
+                      navigate={navigate}
+                      onOpen={onOpenPropPredictions}
+                      nbaScoreboard={nbaScoreboard}
+                    />
+                  </Grid>
+                );
+              }
+              return null;
+            case 'prop_predictions_player_confidence':
+              if (dateState === 'present') {
+                return (
+                  <Grid key={name} xs={12} md={effectiveGridSize}>
+                    <PropPredictionsModule
+                      embedMode="player_confidence"
                       selectedDate={selectedDate}
                       navigate={navigate}
                       onOpen={onOpenPropPredictions}

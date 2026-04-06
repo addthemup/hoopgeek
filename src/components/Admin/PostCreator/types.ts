@@ -9,7 +9,7 @@ import type { PostType, SectionType, FeedTag } from '../../../types/feed'
 
 // ─── Post type option (step 0 card) ────────────────────────
 
-export type DataSourceMode = 'totn' | 'totw' | 'pow' | 'pom' | 'game' | 'manual'
+export type DataSourceMode = 'totn' | 'totw' | 'pow' | 'pom' | 'game' | 'matchup' | 'manual'
 
 export interface PostTypeOption {
   value: PostType
@@ -52,6 +52,9 @@ export interface PlayByPlayAction {
   shotResult: string | null
   isFieldGoal: number
   pointsTotal: number
+  /** PBP event id — used for deduping spotlight clips */
+  eventNum?: number | null
+  actionId?: number | null
 }
 
 export interface GameData {
@@ -174,6 +177,12 @@ export interface GeneratorContext {
   totnPlayerClipCount?: number
   totwPlayerClipCount?: number
   awardHighlightCount?: number
+  /** Date string (YYYY-MM-DD) for injury/prop/upcoming generators */
+  targetDate?: string
+  /** Team tricodes to scope injury/prop queries (e.g. ['LAL', 'BOS'] for a matchup) */
+  targetTeams?: string[]
+  /** NBA game ID for game-specific generators (upcoming, prop_prediction, prop_results) */
+  targetGameId?: string
 }
 
 export type SectionGenerator = (ctx: GeneratorContext) => Promise<SectionDraft[]>

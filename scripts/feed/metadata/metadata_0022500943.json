@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500943",
+  "gameMetadata": {
+    "date": null,
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "awayTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500943": {
+      "team_stats": {}
+    }
+  }
+}

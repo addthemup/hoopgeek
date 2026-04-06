@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500921",
+  "gameMetadata": {
+    "date": "2026-03-08T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "awayTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500921",
+      "LAST_GAME_ID": "0012500050",
+      "LAST_GAME_DATE_EST": "2025-10-12T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612739,
+      "LAST_GAME_HOME_TEAM_CITY": "Cleveland",
+      "LAST_GAME_HOME_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CLE",
+      "LAST_GAME_HOME_TEAM_POINTS": 107,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612738,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Boston",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Celtics",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "BOS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 138
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500921": {
+      "team_stats": {}
+    }
+  }
+}

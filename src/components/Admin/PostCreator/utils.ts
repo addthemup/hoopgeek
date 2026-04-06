@@ -16,10 +16,22 @@ export function generateSlug(title: string, gameDate?: string): string {
   return `${base}${datePart ? '-' + datePart : ''}-${random}`
 }
 
-export function generateSourceRef(postType: PostType, gameId?: string, gameDate?: string): string {
-  if (gameId) return `${postType}:${gameId}`
-  if (gameDate) return `${postType}:${gameDate}`
-  return `${postType}:${Date.now()}`
+/**
+ * Builds a unique source_ref for dedup. Include a disambiguator when multiple posts
+ * can share the same type+game or type+date (e.g. player_spotlight per player, player_of_week East vs West).
+ */
+export function generateSourceRef(
+  postType: PostType,
+  gameId?: string,
+  gameDate?: string,
+  disambiguator?: string | number | null
+): string {
+  const base = gameId ? `${postType}:${gameId}` : gameDate ? `${postType}:${gameDate}` : `${postType}:${Date.now()}`
+  if (disambiguator != null && disambiguator !== '') {
+    const safe = String(disambiguator).toLowerCase().replace(/[^a-z0-9_-]/g, '_')
+    return `${base}:${safe}`
+  }
+  return base
 }
 
 export function formatSalary(salary: number): string {

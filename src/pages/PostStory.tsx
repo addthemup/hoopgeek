@@ -6,14 +6,17 @@
  * as a typed component. Engagement bar at the bottom.
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Fragment } from 'react'
+import { motion, useReducedMotion } from 'framer-motion'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMediaQuery } from '@mui/material'
 import {
   Box,
   Typography,
   Card,
   CardContent,
+  CardOverflow,
   Chip,
   CircularProgress,
   Avatar,
@@ -22,6 +25,7 @@ import {
   Button,
   Divider,
   Stack,
+  AspectRatio,
 } from '@mui/joy'
 import ArrowBack from '@mui/icons-material/ArrowBack'
 import Favorite from '@mui/icons-material/Favorite'
@@ -62,6 +66,7 @@ import type {
   RichTextContent,
   PropCardContent,
   InjuryCardContent,
+  InjuryProgressSegment,
   PullQuoteContent,
   GalleryContent,
   BoxScoreContent,
@@ -70,11 +75,41 @@ import type {
   TweetEmbedContent,
   DataOverlay,
   LineupPlayer,
+  ChartContent,
+  InjuryModuleContent,
+  PropModuleContent,
+  TeamOfNightModuleContent,
+  TeamOfWeekModuleContent,
+  TankModuleContent,
+  DfsModuleContent,
 } from '../types/feed'
+import InjuryModuleDisplay from '../components/modules/InjuryModuleDisplay'
+import PropModuleDisplay from '../components/modules/PropModuleDisplay'
+import TeamOfNightModuleDisplay from '../components/modules/TeamOfNightModuleDisplay'
+import TeamOfWeekModuleDisplay from '../components/modules/TeamOfWeekModuleDisplay'
+import {
+  PostStoryDesktopBlogShell,
+  PostStoryMobileArticleShell,
+  PostStoryMobileReel,
+} from '../components/Feed/PostStoryLayouts'
+import { PostStoryTitleWithTeamLogos } from '../components/Feed/PostStoryTitleWithTeamLogos'
+import {
+  PostLinkSection,
+  PostLinkSpotlightCarousel,
+  buildSpotlightSkipSet,
+  getSpotlightGroupAtIndex,
+} from '../components/Feed/PostLinkFeedBlocks'
+import { getReelVideoFromSections } from '../utils/feedFirstVideo'
+import { useFeedVideoStore } from '../stores/feedVideoStore'
+import TankModuleDisplay from '../components/modules/TankModuleDisplay'
 import ChevronLeft from '@mui/icons-material/ChevronLeft'
 import ChevronRight from '@mui/icons-material/ChevronRight'
+import LocalHospital from '@mui/icons-material/LocalHospital'
 import { getTeamPrimaryColor } from '../utils/nbaTeamColors'
+import { getTeamLogoUrl } from '../utils/nbaTeamLogos'
 import PlayerJersey from '../components/PlayerJersey'
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts'
+import ShotChartTable from '../components/Charts/ShotChartTable'
 
 // ─── Type badge colors ──────────────────────────────────────
 
@@ -90,6 +125,8 @@ const POST_TYPE_COLORS: Record<PostType, string> = {
   injury_report: '#EF4444',
   upcoming: '#8B5CF6',
   blog: '#0EA5E9',
+  draft: '#6366F1',
+  dfs: '#22C55E',
 }
 
 const POST_TYPE_LABELS: Record<PostType, string> = {
@@ -104,6 +141,8 @@ const POST_TYPE_LABELS: Record<PostType, string> = {
   injury_report: 'Injury Report',
   upcoming: 'Upcoming',
   blog: 'Blog',
+  draft: 'Draft',
+  dfs: 'DFS',
 }
 
 // ─── Data hooks ─────────────────────────────────────────────
@@ -468,43 +507,124 @@ function playerCardFantasyPoints(content: PlayerHighlightContent): number {
   } as any)
 }
 
-function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }) {
-  const clips = content.video_clips?.length ? content.video_clips : []
+const SWIPE_THRESHOLD_PX = 50
+
+/** One row from nba_boxscores for per-game stats on TOTW. */
+interface TotwGameBoxscore {
+  game_id: string
+  game_date: string
+  matchup: string | null
+  pts: number
+  reb: number
+  ast: number
+  stl: number
+  blk: number
+  fg3m: number
+  tov?: number
+  fgm?: number
+  fga?: number
+  fg3a?: number
+  ftm?: number
+  fta?: number
+}
+
+/** Parse "AWAY @ HOME" matchup; return opponent tricode and whether player's team was on the road. */
+function parseMatchup(matchup: string | null, playerTeamTricode: string): { opponentTricode: string; isRoad: boolean } | null {
+  if (!matchup || !playerTeamTricode) return null
+  const parts = matchup.split('@').map((s) => s.trim())
+  if (parts.length !== 2) return null
+  const [away, home] = parts
+  const playerUpper = playerTeamTricode.toUpperCase()
+  if (away?.toUpperCase() === playerUpper) return { opponentTricode: home ?? '', isRoad: true }
+  if (home?.toUpperCase() === playerUpper) return { opponentTricode: away ?? '', isRoad: false }
+  return null
+}
+
+/** When false, only a placeholder is shown (no video). Ensures only one slideshow plays at a time on the page.
+ *  When hideVideo is true (e.g. player_spotlight), the video/slideshow is omitted so only the carousel shows clips.
+ *  When noCard is true, render without outer Box/Card (for use inside a combined single Card with video carousel). */
+function PlayerHighlightSection({
+  content,
+  isActiveSection = true,
+  weekRange,
+  gameDate,
+  onPlayerClick,
+  hideVideo = false,
+  noCard = false,
+}: {
+  content: PlayerHighlightContent
+  isActiveSection?: boolean
+  /** For team_of_week: query nba_boxscores for this week and show per-game stat cards. */
+  weekRange?: { start: string; end: string }
+  /** For team_of_night: single game date (YYYY-MM-DD); show one game's box score card like TOTW. */
+  gameDate?: string
+  /** When provided, player name is clickable and navigates to player page. */
+  onPlayerClick?: (nbaPlayerId: number) => void
+  /** When true, do not render the video/slideshow (e.g. player_spotlight uses video_carousel only). */
+  hideVideo?: boolean
+  /** When true, do not wrap in Box/Card (embed in parent Card). */
+  noCard?: boolean
+}) {
+  const effectiveWeekRange = weekRange ?? (gameDate
+    ? { start: `${gameDate}T00:00:00`, end: `${gameDate}T23:59:59` }
+    : undefined)
+  const clips = hideVideo ? [] : (content.video_clips?.length ? content.video_clips : [])
   const [clipIndex, setClipIndex] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const touchStartX = useRef<number | null>(null)
   const currentClip = clips[clipIndex]
 
   useEffect(() => {
-    if (!currentClip?.mp4 || !videoRef.current) return
+    if (!isActiveSection || !currentClip?.mp4 || !videoRef.current) return
     const v = videoRef.current
     v.src = currentClip.mp4
     v.load()
     v.play().catch(() => {})
-  }, [clipIndex, currentClip?.mp4])
-
-  // Pause when this section scrolls out of view (so the previous highlight stops when you scroll to the next)
-  useEffect(() => {
-    const el = containerRef.current
-    if (!el || clips.length === 0) return
-    const obs = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.intersectionRatio < 0.25 && videoRef.current) {
-            videoRef.current.pause()
-          }
-        }
-      },
-      { threshold: [0, 0.25, 0.5, 1], rootMargin: '0px' }
-    )
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [clips.length])
+  }, [isActiveSection, clipIndex, currentClip?.mp4])
 
   const goNext = useCallback(() => {
     if (clips.length <= 1) return
     setClipIndex((i) => (i + 1) % clips.length)
   }, [clips.length])
+
+  const goPrev = useCallback(() => {
+    if (clips.length <= 1) return
+    setClipIndex((i) => (i - 1 + clips.length) % clips.length)
+  }, [clips.length])
+
+  // Keyboard: left/right when this slideshow is active
+  useEffect(() => {
+    if (!isActiveSection || clips.length <= 1) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goPrev()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goNext()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isActiveSection, clips.length, goPrev, goNext])
+
+  // Swipe: track touch start/end for mobile and iPad
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }, [])
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (touchStartX.current == null || clips.length <= 1) return
+      const endX = e.changedTouches[0].clientX
+      const delta = endX - touchStartX.current
+      touchStartX.current = null
+      if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return
+      if (delta < 0) goNext()
+      else goPrev()
+    },
+    [clips.length, goNext, goPrev]
+  )
 
   const fp = playerCardFantasyPoints(content)
   const stats = content.stats || {}
@@ -513,21 +633,198 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
     value: stats[key],
   }))
 
-  return (
-    <Box ref={containerRef}>
-      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
-      {/* This player's highlight slideshow when video_clips exist; else static thumbnail */}
+  // TOTW / TOTN: fetch per-game boxscores (TOTW = week range, TOTN = single game date)
+  const { data: boxscoreRows } = useQuery({
+    queryKey: ['nba_boxscores-lineup', content.player_id, effectiveWeekRange?.start, effectiveWeekRange?.end],
+    queryFn: async (): Promise<TotwGameBoxscore[]> => {
+      if (!effectiveWeekRange?.start || !effectiveWeekRange?.end || !content.player_id) return []
+      const { data, error } = await supabase
+        .from('nba_boxscores')
+        .select('game_id, game_date, matchup, pts, reb, ast, stl, blk, fg3m, tov, fgm, fga, fg3a, ftm, fta')
+        .eq('nba_player_id', content.player_id)
+        .gte('game_date', effectiveWeekRange.start)
+        .lte('game_date', effectiveWeekRange.end)
+        .order('game_date', { ascending: true })
+      if (error) return []
+      return (data || []).map((row: Record<string, unknown>) => ({
+        game_id: String(row.game_id ?? ''),
+        game_date: String(row.game_date ?? ''),
+        matchup: row.matchup != null ? String(row.matchup) : null,
+        pts: Number(row.pts ?? 0),
+        reb: Number(row.reb ?? 0),
+        ast: Number(row.ast ?? 0),
+        stl: Number(row.stl ?? 0),
+        blk: Number(row.blk ?? 0),
+        fg3m: Number(row.fg3m ?? 0),
+        tov: row.tov != null ? Number(row.tov) : undefined,
+        fgm: row.fgm != null ? Number(row.fgm) : undefined,
+        fga: row.fga != null ? Number(row.fga) : undefined,
+        fg3a: row.fg3a != null ? Number(row.fg3a) : undefined,
+        ftm: row.ftm != null ? Number(row.ftm) : undefined,
+        fta: row.fta != null ? Number(row.fta) : undefined,
+      }))
+    },
+    enabled: !!effectiveWeekRange?.start && !!effectiveWeekRange?.end && !!content.player_id,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  const totwGames = boxscoreRows ?? []
+
+  // TOTW / TOTN: per-game prop hit rate (player_props + player_props_games → compare to boxscore via calculatePropResult)
+  // Match props games by nba_game_id when set, else by date + team tricodes (player_props_games often has null nba_game_id)
+  const { data: propHitRatesByGame } = useQuery({
+    queryKey: ['lineup-prop-hit-rates', content.player_id, effectiveWeekRange?.start, effectiveWeekRange?.end, totwGames.map((g) => g.game_id).join(',')],
+    queryFn: async (): Promise<Record<string, { hitRate: number; total: number }>> => {
+      if (!content.player_id || totwGames.length === 0 || !effectiveWeekRange?.start || !effectiveWeekRange?.end) return {}
+      const { calculatePropResult } = await import('../utils/playerPropsCalculator')
+      const { filterFullGameProps } = await import('../utils/playerPropsFilter')
+      const { matchPropsGamesToNbaGames } = await import('../utils/matchPropsGamesToNbaGames')
+      const playerTeam = content.team_tricode || ''
+      const nbaGamesForMatching = totwGames.map((g) => {
+        const parsed = parseMatchup(g.matchup, playerTeam)
+        const away = parsed?.isRoad ? playerTeam : (parsed?.opponentTricode ?? '')
+        const home = parsed?.isRoad ? (parsed?.opponentTricode ?? '') : playerTeam
+        return {
+          game_id: g.game_id,
+          game_date: g.game_date,
+          home_team_tricode: home || null,
+          away_team_tricode: away || null,
+        }
+      })
+      const { data: allPropsGames } = await supabase
+        .from('player_props_games')
+        .select('id, event_id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team')
+        .gte('game_date', effectiveWeekRange.start)
+        .lte('game_date', effectiveWeekRange.end)
+      const propsGamesList = allPropsGames || []
+      const matched = matchPropsGamesToNbaGames(
+        propsGamesList as Array<{ id: string; event_id: string; nba_game_id: string | null; game_date: string; home_team_tricode: string | null; away_team_tricode: string | null; home_team: string | null; away_team: string | null }>,
+        nbaGamesForMatching
+      )
+      const propsGameIdToNbaGameId = new Map<string, string>()
+      matched.forEach((nbaGame, propsId) => {
+        propsGameIdToNbaGameId.set(propsId, nbaGame.game_id)
+      })
+      const uuids = [...matched.keys()]
+      if (uuids.length === 0) return {}
+      const { data: props } = await supabase
+        .from('player_props')
+        .select('id, game_id, bet_type, line, raw_odd_data')
+        .eq('nba_player_id', content.player_id)
+        .in('game_id', uuids)
+      const fullGameProps = filterFullGameProps(props || [])
+      const boxscoreByGame = new Map(totwGames.map((g) => [g.game_id, g]))
+      const result: Record<string, { hits: number; total: number }> = {}
+      for (const prop of fullGameProps) {
+        const nbaGameId = propsGameIdToNbaGameId.get(prop.game_id)
+        if (!nbaGameId) continue
+        const box = boxscoreByGame.get(nbaGameId)
+        if (!box) continue
+        const calc = calculatePropResult(prop.bet_type, Number(prop.line ?? 0), box)
+        if (!calc || calc.result === 'push') continue
+        const raw = (prop as { raw_odd_data?: { sideID?: string } | null }).raw_odd_data
+        const side = raw?.sideID?.toLowerCase()
+        const isOver = side === 'over' || (!side && true)
+        const hit = (isOver && calc.result === 'over') || (!isOver && calc.result === 'under')
+        if (!result[nbaGameId]) result[nbaGameId] = { hits: 0, total: 0 }
+        result[nbaGameId].total += 1
+        if (hit) result[nbaGameId].hits += 1
+      }
+      const out: Record<string, { hitRate: number; total: number }> = {}
+      for (const [gid, r] of Object.entries(result)) {
+        if (r.total > 0) out[gid] = { hitRate: (r.hits / r.total) * 100, total: r.total }
+      }
+      return out
+    },
+    enabled: !!content.player_id && totwGames.length > 0 && !!effectiveWeekRange?.start && !!effectiveWeekRange?.end,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  // Player spotlight (hideVideo): no standalone avatar card — reel overlay + article sections carry the story
+  if (hideVideo && totwGames.length === 0) {
+    const hasOverlaysStrip = Boolean(content.data_overlays?.length && !noCard)
+    const hasThumb = Boolean(content.video_thumbnail)
+    if (!hasOverlaysStrip && !hasThumb) {
+      return null
+    }
+  }
+
+  const cardInner = (
+    <>
+      {/* Player spotlight: no inline avatar/header — title + matchup live on the reel overlay (PostStoryMobileReel), same as mobile */}
+      {/* This player's highlight slideshow when video_clips exist; only render <video> when isActiveSection so one plays at a time */}
       {clips.length > 0 ? (
-        <Box sx={{ position: 'relative', width: '100%', bgcolor: '#000' }}>
-          <video
-            ref={videoRef}
-            src={currentClip?.mp4}
-            muted
-            autoPlay
-            playsInline
-            style={{ width: '100%', display: 'block', aspectRatio: '16/10', objectFit: 'cover' }}
-            onEnded={goNext}
-          />
+        <Box
+          sx={{ position: 'relative', width: '100%', bgcolor: '#000' }}
+          onTouchStart={isActiveSection && clips.length > 1 ? handleTouchStart : undefined}
+          onTouchEnd={isActiveSection && clips.length > 1 ? handleTouchEnd : undefined}
+        >
+          {isActiveSection && clips.length > 1 && (
+            <>
+              <IconButton
+                aria-label="Previous clip"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  goPrev()
+                }}
+                sx={{
+                  position: 'absolute',
+                  left: 8,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  zIndex: 2,
+                  bgcolor: 'rgba(0,0,0,0.6)',
+                  color: '#FFF',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.85)' },
+                }}
+              >
+                <ChevronLeft />
+              </IconButton>
+              <IconButton
+                aria-label="Next clip"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  goNext()
+                }}
+                sx={{
+                  position: 'absolute',
+                  right: 8,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  zIndex: 2,
+                  bgcolor: 'rgba(0,0,0,0.6)',
+                  color: '#FFF',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.85)' },
+                }}
+              >
+                <ChevronRight />
+              </IconButton>
+            </>
+          )}
+          {isActiveSection ? (
+            <video
+              ref={videoRef}
+              src={currentClip?.mp4}
+              muted
+              autoPlay
+              playsInline
+              style={{ width: '100%', display: 'block', aspectRatio: '16/10', objectFit: 'cover' }}
+              onEnded={goNext}
+            />
+          ) : (
+            <Box
+              sx={{
+                width: '100%',
+                aspectRatio: '16/10',
+                bgcolor: '#111',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Typography level="body-sm" sx={{ color: '#666' }}>Scroll to watch</Typography>
+            </Box>
+          )}
           {content.data_overlays && content.data_overlays.length > 0 && (
             <Box
               sx={{
@@ -559,21 +856,33 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
               ))}
             </Box>
           )}
-          {clips.length > 1 && (
+          {isActiveSection && clips.length > 1 && (
             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5, py: 0.5 }}>
-            {clips.map((_, i) => (
-              <Box
-                key={i}
-                sx={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  bgcolor: i === clipIndex ? '#FFC72C' : 'rgba(255,255,255,0.3)',
-                }}
-              />
-            ))}
-          </Box>
+              {clips.map((_, i) => (
+                <Box
+                  key={i}
+                  sx={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    bgcolor: i === clipIndex ? '#FFC72C' : 'rgba(255,255,255,0.3)',
+                  }}
+                />
+              ))}
+            </Box>
           )}
+        </Box>
+      ) : hideVideo && content.data_overlays && content.data_overlays.length > 0 && !noCard ? (
+        <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 1, background: 'linear-gradient(135deg, #1a1a1a 0%, #0a0a0a 100%)', borderBottom: '1px solid #222' }}>
+          {content.data_overlays.map((overlay: DataOverlay, i: number) => (
+            <Chip
+              key={i}
+              size="sm"
+              sx={{ bgcolor: 'rgba(255,255,255,0.08)', color: overlay.color ?? '#FFC72C', fontWeight: 700, fontSize: '0.7rem' }}
+            >
+              {overlay.label}: {overlay.value}
+            </Chip>
+          ))}
         </Box>
       ) : content.video_thumbnail ? (
         <Box
@@ -616,25 +925,186 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
         </Box>
       ) : null}
 
-      <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, textAlign: 'center' }}>
-        <Avatar
-          src={content.headshot_url ?? `https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
-          alt={content.name}
-          sx={{ width: 56, height: 56 }}
-        />
-        <Typography level="title-md" sx={{ color: '#FFF', fontWeight: 700 }}>
-          {content.name}
-        </Typography>
-        <Typography level="body-md" sx={{ color: '#FFC72C', fontWeight: 700 }}>
-          {fp.toFixed(1)} FP
-        </Typography>
-        <Typography level="body-xs" sx={{ color: '#888' }}>
-          {content.team_tricode}
-        </Typography>
-      </CardContent>
+      {/* TOTW: header + game cards in one grid (Game 1 | Header | Game 2 / Game 3 | Game 4 | Game 5) */}
+      {totwGames.length > 0 ? (
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 1,
+            p: 1.5,
+            alignContent: 'start',
+          }}
+        >
+          {/* Game 1 */}
+          {totwGames[0] && (() => {
+            const game = totwGames[0]
+            const statItems = [
+              { label: 'PTS', value: game.pts },
+              { label: 'REB', value: game.reb },
+              { label: 'AST', value: game.ast },
+              { label: 'BLK', value: game.blk },
+              { label: 'STL', value: game.stl },
+              ...(game.fg3m > 2.5 ? [{ label: '3PM', value: game.fg3m }] : []),
+            ]
+            const parsed = parseMatchup(game.matchup, content.team_tricode)
+            const opponentTricode = parsed?.opponentTricode ?? ''
+            const isRoad = parsed?.isRoad ?? true
+            const propRate = propHitRatesByGame?.[game.game_id]
+            return (
+              <Card key={game.game_id} variant="outlined" size="sm" sx={{ bgcolor: '#151515', borderRadius: 0, borderColor: '#333', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                  <CardOverflow sx={{ borderBottom: 'none' }}>
+                    <AspectRatio ratio="1" sx={{ minWidth: 56, maxWidth: 70 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', bgcolor: '#1a1a1a', gap: 0.25 }}>
+                        {opponentTricode ? (
+                          <Box component="img" src={getTeamLogoUrl(opponentTricode)} alt={opponentTricode} sx={{ width: 28, height: 28, objectFit: 'contain' }} />
+                        ) : (
+                          <Box sx={{ width: 28, height: 28, bgcolor: '#333', borderRadius: '50%' }} />
+                        )}
+                        <Typography sx={{ color: '#888', fontWeight: 600, fontSize: '0.65rem' }}>{isRoad ? '@' : 'vs'}</Typography>
+                      </Box>
+                    </AspectRatio>
+                  </CardOverflow>
+                  <CardContent sx={{ py: 1, px: 1.5, flex: 1, '&:last-child': { pb: 1 } }}>
+                    <Typography level="title-sm" sx={{ color: '#FFF', fontWeight: 600 }}>{opponentTricode ? `${isRoad ? '@' : 'vs'} ${opponentTricode}` : (game.matchup || '—')}</Typography>
+                    <Typography level="body-xs" sx={{ color: '#888' }}>{game.game_date}</Typography>
+                  </CardContent>
+                </Box>
+                <CardOverflow variant="soft" sx={{ display: 'flex', flexDirection: 'row', gap: 0, justifyContent: 'space-around', alignItems: 'center', py: 0.75, px: 1, borderTop: '1px solid', borderColor: '#333', bgcolor: '#111' }}>
+                  {statItems.map((item, i) => (
+                    <Box key={item.label} sx={{ display: 'flex', alignItems: 'center' }}>
+                      {i > 0 && <Divider orientation="vertical" sx={{ mx: 0.5 }} />}
+                      <Typography level="body-xs" sx={{ color: '#FFC72C', fontWeight: 700, fontSize: '0.7rem' }}>{item.label} {item.value}</Typography>
+                    </Box>
+                  ))}
+                </CardOverflow>
+                {propRate != null && propRate.total > 0 && (
+                  <Box sx={{ py: 0.5, px: 1, borderTop: '1px solid', borderColor: '#333', textAlign: 'center' }}>
+                    <Typography
+                      level="body-xs"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: '0.7rem',
+                        color: propRate.hitRate < 50 ? '#EF4444' : propRate.hitRate >= 90 ? '#22C55E' : '#CCC',
+                      }}
+                    >
+                      Prop rate: {Math.round(propRate.hitRate)}%
+                    </Typography>
+                  </Box>
+                )}
+              </Card>
+            )
+          })()}
+          {/* Header cell: avatar + name, FP, team (physically attached to game log) */}
+          <Card variant="outlined" size="sm" sx={{ bgcolor: '#151515', borderRadius: 0, borderColor: '#333', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 120, p: 1 }}>
+            <Avatar
+              src={content.headshot_url ?? `https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
+              alt={content.name}
+              sx={{ width: 48, height: 48, mb: 0.5 }}
+            />
+            <Typography
+              level="title-sm"
+              component={onPlayerClick ? 'span' : 'p'}
+              onClick={onPlayerClick ? () => onPlayerClick(content.player_id) : undefined}
+              sx={{
+                color: '#FFF',
+                fontWeight: 700,
+                textAlign: 'center',
+                ...(onPlayerClick && { cursor: 'pointer', '&:hover': { color: '#FFC72C', textDecoration: 'underline' } }),
+              }}
+            >
+              {content.name}
+            </Typography>
+            <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 700 }}>{fp.toFixed(1)} FP</Typography>
+            <Typography level="body-xs" sx={{ color: '#888' }}>{content.team_tricode}</Typography>
+          </Card>
+          {/* Game 2, 3, 4, 5, ... */}
+          {totwGames.slice(1).map((game) => {
+            const statItems = [
+              { label: 'PTS', value: game.pts },
+              { label: 'REB', value: game.reb },
+              { label: 'AST', value: game.ast },
+              { label: 'BLK', value: game.blk },
+              { label: 'STL', value: game.stl },
+              ...(game.fg3m > 2.5 ? [{ label: '3PM', value: game.fg3m }] : []),
+            ]
+            const parsed = parseMatchup(game.matchup, content.team_tricode)
+            const opponentTricode = parsed?.opponentTricode ?? ''
+            const isRoad = parsed?.isRoad ?? true
+            const propRate = propHitRatesByGame?.[game.game_id]
+            return (
+              <Card key={game.game_id} variant="outlined" size="sm" sx={{ bgcolor: '#151515', borderRadius: 0, borderColor: '#333', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row' }}>
+                  <CardOverflow sx={{ borderBottom: 'none' }}>
+                    <AspectRatio ratio="1" sx={{ minWidth: 56, maxWidth: 70 }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', bgcolor: '#1a1a1a', gap: 0.25 }}>
+                        {opponentTricode ? (
+                          <Box component="img" src={getTeamLogoUrl(opponentTricode)} alt={opponentTricode} sx={{ width: 28, height: 28, objectFit: 'contain' }} />
+                        ) : (
+                          <Box sx={{ width: 28, height: 28, bgcolor: '#333', borderRadius: '50%' }} />
+                        )}
+                        <Typography sx={{ color: '#888', fontWeight: 600, fontSize: '0.65rem' }}>{isRoad ? '@' : 'vs'}</Typography>
+                      </Box>
+                    </AspectRatio>
+                  </CardOverflow>
+                  <CardContent sx={{ py: 1, px: 1.5, flex: 1, '&:last-child': { pb: 1 } }}>
+                    <Typography level="title-sm" sx={{ color: '#FFF', fontWeight: 600 }}>{opponentTricode ? `${isRoad ? '@' : 'vs'} ${opponentTricode}` : (game.matchup || '—')}</Typography>
+                    <Typography level="body-xs" sx={{ color: '#888' }}>{game.game_date}</Typography>
+                  </CardContent>
+                </Box>
+                <CardOverflow variant="soft" sx={{ display: 'flex', flexDirection: 'row', gap: 0, justifyContent: 'space-around', alignItems: 'center', py: 0.75, px: 1, borderTop: '1px solid', borderColor: '#333', bgcolor: '#111' }}>
+                  {statItems.map((item, i) => (
+                    <Box key={item.label} sx={{ display: 'flex', alignItems: 'center' }}>
+                      {i > 0 && <Divider orientation="vertical" sx={{ mx: 0.5 }} />}
+                      <Typography level="body-xs" sx={{ color: '#FFC72C', fontWeight: 700, fontSize: '0.7rem' }}>{item.label} {item.value}</Typography>
+                    </Box>
+                  ))}
+                </CardOverflow>
+                {propRate != null && propRate.total > 0 && (
+                  <Box sx={{ py: 0.5, px: 1, borderTop: '1px solid', borderColor: '#333', textAlign: 'center' }}>
+                    <Typography
+                      level="body-xs"
+                      sx={{
+                        fontWeight: 700,
+                        fontSize: '0.7rem',
+                        color: propRate.hitRate < 50 ? '#EF4444' : propRate.hitRate >= 90 ? '#22C55E' : '#CCC',
+                      }}
+                    >
+                      Prop rate: {Math.round(propRate.hitRate)}%
+                    </Typography>
+                  </Box>
+                )}
+              </Card>
+            )
+          })}
+        </Box>
+      ) : hideVideo ? null : (
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, textAlign: 'center' }}>
+          <Avatar
+            src={content.headshot_url ?? `https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
+            alt={content.name}
+            sx={{ width: 56, height: 56 }}
+          />
+          <Typography
+            level="title-md"
+            component={onPlayerClick ? 'span' : 'p'}
+            onClick={onPlayerClick ? () => onPlayerClick(content.player_id) : undefined}
+            sx={{
+              color: '#FFF',
+              fontWeight: 700,
+              ...(onPlayerClick && { cursor: 'pointer', '&:hover': { color: '#FFC72C', textDecoration: 'underline' } }),
+            }}
+          >
+            {content.name}
+          </Typography>
+          <Typography level="body-md" sx={{ color: '#FFC72C', fontWeight: 700 }}>{fp.toFixed(1)} FP</Typography>
+          <Typography level="body-xs" sx={{ color: '#888' }}>{content.team_tricode}</Typography>
+        </CardContent>
+      )}
 
-      {/* Stat line: MIN PTS REB AST BLK STL */}
-      {orderedStats.length > 0 && (
+      {/* Stat line: MIN PTS REB AST BLK STL — not for player_spotlight (hideVideo); reel + charts carry context */}
+      {orderedStats.length > 0 && !(noCard && hideVideo) && !hideVideo && (
         <Box sx={{ display: 'flex', justifyContent: 'space-around', px: 2, pb: 2 }}>
           {orderedStats.map(({ key, value }) => (
             <Box key={key} sx={{ textAlign: 'center' }}>
@@ -648,7 +1118,15 @@ function PlayerHighlightSection({ content }: { content: PlayerHighlightContent }
           ))}
         </Box>
       )}
-    </Card>
+    </>
+  )
+
+  if (noCard) return cardInner
+  return (
+    <Box ref={containerRef}>
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
+        {cardInner}
+      </Card>
     </Box>
   )
 }
@@ -720,10 +1198,11 @@ function VideoClipSection({ content }: { content: VideoClipContent }) {
 }
 
 /** Instagram-style carousel of MP4 clips with play metadata (period, clock, description). MUI Joy only. */
-function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
+function VideoCarouselSection({ content, noCard }: { content: VideoCarouselContent; noCard?: boolean }) {
   const clips = content.clips?.filter((c) => c.mp4) ?? []
   const [index, setIndex] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const touchStartX = useRef<number | null>(null)
   const current = clips[index]
 
   useEffect(() => {
@@ -731,41 +1210,104 @@ function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
     const v = videoRef.current
     v.src = current.mp4
     v.load()
-    v.play().catch(() => {})
   }, [index, current?.mp4])
 
+  useLayoutEffect(() => {
+    if (!current?.mp4 || !videoRef.current) return
+    const v = videoRef.current
+    // Defer play so the element is ready after paint (fixes initial load not playing until user swipes)
+    const t = setTimeout(() => {
+      v.play().catch(() => {})
+    }, 50)
+    return () => clearTimeout(t)
+  }, [index, current?.mp4])
+
+  const goPrev = useCallback(() => setIndex((i) => (i - 1 + clips.length) % clips.length), [clips.length])
+  const goNext = useCallback(() => setIndex((i) => (i + 1) % clips.length), [clips.length])
+
+  useEffect(() => {
+    if (clips.length <= 1) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goPrev()
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goNext()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [clips.length, goPrev, goNext])
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }, [])
+  const handleTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (touchStartX.current == null || clips.length <= 1) return
+      const endX = e.changedTouches[0].clientX
+      const delta = endX - touchStartX.current
+      touchStartX.current = null
+      if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return
+      if (delta < 0) goNext()
+      else goPrev()
+    },
+    [clips.length, goNext, goPrev]
+  )
+
   if (clips.length === 0) {
+    const emptyContent = <Typography level="body-sm" sx={{ color: '#666' }}>No clips in this carousel.</Typography>
+    if (noCard) return <Box sx={{ bgcolor: '#0a0a0a', p: 2 }}>{emptyContent}</Box>
     return (
       <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222' }}>
-        <CardContent>
-          <Typography level="body-sm" sx={{ color: '#666' }}>No clips in this carousel.</Typography>
-        </CardContent>
+        <CardContent>{emptyContent}</CardContent>
       </Card>
     )
   }
 
-  const goPrev = () => setIndex((i) => (i - 1 + clips.length) % clips.length)
-  const goNext = () => setIndex((i) => (i + 1) % clips.length)
-
-  return (
-    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
-      <Box sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+  const inner = (
+    <>
+      <Box
+        sx={{ position: 'relative', display: 'flex', alignItems: 'center' }}
+        onTouchStart={clips.length > 1 ? handleTouchStart : undefined}
+        onTouchEnd={clips.length > 1 ? handleTouchEnd : undefined}
+      >
         {clips.length > 1 && (
-          <IconButton
-            variant="soft"
-            color="neutral"
-            size="sm"
-            onClick={goPrev}
-            sx={{
-              position: 'absolute',
-              left: 8,
-              zIndex: 2,
-              bgcolor: 'rgba(0,0,0,0.6)',
-              '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
-            }}
-          >
-            <ChevronLeft />
-          </IconButton>
+          <>
+            <IconButton
+              aria-label="Previous clip"
+              variant="soft"
+              color="neutral"
+              size="sm"
+              onClick={goPrev}
+              sx={{
+                position: 'absolute',
+                left: 8,
+                zIndex: 2,
+                bgcolor: 'rgba(0,0,0,0.6)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
+              }}
+            >
+              <ChevronLeft />
+            </IconButton>
+            <IconButton
+              aria-label="Next clip"
+              variant="soft"
+              color="neutral"
+              size="sm"
+              onClick={goNext}
+              sx={{
+                position: 'absolute',
+                right: 8,
+                zIndex: 2,
+                bgcolor: 'rgba(0,0,0,0.6)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
+              }}
+            >
+              <ChevronRight />
+            </IconButton>
+          </>
         )}
         <Box sx={{ width: '100%', aspectRatio: '9/16', maxHeight: 420, mx: clips.length > 1 ? 5 : 0 }}>
           <video
@@ -778,23 +1320,6 @@ function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
             onEnded={goNext}
           />
         </Box>
-        {clips.length > 1 && (
-          <IconButton
-            variant="soft"
-            color="neutral"
-            size="sm"
-            onClick={goNext}
-            sx={{
-              position: 'absolute',
-              right: 8,
-              zIndex: 2,
-              bgcolor: 'rgba(0,0,0,0.6)',
-              '&:hover': { bgcolor: 'rgba(0,0,0,0.8)' },
-            }}
-          >
-            <ChevronRight />
-          </IconButton>
-        )}
       </Box>
       {(current?.description || (current?.period != null && current?.clock)) && (
         <CardContent sx={{ py: 1, px: 1.5 }}>
@@ -838,6 +1363,13 @@ function VideoCarouselSection({ content }: { content: VideoCarouselContent }) {
           ))}
         </Box>
       )}
+    </>
+  )
+
+  if (noCard) return inner
+  return (
+    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden' }}>
+      {inner}
     </Card>
   )
 }
@@ -847,6 +1379,9 @@ function RichTextSection({ content }: { content: RichTextContent }) {
 
   const html = useMemo(() => {
     let md = content.markdown || ''
+    if (md.trim().startsWith('<div class="spotlight-stat-table"') || md.trim().startsWith('<table')) {
+      return md
+    }
     // Inline post links: {{post:/feed/slug|Display Text}} → clickable link
     md = md.replace(
       /\{\{post:\/feed\/([^\s|]+)\|([^}]+)\}\}/g,
@@ -880,67 +1415,6 @@ function RichTextSection({ content }: { content: RichTextContent }) {
       }}
       dangerouslySetInnerHTML={{ __html: html }}
     />
-  )
-}
-
-function PostLinkSection({ content }: { content: PostLinkContent }) {
-  const navigate = useNavigate()
-  const typeColors: Record<string, string> = {
-    game_recap: '#FFC72C', player_spotlight: '#60A5FA', team_of_night: '#F59E0B',
-    team_of_week: '#A78BFA', player_of_week: '#34D399', player_of_month: '#F472B6',
-    prop_prediction: '#FB923C', prop_results: '#10B981', injury_report: '#EF4444',
-    upcoming: '#8B5CF6', blog: '#0EA5E9',
-  }
-  const color = typeColors[content.post_type] || '#FFC72C'
-  const typeLabel = content.post_type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-
-  return (
-    <Card
-      variant="outlined"
-      onClick={() => navigate(`/feed/${content.slug}`)}
-      sx={{
-        bgcolor: '#0a0a0a',
-        borderColor: `${color}44`,
-        borderLeft: `3px solid ${color}`,
-        cursor: 'pointer',
-        transition: 'all 0.15s',
-        '&:hover': { borderColor: color, transform: 'translateX(4px)', bgcolor: '#111' },
-      }}
-    >
-      <CardContent sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-        {content.cover_image_url && (
-          <Box
-            component="img"
-            src={content.cover_image_url}
-            alt=""
-            sx={{ width: 72, height: 48, borderRadius: 'sm', objectFit: 'cover', flexShrink: 0 }}
-          />
-        )}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          {content.context && (
-            <Typography level="body-xs" sx={{ color: '#888', mb: 0.5, fontStyle: 'italic' }}>
-              {content.context}
-            </Typography>
-          )}
-          <Stack direction="row" gap={0.5} alignItems="center" sx={{ mb: 0.5 }}>
-            <Chip size="sm" sx={{ bgcolor: `${color}22`, color, fontWeight: 700, fontSize: '0.6rem' }}>
-              {typeLabel}
-            </Chip>
-            {content.team_tricodes?.map(t => (
-              <Chip key={t} size="sm" variant="outlined" sx={{ fontSize: '0.6rem' }}>{t}</Chip>
-            ))}
-          </Stack>
-          <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600 }} noWrap>
-            {content.title}
-          </Typography>
-          {content.subtitle && (
-            <Typography level="body-xs" sx={{ color: '#AAA' }} noWrap>
-              {content.subtitle}
-            </Typography>
-          )}
-        </Box>
-      </CardContent>
-    </Card>
   )
 }
 
@@ -1122,39 +1596,87 @@ function InjuryCardSection({ content }: { content: InjuryCardContent }) {
     DOUBTFUL: '#F59E0B',
     QUESTIONABLE: '#FB923C',
     PROBABLE: '#10B981',
+    'DAY-TO-DAY': '#FB923C',
+  }
+
+  const progressColor: Record<string, string> = {
+    Healthy: '#10B981',
+    Out: '#EF4444',
+    Questionable: '#FF6B35',
+    Probable: '#FFC72C',
   }
 
   return (
     <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222' }}>
-      <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Avatar
-          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
-          sx={{ width: 48, height: 48 }}
-        />
-        <Box sx={{ flex: 1 }}>
-          <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 600 }}>
-            {content.player_name}
-          </Typography>
-          <Typography level="body-xs" sx={{ color: '#888' }}>
-            {content.team_tricode} · {content.injury}
-          </Typography>
-          {content.impact_note && (
-            <Typography level="body-xs" sx={{ color: '#AAA', mt: 0.5, fontStyle: 'italic' }}>
-              {content.impact_note}
+      <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Avatar
+            src={`https://cdn.nba.com/headshots/nba/latest/260x190/${content.player_id}.png`}
+            sx={{ width: 48, height: 48 }}
+          />
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                <Typography level="body-sm" noWrap sx={{ color: '#FFF', fontWeight: 600 }}>
+                  {content.player_name}
+                </Typography>
+                <Chip
+                  size="sm"
+                  sx={{
+                    bgcolor: `${statusColor[content.status] ?? '#888'}22`,
+                    color: statusColor[content.status] ?? '#888',
+                    fontWeight: 700,
+                    fontSize: '0.6rem',
+                    flexShrink: 0,
+                  }}
+                >
+                  {content.status}
+                </Chip>
+                {content.team_tricode && (
+                  <Avatar
+                    src={getTeamLogoUrl(content.team_tricode)}
+                    alt={content.team_tricode}
+                    sx={{ width: 20, height: 20, flexShrink: 0 }}
+                  >
+                    {content.team_tricode.charAt(0)}
+                  </Avatar>
+                )}
+              </Stack>
+            </Stack>
+
+            {/* Season progress bar */}
+            {content.progress_segments && content.progress_segments.length > 0 && (
+              <Box sx={{ position: 'relative', width: '100%', height: 14, borderRadius: '4px', overflow: 'hidden', mt: 0.75 }}>
+                {content.progress_segments.map((seg: InjuryProgressSegment, idx: number) => (
+                  <Box
+                    key={idx}
+                    sx={{
+                      position: 'absolute',
+                      left: `${seg.startPercent}%`,
+                      width: `${seg.widthPercent}%`,
+                      height: '100%',
+                      bgcolor: progressColor[seg.status] ?? '#666',
+                      borderRadius:
+                        idx === 0 && idx === content.progress_segments!.length - 1 ? '4px'
+                          : idx === 0 ? '4px 0 0 4px'
+                            : idx === content.progress_segments!.length - 1 ? '0 4px 4px 0'
+                              : '0',
+                    }}
+                  />
+                ))}
+              </Box>
+            )}
+
+            <Typography level="body-xs" sx={{ color: '#888', mt: 0.5 }}>
+              {content.injury}
             </Typography>
-          )}
+            {content.impact_note && (
+              <Typography level="body-xs" sx={{ color: '#AAA', mt: 0.25, fontStyle: 'italic' }}>
+                {content.impact_note}
+              </Typography>
+            )}
+          </Box>
         </Box>
-        <Chip
-          size="sm"
-          sx={{
-            bgcolor: `${statusColor[content.status] ?? '#888'}22`,
-            color: statusColor[content.status] ?? '#888',
-            fontWeight: 700,
-            fontSize: '0.65rem',
-          }}
-        >
-          {content.status}
-        </Chip>
       </CardContent>
     </Card>
   )
@@ -1374,40 +1896,344 @@ function GameLogSection({ content }: { content: GameLogContent }) {
   )
 }
 
-// ─── Section router ─────────────────────────────────────────
+/** Renders chart sections: radar (recharts) or placeholder for other types. */
+function ChartSection({ content }: { content: ChartContent }) {
+  const { chart_type, chart_props, caption } = content
+  const data = chart_props?.data as Array<{ subject: string; value: number; fullMark: number }> | undefined
 
-function SectionRenderer({ section }: { section: FeedPostSection }) {
-  const { section_type, content, title } = section
+  if (chart_type === 'radar' && data && data.length >= 3) {
+    return (
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 2, overflow: 'hidden' }}>
+        <Box sx={{ width: '100%', height: 280 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <RadarChart data={data} cx="50%" cy="50%" outerRadius="70%">
+              <PolarGrid stroke="#333" />
+              <PolarAngleAxis
+                dataKey="subject"
+                tick={{ fill: '#AAA', fontSize: 11 }}
+                tickLine={{ stroke: '#444' }}
+              />
+              <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: '#666', fontSize: 10 }} />
+              <Radar name="Stats" dataKey="value" stroke="#60A5FA" fill="#60A5FA" fillOpacity={0.4} strokeWidth={2} />
+            </RadarChart>
+          </ResponsiveContainer>
+        </Box>
+        {caption && (
+          <Typography level="body-sm" sx={{ color: '#888', textAlign: 'center', mt: 1 }}>
+            {caption}
+          </Typography>
+        )}
+      </Card>
+    )
+  }
+
+  if (chart_type === 'shot_chart' && Array.isArray((chart_props as any)?.shots)) {
+    const shots = (chart_props as any).shots as any[]
+    const playerName = (chart_props as any).playerName as string | undefined
+    const teamTricode = (chart_props as any).teamTricode as string | undefined
+    return (
+      <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 2, overflow: 'hidden' }}>
+        <Box sx={{ width: '100%', height: 460 }}>
+          <ShotChartTable shots={shots as any} playerName={playerName} teamTricode={teamTricode} />
+        </Box>
+        {caption && (
+          <Typography level="body-sm" sx={{ color: '#888', textAlign: 'center', mt: 1 }}>
+            {caption}
+          </Typography>
+        )}
+      </Card>
+    )
+  }
+
+  if (chart_type === 'bar' && Array.isArray((chart_props as any)?.data)) {
+    const barData = (chart_props as any).data as Array<{ zone: string; fgm: number; missed?: number; fga?: number; pct?: number }>
+    if (barData.length >= 2) {
+      return (
+        <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 2, overflow: 'hidden' }}>
+          <Box sx={{ width: '100%', height: 320 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={barData} layout="vertical" margin={{ top: 10, right: 16, left: 24, bottom: 10 }}>
+                <CartesianGrid stroke="#222" strokeDasharray="3 3" />
+                <XAxis type="number" tick={{ fill: '#AAA', fontSize: 11 }} tickLine={{ stroke: '#444' }} axisLine={{ stroke: '#333' }} />
+                <YAxis
+                  type="category"
+                  dataKey="zone"
+                  width={120}
+                  tick={{ fill: '#AAA', fontSize: 11 }}
+                  tickLine={{ stroke: '#444' }}
+                  axisLine={{ stroke: '#333' }}
+                />
+                <Tooltip
+                  contentStyle={{ background: '#111', border: '1px solid #333', color: '#eee' }}
+                  formatter={(value: any, name: any, props: any) => {
+                    const v = Number(value)
+                    if (!Number.isFinite(v)) return [value, name]
+                    if (name === 'fgm') return [v, 'Made']
+                    if (name === 'missed') return [v, 'Missed']
+                    return [v, String(name)]
+                  }}
+                  labelFormatter={(label: any) => String(label)}
+                />
+                <Legend wrapperStyle={{ color: '#AAA', fontSize: 12 }} />
+                <Bar dataKey="fgm" stackId="a" fill="#4caf50" name="Made" radius={[4, 0, 0, 4]} />
+                <Bar dataKey="missed" stackId="a" fill="#f44336" name="Missed" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+          {caption && (
+            <Typography level="body-sm" sx={{ color: '#888', textAlign: 'center', mt: 1 }}>
+              {caption}
+            </Typography>
+          )}
+        </Card>
+      )
+    }
+  }
+
+  if (chart_type === 'metric_bar' && Array.isArray((chart_props as any)?.data)) {
+    const metrics = (chart_props as any).data as Array<{ label: string; value: number }>
+    if (metrics.length >= 2) {
+      const chartHeight = Math.min(400, 72 + metrics.length * 44)
+      return (
+        <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 2, overflow: 'hidden' }}>
+          <Box sx={{ width: '100%', height: chartHeight }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={metrics} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 8 }}>
+                <CartesianGrid stroke="#222" strokeDasharray="3 3" />
+                <XAxis
+                  type="number"
+                  domain={[0, 100]}
+                  tick={{ fill: '#AAA', fontSize: 11 }}
+                  tickLine={{ stroke: '#444' }}
+                  axisLine={{ stroke: '#333' }}
+                />
+                <YAxis
+                  type="category"
+                  dataKey="label"
+                  width={108}
+                  tick={{ fill: '#AAA', fontSize: 11 }}
+                  tickLine={{ stroke: '#444' }}
+                  axisLine={{ stroke: '#333' }}
+                />
+                <Tooltip
+                  contentStyle={{ background: '#111', border: '1px solid #333', color: '#eee' }}
+                  formatter={(value: number) => [`${Number(value).toFixed(1)}`, '']}
+                />
+                <Bar dataKey="value" fill="#60A5FA" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+          {caption && (
+            <Typography level="body-sm" sx={{ color: '#888', textAlign: 'center', mt: 1 }}>
+              {caption}
+            </Typography>
+          )}
+        </Card>
+      )
+    }
+  }
 
   return (
-    <Box sx={{ mb: 3 }}>
-      {/* Section title (if provided and not a hero/headline — those have their own) */}
-      {title && !['hero', 'headline'].includes(section_type) && (
-        <Typography
-          level="title-sm"
-          sx={{
-            color: '#AAA',
-            fontWeight: 700,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            fontSize: '0.7rem',
-            mb: 1.5,
-          }}
-        >
-          {title}
-        </Typography>
-      )}
+    <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 3, textAlign: 'center' }}>
+      <Typography level="body-sm" sx={{ color: '#888' }}>
+        Chart: {chart_type ?? 'unknown'}
+      </Typography>
+    </Card>
+  )
+}
 
-      {section_type === 'hero' && <HeroSection content={content as HeroContent} />}
+// ─── Section router ─────────────────────────────────────────
+
+function SectionRenderer({
+  section,
+  sectionIndex,
+  activePlayerHighlightSectionIndex,
+  onScrollToPlayer,
+  post,
+  groupPosition,
+  noCard,
+}: {
+  section: FeedPostSection
+  sectionIndex: number
+  activePlayerHighlightSectionIndex: number
+  onScrollToPlayer?: (nbaPlayerId: number) => void
+  post?: FeedPost | null
+  /** When grouped with next/prev section (e.g. video_carousel + player_highlight), remove margin and inner card border so they look like one module */
+  groupPosition?: 'first' | 'last'
+  /** When true, do not wrap in root Box (for embedding inside a single parent Card). */
+  noCard?: boolean
+}) {
+  const navigate = useNavigate()
+  const { section_type, content, title } = section
+  const isActivePlayerHighlight = section_type === 'player_highlight' && sectionIndex === activePlayerHighlightSectionIndex
+
+  const weekRange = useMemo(() => {
+    if (post?.post_type !== 'team_of_week' || !post?.metadata) return undefined
+    const meta = typeof post.metadata === 'string'
+      ? (() => { try { return JSON.parse(post.metadata || '{}') } catch { return {} } })()
+      : post.metadata
+    const start = meta.week_start ?? meta.totw_row?.week_start
+    const end = meta.week_end ?? meta.totw_row?.week_end
+    if (start && end) return { start: String(start), end: String(end) }
+    return undefined
+  }, [post?.post_type, post?.metadata])
+
+  const gameDate = useMemo(() => {
+    if (post?.post_type !== 'team_of_night') return undefined
+    let raw: string | undefined = post.game_date
+    if (!raw && post?.metadata) {
+      const meta = typeof post.metadata === 'string'
+        ? (() => { try { return JSON.parse(post.metadata || '{}') } catch { return {} } })()
+        : post.metadata as Record<string, unknown>
+      raw = (meta?.totn_row as { game_date?: string } | undefined)?.game_date ?? meta?.game_date as string | undefined
+    }
+    if (!raw) return undefined
+    const s = String(raw)
+    return s.includes('T') ? s.slice(0, 10) : s
+  }, [post?.post_type, post?.game_date, post?.metadata])
+
+  const isUuid = (s: string | null | undefined) =>
+    !!s && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
+
+  const handlePlayerClickByNbaId = useCallback(
+    async (nbaPlayerId: number) => {
+      const { data } = await supabase
+        .from('nba_players')
+        .select('id')
+        .eq('nba_player_id', nbaPlayerId)
+        .maybeSingle()
+      if (data?.id) navigate(`/player/${data.id}`)
+    },
+    [navigate]
+  )
+
+  const handlePlayerClickWithOptionalUuid = useCallback(
+    async (playerId: string | null, nbaPlayerId: number) => {
+      if (isUuid(playerId)) {
+        navigate(`/player/${playerId}`)
+        return
+      }
+      await handlePlayerClickByNbaId(nbaPlayerId)
+    },
+    [navigate, handlePlayerClickByNbaId]
+  )
+
+  const rootSx = useMemo(
+    () => ({
+      mb: groupPosition ? 0 : 3,
+      ...(groupPosition === 'first' && {
+        '& > *:last-child': {
+          borderBottom: 'none',
+          borderBottomLeftRadius: 0,
+          borderBottomRightRadius: 0,
+        },
+      }),
+      ...(groupPosition === 'last' && {
+        '& > *:last-child': {
+          borderTop: 'none',
+          borderTopLeftRadius: 0,
+          borderTopRightRadius: 0,
+        },
+      }),
+    }),
+    [groupPosition]
+  )
+
+  const sectionContent = (
+    <>
+      {section_type === 'hero' && post?.post_type !== 'player_spotlight' && (
+        <HeroSection content={content as HeroContent} />
+      )}
       {section_type === 'headline' && <HeadlineSection content={content as HeadlineContent} />}
       {section_type === 'lineup_card' && <LineupCardSection content={content as LineupCardContent} />}
-      {section_type === 'player_highlight' && <PlayerHighlightSection content={content as PlayerHighlightContent} />}
+      {section_type === 'player_highlight' && (
+        <PlayerHighlightSection
+          content={content as PlayerHighlightContent}
+          isActiveSection={isActivePlayerHighlight}
+          weekRange={weekRange}
+          gameDate={gameDate}
+          onPlayerClick={handlePlayerClickByNbaId}
+          hideVideo={post?.post_type === 'player_spotlight'}
+          noCard={noCard}
+        />
+      )}
       {section_type === 'stat_comparison' && <StatComparisonSection content={content as StatComparisonContent} />}
       {section_type === 'video_clip' && <VideoClipSection content={content as VideoClipContent} />}
-      {section_type === 'video_carousel' && <VideoCarouselSection content={content as VideoCarouselContent} />}
+      {section_type === 'video_carousel' && (
+        <VideoCarouselSection content={content as VideoCarouselContent} noCard={noCard} />
+      )}
       {section_type === 'rich_text' && <RichTextSection content={content as RichTextContent} />}
       {section_type === 'prop_card' && <PropCardSection content={content as PropCardContent} />}
       {section_type === 'injury_card' && <InjuryCardSection content={content as InjuryCardContent} />}
+      {section_type === 'injury_module' && (
+        <InjuryModuleDisplay
+          injuries={(content as InjuryModuleContent).injuries}
+          teams={(content as InjuryModuleContent).teams}
+          date={(content as InjuryModuleContent).date}
+          compact
+          onPlayerClick={handlePlayerClickByNbaId}
+        />
+      )}
+      {section_type === 'prop_module' && (
+        <PropModuleDisplay
+          props={(content as PropModuleContent).props}
+          teams={(content as PropModuleContent).teams}
+          date={(content as PropModuleContent).date}
+          mode={(content as PropModuleContent).mode}
+          embedMode={(content as PropModuleContent).embedMode}
+          compact
+          onPlayerClick={handlePlayerClickByNbaId}
+        />
+      )}
+      {section_type === 'team_of_night_module' && (
+        <TeamOfNightModuleDisplay
+          players={(content as TeamOfNightModuleContent).players}
+          date={(content as TeamOfNightModuleContent).date}
+          compact
+          showJersey={true}
+          onPlayerClick={onScrollToPlayer ? (_uuid, nbaId) => onScrollToPlayer(nbaId) : handlePlayerClickWithOptionalUuid}
+        />
+      )}
+      {section_type === 'team_of_week_module' && (
+        <TeamOfWeekModuleDisplay
+          players={(content as TeamOfWeekModuleContent).players}
+          weekName={(content as TeamOfWeekModuleContent).week_name}
+          startDate={(content as TeamOfWeekModuleContent).start_date}
+          endDate={(content as TeamOfWeekModuleContent).end_date}
+          compact
+          onPlayerClick={onScrollToPlayer ? (_uuid, nbaId) => onScrollToPlayer(nbaId) : handlePlayerClickWithOptionalUuid}
+        />
+      )}
+      {section_type === 'tank_module' && (
+        <TankModuleDisplay
+          rows={(content as TankModuleContent).rows}
+          season={(content as TankModuleContent).season}
+          snapshotDate={(content as TankModuleContent).snapshot_date}
+          compact
+          onTeamClick={(internalId) => internalId && navigate(`/team/${internalId}`)}
+          onProspectClick={(id) => navigate(`/prospect/${id}`)}
+        />
+      )}
+      {section_type === 'dfs_module' && (() => {
+        const dfs = content as DfsModuleContent
+        return (
+          <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333', p: 2 }}>
+            <Typography level="title-sm" sx={{ mb: 1 }}>DFS snapshot — {dfs.snapshot_date}</Typography>
+            {dfs.message && <Typography level="body-sm" sx={{ color: 'text.secondary', mb: 1 }}>{dfs.message}</Typography>}
+            {dfs.pools && dfs.pools.length > 0 && (
+              <Stack gap={0.5} sx={{ mt: 1 }}>
+                {dfs.pools.map((p) => (
+                  <Box key={p.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 0.5, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography level="body-sm">{p.name}</Typography>
+                    <Chip size="sm" variant="soft">{p.status}</Chip>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+            <Button size="sm" variant="soft" sx={{ mt: 2 }} onClick={() => navigate('/dfs')}>View DFS</Button>
+          </Card>
+        )
+      })()}
       {section_type === 'pull_quote' && <PullQuoteSection content={content as PullQuoteContent} />}
       {section_type === 'gallery' && <GallerySection content={content as GalleryContent} />}
       {section_type === 'box_score' && <BoxScoreSection content={content as BoxScoreContent} />}
@@ -1415,14 +2241,13 @@ function SectionRenderer({ section }: { section: FeedPostSection }) {
       {section_type === 'post_link' && <PostLinkSection content={content as PostLinkContent} />}
       {section_type === 'tweet_embed' && <TweetEmbedSection content={content as TweetEmbedContent} />}
       {section_type === 'chart' && (
-        <Card variant="outlined" sx={{ bgcolor: '#0a0a0a', borderColor: '#222', p: 3, textAlign: 'center' }}>
-          <Typography level="body-sm" sx={{ color: '#888' }}>
-            Chart: {(content as any)?.chart_type ?? 'unknown'}
-          </Typography>
-        </Card>
+        <ChartSection content={content as ChartContent} />
       )}
-    </Box>
+    </>
   )
+
+  if (noCard) return sectionContent
+  return <Box sx={rootSx}>{sectionContent}</Box>
 }
 
 // ─── Comment component ──────────────────────────────────────
@@ -1486,6 +2311,131 @@ function CommentThread({
   )
 }
 
+// ─── Linked child posts (props / injuries / spotlight) ───────
+
+function parseStoryPostMetadata(post: FeedPost): Record<string, unknown> {
+  if (!post.metadata) return {}
+  if (typeof post.metadata === 'string') {
+    try {
+      return JSON.parse(post.metadata || '{}')
+    } catch {
+      return {}
+    }
+  }
+  return post.metadata as Record<string, unknown>
+}
+
+function LinkedChildPostsStrip({ post }: { post: FeedPost }) {
+  const navigate = useNavigate()
+  const meta = useMemo(() => parseStoryPostMetadata(post), [post.metadata])
+
+  const linkedIds = useMemo(() => {
+    const rows: { id: string; kind: 'props' | 'injuries' }[] = []
+    const p = meta.linked_prop_prediction_post_id
+    const i = meta.linked_injury_post_id
+    if (p) rows.push({ id: String(p), kind: 'props' })
+    if (i) rows.push({ id: String(i), kind: 'injuries' })
+    return rows
+  }, [meta])
+
+  const metaIdList = useMemo(() => linkedIds.map((x) => x.id).filter(Boolean), [linkedIds])
+
+  const { data: linkedRows } = useQuery({
+    queryKey: ['feed-linked-child-posts', post.id, [...metaIdList].sort().join(',')],
+    queryFn: async () => {
+      if (metaIdList.length === 0) return []
+      const { data, error } = await supabase
+        .from('feed_posts')
+        .select('id, slug, title, post_type')
+        .in('id', metaIdList)
+        .eq('status', 'published')
+      if (error) throw error
+      return data ?? []
+    },
+    enabled: metaIdList.length > 0,
+    staleTime: 60_000,
+  })
+
+  const showSpotlight =
+    !!post.game_id && (post.post_type === 'upcoming' || post.post_type === 'game_recap')
+
+  const { data: spotlightRow } = useQuery({
+    queryKey: ['feed-spotlight-linked', post.game_id, post.id],
+    queryFn: async () => {
+      if (!post.game_id) return null
+      const { data, error } = await supabase
+        .from('feed_posts')
+        .select('id, slug, title, post_type')
+        .eq('game_id', post.game_id)
+        .eq('post_type', 'player_spotlight')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+    enabled: showSpotlight,
+    staleTime: 60_000,
+  })
+
+  const items = useMemo(() => {
+    const byId = new Map((linkedRows ?? []).map((r) => [r.id, r]))
+    const out: { slug: string; label: string; color: string }[] = []
+    for (const { id, kind } of linkedIds) {
+      const r = byId.get(id)
+      if (!r?.slug) continue
+      out.push({
+        slug: r.slug,
+        label: kind === 'props' ? 'Prop predictions' : 'Injury report',
+        color: kind === 'props' ? '#FB923C' : '#EF4444',
+      })
+    }
+    if (spotlightRow?.slug && !out.some((o) => o.slug === spotlightRow.slug)) {
+      out.push({ slug: spotlightRow.slug, label: 'Player spotlight', color: '#60A5FA' })
+    }
+    return out
+  }, [linkedIds, linkedRows, spotlightRow])
+
+  if (items.length === 0) return null
+
+  return (
+    <Box
+      sx={{
+        mb: 2,
+        p: 1.5,
+        borderRadius: 'md',
+        border: '1px solid',
+        borderColor: 'rgba(255,255,255,0.12)',
+        bgcolor: 'rgba(255,255,255,0.04)',
+      }}
+    >
+      <Typography level="title-sm" sx={{ color: '#FFF', fontWeight: 700, mb: 1 }}>
+        More for this game
+      </Typography>
+      <Stack direction="row" flexWrap="wrap" gap={1}>
+        {items.map((it) => (
+          <Chip
+            key={it.slug}
+            variant="soft"
+            onClick={() => navigate(`/feed/${it.slug}`)}
+            sx={{
+              cursor: 'pointer',
+              fontWeight: 700,
+              borderColor: it.color,
+              color: it.color,
+              bgcolor: `${it.color}18`,
+              '&:hover': { bgcolor: `${it.color}28` },
+            }}
+          >
+            {it.label}
+          </Chip>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
 // ─── Main component ─────────────────────────────────────────
 
 export default function PostStory() {
@@ -1493,6 +2443,20 @@ export default function PostStory() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
+
+  const isMobile = useMediaQuery('(max-width: 900px)')
+  const reduceMotion = useReducedMotion()
+  const clearFeedScope = useFeedVideoStore((s) => s.clearScope)
+  const clearPostScope = useFeedVideoStore((s) => s.clearScope)
+  useEffect(() => {
+    clearFeedScope('feed')
+  }, [clearFeedScope])
+  useEffect(
+    () => () => {
+      clearPostScope('post')
+    },
+    [clearPostScope]
+  )
 
   const { data: post, isLoading: postLoading, error: postError } = usePostBySlug(slug)
   const { data: sections, isLoading: sectionsLoading } = usePostSections(post?.id)
@@ -1600,6 +2564,132 @@ export default function PostStory() {
     }
   }, [post?.id, user?.id, newComment, replyToId])
 
+  const handleScrollToPlayer = useCallback((nbaPlayerId: number) => {
+    document.getElementById(`player-highlight-${nbaPlayerId}`)?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
+  const handlePlayerClickByNbaId = useCallback(
+    async (nbaPlayerId: number) => {
+      const { data } = await supabase
+        .from('nba_players')
+        .select('id')
+        .eq('nba_player_id', nbaPlayerId)
+        .maybeSingle()
+      if (data?.id) navigate(`/player/${data.id}`)
+    },
+    [navigate]
+  )
+
+  // For player_spotlight: reorder so pull_quote appears below the radar (after last chart)
+  const displaySections = useMemo(() => {
+    const list = sections ?? []
+    if (post?.post_type !== 'player_spotlight') return list
+    const pullQuote = list.find((s) => s.section_type === 'pull_quote')
+    if (!pullQuote) return list
+    const withoutPull = list.filter((s) => s.section_type !== 'pull_quote')
+    const lastChartIdx = withoutPull.reduce((acc, s, i) => (s.section_type === 'chart' ? i : acc), -1)
+    if (lastChartIdx < 0) return list
+    return [
+      ...withoutPull.slice(0, lastChartIdx + 1),
+      pullQuote,
+      ...withoutPull.slice(lastChartIdx + 1),
+    ]
+  }, [sections, post?.post_type])
+
+  const reelInfo = useMemo(
+    () =>
+      displaySections?.length
+        ? getReelVideoFromSections(displaySections)
+        : { url: null as string | null, urls: [] as string[], skipSectionId: null as string | null },
+    [displaySections]
+  )
+  const reelUrls = useMemo(
+    () => (reelInfo.urls.length > 0 ? reelInfo.urls : reelInfo.url ? [reelInfo.url] : []),
+    [reelInfo.urls, reelInfo.url]
+  )
+  /** Mobile: any post with reel URLs. Desktop: player spotlight only (same reel UX as phone). */
+  const showStoryReel =
+    reelUrls.length > 0 &&
+    !!post?.id &&
+    (isMobile || post?.post_type === 'player_spotlight')
+
+  const shouldSkipSectionForReel = useCallback(
+    (section: FeedPostSection) => {
+      if (!showStoryReel || !reelInfo.skipSectionId || section.id !== reelInfo.skipSectionId) return false
+      return true
+    },
+    [showStoryReel, reelInfo.skipSectionId]
+  )
+
+  const spotlightSkip = useMemo(
+    () => buildSpotlightSkipSet(displaySections ?? []),
+    [displaySections]
+  )
+
+  // Injury report: first 3 players from injury_module for header (same idea as prop prediction "three in header")
+  const injuryHeaderPlayers = useMemo(() => {
+    if (post?.post_type !== 'injury_report' || !sections?.length) return []
+    const injurySection = sections.find((s) => s.section_type === 'injury_module')
+    const content = injurySection?.content as InjuryModuleContent | undefined
+    const injuries = content?.injuries
+    if (!Array.isArray(injuries)) return []
+    return injuries.slice(0, 3).map((inj) => ({
+      nba_player_id: inj.nba_player_id,
+      player_name: inj.player_name,
+      team_tricode: inj.team_tricode,
+    }))
+  }, [post?.post_type, sections])
+
+  // Only one player_highlight section "active" at a time so only one video plays; scroll to a section to watch its slideshow
+  const playerHighlightIndices = useMemo(
+    () => displaySections.map((s, i) => (s.section_type === 'player_highlight' ? i : null)).filter((x): x is number => x != null),
+    [displaySections]
+  )
+  const [activePlayerHighlightSectionIndex, setActivePlayerHighlightSectionIndex] = useState<number>(() => playerHighlightIndices[0] ?? 0)
+  const sectionRefsMap = useRef<Map<number, HTMLDivElement | null>>(new Map())
+  const ratioRef = useRef<Map<number, number>>(new Map())
+
+  useEffect(() => {
+    if (playerHighlightIndices.length === 0) return
+    const elements = playerHighlightIndices
+      .map((i) => sectionRefsMap.current.get(i))
+      .filter(Boolean) as HTMLDivElement[]
+    if (elements.length === 0) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const el = entry.target as HTMLDivElement
+          for (const [idx, refEl] of sectionRefsMap.current) {
+            if (refEl === el) {
+              ratioRef.current.set(idx, entry.intersectionRatio)
+              break
+            }
+          }
+        }
+        let bestIndex = playerHighlightIndices[0] ?? 0
+        let bestRatio = 0
+        for (const idx of playerHighlightIndices) {
+          const r = ratioRef.current.get(idx) ?? 0
+          if (r > bestRatio) {
+            bestRatio = r
+            bestIndex = idx
+          }
+        }
+        setActivePlayerHighlightSectionIndex(bestIndex)
+      },
+      { threshold: [0, 0.25, 0.5, 0.75, 1], rootMargin: '-10% 0px -10% 0px' }
+    )
+    elements.forEach((el) => observer.observe(el))
+    return () => observer.disconnect()
+  }, [playerHighlightIndices])
+
+  // When sections load, default active to first player_highlight
+  useEffect(() => {
+    if (playerHighlightIndices.length > 0 && !playerHighlightIndices.includes(activePlayerHighlightSectionIndex)) {
+      setActivePlayerHighlightSectionIndex(playerHighlightIndices[0])
+    }
+  }, [playerHighlightIndices, activePlayerHighlightSectionIndex])
+
   // ─── Loading / error states ─────────────────────────────
 
   if (postLoading || sectionsLoading) {
@@ -1630,23 +2720,319 @@ export default function PostStory() {
     )
   }
 
-  return (
-    <Box sx={{ maxWidth: 720, mx: 'auto', px: { xs: 2, md: 0 }, pt: 2, pb: 12 }}>
-      {/* Back button */}
-      <IconButton
-        onClick={() => navigate('/feed')}
-        sx={{ color: '#888', mb: 2, '&:hover': { color: '#FFF' } }}
+  /** On mobile with reel: stats/charts/engagement sit in article blocks below the hero. */
+  const ScrollShell = showStoryReel ? PostStoryMobileArticleShell : Fragment
+
+  const storyBody = (
+      <Box
+        sx={{
+          maxWidth: '100%',
+          mx: 'auto',
+          px: { xs: 2, md: 0 },
+          pt:
+            showStoryReel && post?.post_type === 'player_spotlight' && !isMobile
+              ? 0
+              : showStoryReel
+                ? 1
+                : 2,
+          pb: 12,
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          bgcolor: '#0d0d0d',
+          minHeight: '100%',
+          overflowX: 'hidden',
+        }}
       >
-        <ArrowBack />
-      </IconButton>
+        {showStoryReel && reelUrls.length > 0 && (
+          <Box
+            sx={{
+              mx: { xs: -2, sm: -2 },
+              width: { xs: 'calc(100% + 32px)', sm: 'calc(100% + 32px)' },
+              maxWidth: post?.post_type === 'player_spotlight' && !isMobile ? 640 : 'none',
+              ...(post?.post_type === 'player_spotlight' && !isMobile ? { mx: 'auto' } : {}),
+            }}
+          >
+            <PostStoryMobileReel
+              postId={post.id}
+              videoUrls={reelUrls}
+              post={post}
+              onBack={() => navigate('/feed')}
+            />
+          </Box>
+        )}
+        {/* Back button + title + subtitle on one row — dark background so compact sections (prop module, etc.) stay legible */}
+        {!showStoryReel && (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            mb: 2,
+            minHeight: 40,
+          }}
+        >
+          <IconButton
+            onClick={() => navigate('/feed')}
+            sx={{ color: '#AAA', flexShrink: 0, '&:hover': { color: '#FFF' } }}
+            aria-label="Back to feed"
+          >
+            <ArrowBack />
+          </IconButton>
+          <Box sx={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            {post.title && (
+              <PostStoryTitleWithTeamLogos
+                post={post}
+                level="title-md"
+                logoSize={32}
+                sx={{
+                  color: '#FFF',
+                  fontWeight: 700,
+                  fontFamily: '"Libre Baskerville", serif',
+                  lineHeight: 1.3,
+                }}
+              />
+            )}
+            {post.subtitle && (
+              <Typography
+                level="body-sm"
+                sx={{ color: '#CCC', lineHeight: 1.3 }}
+              >
+                {post.subtitle}
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        )}
 
-      {/* Sections (hero with gradient is first) */}
-      <Box ref={contentRef}>
-        {(sections ?? []).map((section) => (
-          <SectionRenderer key={section.id} section={section} />
-        ))}
+        <ScrollShell>
+        <LinkedChildPostsStrip post={post} />
 
-        {(!sections || sections.length === 0) && (
+        {/* Injury report: three players in header (like prop predictions) + red injured icon */}
+        {post.post_type === 'injury_report' && injuryHeaderPlayers.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 2,
+              mb: 2,
+              flexWrap: 'wrap',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <LocalHospital sx={{ color: '#EF4444', fontSize: 24 }} aria-hidden />
+              <Typography level="body-sm" sx={{ color: '#AAA', fontWeight: 600 }}>
+                Featured
+              </Typography>
+            </Box>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 1.5,
+                maxWidth: 280,
+              }}
+            >
+              {injuryHeaderPlayers.map((p, i) => (
+                <Box
+                  key={p.nba_player_id}
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 0.5,
+                  }}
+                >
+                  <Avatar
+                    src={`https://cdn.nba.com/headshots/nba/latest/260x190/${p.nba_player_id}.png`}
+                    sx={{
+                      width: 56,
+                      height: 56,
+                      border: '2px solid #333',
+                      '& img': { objectFit: 'cover', width: '100%', height: '100%' },
+                    }}
+                    onClick={() => handlePlayerClickByNbaId(p.nba_player_id)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => e.key === 'Enter' && handlePlayerClickByNbaId(p.nba_player_id)}
+                  />
+                  <Typography level="body-xs" sx={{ color: '#CCC', textAlign: 'center', maxWidth: 72 }} noWrap>
+                    {p.player_name}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        )}
+
+        {/* Sections (hero with gradient is first); for player_spotlight, video_carousel + player_highlight render as one module */}
+        <Box ref={contentRef}>
+        {displaySections.map((section, sectionIndex) => {
+          if (shouldSkipSectionForReel(section)) return null
+          if (spotlightSkip.has(sectionIndex)) return null
+          const spotlightGroup = getSpotlightGroupAtIndex(displaySections, sectionIndex)
+          if (spotlightGroup) {
+            return (
+              <motion.div
+                key={`spotlight-${spotlightGroup[0].id}`}
+                style={{ width: '100%' }}
+                initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.34,
+                  delay: reduceMotion ? 0 : Math.min(sectionIndex, 24) * 0.028,
+                }}
+              >
+                <Box sx={{ mb: 2 }}>
+                  <PostLinkSpotlightCarousel sections={spotlightGroup} />
+                </Box>
+              </motion.div>
+            )
+          }
+          const nextSection = displaySections[sectionIndex + 1]
+          // Skip all headline sections; title + subtitle already shown in header row (lifts everything else)
+          if (section.section_type === 'headline') {
+            return null
+          }
+          const isSpotlightVideoGroup =
+            post?.post_type === 'player_spotlight' &&
+            section.section_type === 'video_carousel' &&
+            nextSection?.section_type === 'player_highlight'
+          if (
+            post?.post_type === 'player_spotlight' &&
+            section.section_type === 'player_highlight' &&
+            displaySections[sectionIndex - 1]?.section_type === 'video_carousel'
+          ) {
+            return null
+          }
+          if (isSpotlightVideoGroup) {
+            // Desktop: player block + carousel. Mobile reel: all clips in hero; only player block here (no duplicate carousel).
+            if (showStoryReel) {
+              return (
+                <motion.div
+                  key={`${section.id}-reel-stats`}
+                  style={{ width: '100%' }}
+                  initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: reduceMotion ? 0 : 0.34,
+                    delay: reduceMotion ? 0 : Math.min(sectionIndex, 24) * 0.028,
+                  }}
+                >
+                  <Card
+                    variant="outlined"
+                    sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden', mb: 3 }}
+                  >
+                    <Box
+                      ref={(el: HTMLDivElement | null) => {
+                        sectionRefsMap.current.set(sectionIndex + 1, el)
+                      }}
+                      id={
+                        nextSection?.section_type === 'player_highlight' &&
+                        (nextSection.content as PlayerHighlightContent)?.player_id != null
+                          ? `player-highlight-${(nextSection.content as PlayerHighlightContent).player_id}`
+                          : undefined
+                      }
+                    >
+                      <SectionRenderer
+                        section={nextSection}
+                        sectionIndex={sectionIndex + 1}
+                        activePlayerHighlightSectionIndex={activePlayerHighlightSectionIndex}
+                        onScrollToPlayer={handleScrollToPlayer}
+                        post={post ?? undefined}
+                        groupPosition="first"
+                        noCard
+                      />
+                    </Box>
+                  </Card>
+                </motion.div>
+              )
+            }
+            // Player block (avatar, name, FP, team, stat row) first, then video below
+            return (
+              <motion.div
+                key={section.id}
+                style={{ width: '100%' }}
+                initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{
+                  duration: reduceMotion ? 0 : 0.34,
+                  delay: reduceMotion ? 0 : Math.min(sectionIndex, 24) * 0.028,
+                }}
+              >
+              <Card
+                variant="outlined"
+                sx={{ bgcolor: '#0a0a0a', borderColor: '#222', overflow: 'hidden', mb: 3 }}
+              >
+                <Box
+                  ref={(el: HTMLDivElement | null) => {
+                    sectionRefsMap.current.set(sectionIndex + 1, el)
+                  }}
+                  id={
+                    nextSection?.section_type === 'player_highlight' && (nextSection.content as PlayerHighlightContent)?.player_id != null
+                      ? `player-highlight-${(nextSection.content as PlayerHighlightContent).player_id}`
+                      : undefined
+                  }
+                >
+                  <SectionRenderer
+                    section={nextSection}
+                    sectionIndex={sectionIndex + 1}
+                    activePlayerHighlightSectionIndex={activePlayerHighlightSectionIndex}
+                    onScrollToPlayer={handleScrollToPlayer}
+                    post={post ?? undefined}
+                    groupPosition="first"
+                    noCard
+                  />
+                </Box>
+                <Box
+                  ref={(el: HTMLDivElement | null) => {
+                    sectionRefsMap.current.set(sectionIndex, el)
+                  }}
+                >
+                  <SectionRenderer
+                    section={section}
+                    sectionIndex={sectionIndex}
+                    activePlayerHighlightSectionIndex={activePlayerHighlightSectionIndex}
+                    onScrollToPlayer={handleScrollToPlayer}
+                    post={post ?? undefined}
+                    groupPosition="last"
+                    noCard
+                  />
+                </Box>
+              </Card>
+              </motion.div>
+            )
+          }
+          return (
+            <motion.div
+              key={section.id}
+              style={{ width: '100%' }}
+              initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{
+                duration: reduceMotion ? 0 : 0.32,
+                delay: reduceMotion ? 0 : Math.min(sectionIndex, 24) * 0.028,
+              }}
+            >
+            <Box
+              ref={(el: HTMLDivElement | null) => {
+                sectionRefsMap.current.set(sectionIndex, el)
+              }}
+              id={section.section_type === 'player_highlight' && (section.content as PlayerHighlightContent)?.player_id != null ? `player-highlight-${(section.content as PlayerHighlightContent).player_id}` : undefined}
+            >
+              <SectionRenderer
+                section={section}
+                sectionIndex={sectionIndex}
+                activePlayerHighlightSectionIndex={activePlayerHighlightSectionIndex}
+                onScrollToPlayer={handleScrollToPlayer}
+                post={post ?? undefined}
+              />
+            </Box>
+            </motion.div>
+          )
+        })}
+
+        {(displaySections.length === 0) && (
           <Typography level="body-md" sx={{ color: '#888', py: 4, textAlign: 'center' }}>
             No story content yet.
           </Typography>
@@ -1772,6 +3158,30 @@ export default function PostStory() {
           )}
         </Box>
       )}
-    </Box>
+        </ScrollShell>
+      </Box>
+  )
+
+  return !isMobile ? (
+    <PostStoryDesktopBlogShell
+      compactTop={post.post_type === 'player_spotlight'}
+      hero={
+        post.post_type === 'player_spotlight'
+          ? undefined
+          : post.cover_image_url
+            ? (
+                <img
+                  src={post.cover_image_url}
+                  alt=""
+                  className="max-h-[min(480px,50vh)] w-full object-cover"
+                />
+              )
+            : undefined
+      }
+    >
+      {storyBody}
+    </PostStoryDesktopBlogShell>
+  ) : (
+    storyBody
   )
 }

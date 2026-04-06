@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500798",
+  "gameMetadata": {
+    "date": "2026-02-19T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612756,
+      "abbreviation": "PHX",
+      "city": "Phoenix",
+      "name": "Suns",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 94,
+      "stats": {
+        "fg_pct": 0.371,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.286,
+        "ast": 22,
+        "reb": 46,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612759,
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "name": "Spurs",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.517,
+        "ft_pct": 0.9,
+        "fg3_pct": 0.351,
+        "ast": 30,
+        "reb": 50,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500798",
+      "LAST_GAME_ID": "0022401182",
+      "LAST_GAME_DATE_EST": "2025-04-11T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612759,
+      "LAST_GAME_HOME_TEAM_CITY": "San Antonio",
+      "LAST_GAME_HOME_TEAM_NAME": "Spurs",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "SAS",
+      "LAST_GAME_HOME_TEAM_POINTS": 98,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612756,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Phoenix",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Suns",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHX",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 117
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500798": {
+      "team_stats": {}
+    }
+  }
+}

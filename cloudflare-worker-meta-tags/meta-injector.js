@@ -238,6 +238,48 @@ async function fetchFeedPost(postId, env) {
   }
 }
 
+async function fetchSharedMockDraft(shareToken, env) {
+  try {
+    const response = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/user_mock_drafts?share_token=eq.${shareToken}&is_shared=eq.true&select=id,draft_year,status,user_id`,
+      {
+        headers: {
+          apikey: env.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && data.length > 0 ? data[0] : null;
+  } catch (e) {
+    console.error('[Worker] fetchSharedMockDraft', e);
+    return null;
+  }
+}
+
+async function fetchSharedSlip(shareToken, env) {
+  try {
+    const response = await fetch(
+      `${env.SUPABASE_URL}/rest/v1/user_slips?share_token=eq.${shareToken}&is_shared=eq.true&select=id,stake_cents,total_odds_decimal,potential_payout_cents,status,game_date`,
+      {
+        headers: {
+          apikey: env.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && data.length > 0 ? data[0] : null;
+  } catch (e) {
+    console.error('[Worker] fetchSharedSlip', e);
+    return null;
+  }
+}
+
 // Fetch player boxscore data from Supabase nba_boxscores table
 async function fetchPlayerBoxscore(nbaPlayerId, gameId, env) {
   try {
@@ -572,6 +614,72 @@ function generatePoolMetaTags(pool, url, poolId, env) {
   `;
 }
 
+function generateMockDraftShareMetaTags(mock, pageUrl, shareToken) {
+  const title = `${mock.draft_year} Mock Draft — HoopGeek`;
+  const description =
+    mock.status === 'completed'
+      ? 'View a completed NBA mock draft on HoopGeek.'
+      : 'View a shared NBA mock draft on HoopGeek.';
+  const urlObj = new URL(pageUrl);
+  const port =
+    urlObj.port && urlObj.port !== '80' && urlObj.port !== '443' ? `:${urlObj.port}` : '';
+  const baseUrl = `${urlObj.protocol}//${urlObj.hostname}${port}`;
+  const ogImageUrl = `${baseUrl}/mock-draft-og-image/${shareToken}`;
+  const httpsImageUrl = ogImageUrl.startsWith('http://') ? ogImageUrl.replace('http://', 'https://') : ogImageUrl;
+  return `
+    <meta property="og:site_name" content="HoopGeek" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${escapeHtml(title)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
+    <meta property="og:image" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:url" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:secure_url" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="${escapeHtml(pageUrl)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(title)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />
+    <meta name="twitter:image" content="${escapeHtml(httpsImageUrl)}" />
+    <meta name="description" content="${escapeHtml(description)}" />
+    <title>${escapeHtml(title)}</title>
+  `;
+}
+
+function generateSharedSlipMetaTags(slip, pageUrl, shareToken) {
+  const odds = Number(slip.total_odds_decimal || 0).toFixed(2);
+  const title = `Parlay ${odds}× — HoopGeek`;
+  const stake = slip.stake_cents != null ? (Number(slip.stake_cents) / 100).toFixed(2) : '—';
+  const payout = slip.potential_payout_cents != null ? (Number(slip.potential_payout_cents) / 100).toFixed(2) : '—';
+  const description = `Stake $${stake} · Payout $${payout} · ${String(slip.status || '').replace(/_/g, ' ')}`;
+  const urlObj = new URL(pageUrl);
+  const port =
+    urlObj.port && urlObj.port !== '80' && urlObj.port !== '443' ? `:${urlObj.port}` : '';
+  const baseUrl = `${urlObj.protocol}//${urlObj.hostname}${port}`;
+  const ogImageUrl = `${baseUrl}/slip-og-image/${shareToken}`;
+  const httpsImageUrl = ogImageUrl.startsWith('http://') ? ogImageUrl.replace('http://', 'https://') : ogImageUrl;
+  return `
+    <meta property="og:site_name" content="HoopGeek" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="${escapeHtml(title)}" />
+    <meta property="og:description" content="${escapeHtml(description)}" />
+    <meta property="og:image" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:url" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:secure_url" content="${escapeHtml(httpsImageUrl)}" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="${escapeHtml(pageUrl)}" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="${escapeHtml(title)}" />
+    <meta name="twitter:description" content="${escapeHtml(description)}" />
+    <meta name="twitter:image" content="${escapeHtml(httpsImageUrl)}" />
+    <meta name="description" content="${escapeHtml(description)}" />
+    <title>${escapeHtml(title)}</title>
+  `;
+}
+
 // Escape HTML to prevent XSS
 function escapeHtml(text) {
   const map = {
@@ -582,6 +690,16 @@ function escapeHtml(text) {
     "'": '&#039;'
   };
   return text.replace(/[&<>"']/g, m => map[m]);
+}
+
+/** Minimal 1200×630 SVG for shared mock draft / slip previews */
+function buildSimpleOgSvg(title, subtitle) {
+  const safe = (s) =>
+    String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  return `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630"><rect width="1200" height="630" fill="#0f0f12"/><text x="80" y="220" fill="#f4f4f5" font-family="system-ui,sans-serif" font-size="52" font-weight="700">${safe(title)}</text><text x="80" y="300" fill="#a1a1aa" font-family="system-ui,sans-serif" font-size="30">${safe(subtitle)}</text></svg>`;
 }
 
 // Inject meta tags into HTML
@@ -2205,6 +2323,36 @@ export default {
     const url = new URL(request.url);
     const userAgent = request.headers.get('user-agent') || '';
     
+    const mockDraftOgPath = url.pathname.match(/^\/mock-draft-og-image\/([a-f0-9-]{36})$/i);
+    if (mockDraftOgPath) {
+      const token = mockDraftOgPath[1];
+      const mock = await fetchSharedMockDraft(token, env);
+      const title = mock ? `${mock.draft_year} Mock Draft` : 'Mock Draft';
+      const svg = buildSimpleOgSvg(title, 'HoopGeek');
+      return new Response(svg, {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+
+    const slipOgPath = url.pathname.match(/^\/slip-og-image\/([a-f0-9-]{36})$/i);
+    if (slipOgPath) {
+      const token = slipOgPath[1];
+      const slip = await fetchSharedSlip(token, env);
+      const title = slip ? `Parlay ${Number(slip.total_odds_decimal).toFixed(2)}×` : 'Bet slip';
+      const svg = buildSimpleOgSvg(title, 'HoopGeek');
+      return new Response(svg, {
+        headers: {
+          'Content-Type': 'image/svg+xml; charset=utf-8',
+          'Cache-Control': 'public, max-age=300',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
+    
     // Handle /dfs-og-image/:poolId route (on-demand DFS pool OG image generation)
     const dfsOgImageMatch = url.pathname.match(/^\/dfs-og-image\/([^\/]+)$/)
     if (dfsOgImageMatch) {
@@ -3171,7 +3319,58 @@ export default {
       }
     }
     
-    
+    const mockDraftSharePageMatch = url.pathname.match(/^\/mock-draft\/([a-f0-9-]{36})$/i);
+    if (mockDraftSharePageMatch) {
+      const shareToken = mockDraftSharePageMatch[1];
+      const mock = await fetchSharedMockDraft(shareToken, env);
+      if (mock) {
+        const originRequest = new Request(request.url, {
+          method: request.method,
+          headers: request.headers,
+        });
+        const response = await fetch(originRequest);
+        if (!response.ok) return response;
+        const html = await response.text();
+        const metaTags = generateMockDraftShareMetaTags(mock, request.url, shareToken);
+        const modifiedHtml = injectMetaTags(html, metaTags);
+        return new Response(modifiedHtml, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: {
+            ...Object.fromEntries(response.headers),
+            'Content-Type': 'text/html;charset=UTF-8',
+            'Cache-Control': 'public, max-age=300',
+          },
+        });
+      }
+    }
+
+    const sharedSlipPageMatch = url.pathname.match(/^\/slip\/([a-f0-9-]{36})$/i);
+    if (sharedSlipPageMatch) {
+      const shareToken = sharedSlipPageMatch[1];
+      const slip = await fetchSharedSlip(shareToken, env);
+      if (slip) {
+        const originRequest = new Request(request.url, {
+          method: request.method,
+          headers: request.headers,
+        });
+        const response = await fetch(originRequest);
+        if (!response.ok) return response;
+        const html = await response.text();
+        const metaTags = generateSharedSlipMetaTags(slip, request.url, shareToken);
+        const modifiedHtml = injectMetaTags(html, metaTags);
+        return new Response(modifiedHtml, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: {
+            ...Object.fromEntries(response.headers),
+            'Content-Type': 'text/html;charset=UTF-8',
+            'Cache-Control': 'public, max-age=300',
+          },
+        });
+      }
+    }
+
     // For non-bot requests or non-matching URLs, pass through to origin
     return fetch(request);
   }

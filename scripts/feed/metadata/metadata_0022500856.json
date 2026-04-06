@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500856",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612740,
+      "abbreviation": "NOP",
+      "city": "New Orleans",
+      "name": "Pelicans",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 129,
+      "stats": {
+        "fg_pct": 0.523,
+        "ft_pct": 0.889,
+        "fg3_pct": 0.382,
+        "ast": 37,
+        "reb": 40,
+        "tov": 18
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612762,
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "name": "Jazz",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 118,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.64,
+        "fg3_pct": 0.324,
+        "ast": 28,
+        "reb": 37,
+        "tov": 18
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500856",
+      "LAST_GAME_ID": "0022400872",
+      "LAST_GAME_DATE_EST": "2025-03-02T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612762,
+      "LAST_GAME_HOME_TEAM_CITY": "Utah",
+      "LAST_GAME_HOME_TEAM_NAME": "Jazz",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "UTA",
+      "LAST_GAME_HOME_TEAM_POINTS": 121,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612740,
+      "LAST_GAME_VISITOR_TEAM_CITY": "New Orleans",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Pelicans",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "NOP",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 128
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500856": {
+      "team_stats": {}
+    }
+  }
+}

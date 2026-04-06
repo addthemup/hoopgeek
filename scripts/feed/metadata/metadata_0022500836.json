@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500836",
+  "gameMetadata": {
+    "date": "2026-02-24T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612766,
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "name": "Hornets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 131,
+      "stats": {
+        "fg_pct": 0.516,
+        "ft_pct": 0.889,
+        "fg3_pct": 0.439,
+        "ast": 31,
+        "reb": 46,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 99,
+      "stats": {
+        "fg_pct": 0.427,
+        "ft_pct": 0.867,
+        "fg3_pct": 0.4,
+        "ast": 18,
+        "reb": 33,
+        "tov": 19
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500836",
+      "LAST_GAME_ID": "0022401133",
+      "LAST_GAME_DATE_EST": "2025-04-06T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612741,
+      "LAST_GAME_HOME_TEAM_CITY": "Chicago",
+      "LAST_GAME_HOME_TEAM_NAME": "Bulls",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 131,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612766,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Charlotte",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hornets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CHA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 117
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500836": {
+      "team_stats": {}
+    }
+  }
+}

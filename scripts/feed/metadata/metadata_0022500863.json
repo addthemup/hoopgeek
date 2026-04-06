@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500863",
+  "gameMetadata": {
+    "date": "2026-02-28T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 93,
+      "stats": {
+        "fg_pct": 0.407,
+        "ft_pct": 0.632,
+        "fg3_pct": 0.234,
+        "ast": 22,
+        "reb": 39,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612766,
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "name": "Hornets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 109,
+      "stats": {
+        "fg_pct": 0.418,
+        "ft_pct": 0.68,
+        "fg3_pct": 0.381,
+        "ast": 24,
+        "reb": 55,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500863",
+      "LAST_GAME_ID": "0022400810",
+      "LAST_GAME_DATE_EST": "2025-02-22T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612766,
+      "LAST_GAME_HOME_TEAM_CITY": "Charlotte",
+      "LAST_GAME_HOME_TEAM_NAME": "Hornets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHA",
+      "LAST_GAME_HOME_TEAM_POINTS": 88,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612757,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Portland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "POR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 141
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500863": {
+      "team_stats": {}
+    }
+  }
+}

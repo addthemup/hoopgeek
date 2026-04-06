@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500825",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612752,
+      "abbreviation": "NYK",
+      "city": "New York",
+      "name": "Knicks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 105,
+      "stats": {
+        "fg_pct": 0.452,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.357,
+        "ast": 27,
+        "reb": 50,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 99,
+      "stats": {
+        "fg_pct": 0.395,
+        "ft_pct": 0.714,
+        "fg3_pct": 0.348,
+        "ast": 24,
+        "reb": 50,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500825",
+      "LAST_GAME_ID": "0022400792",
+      "LAST_GAME_DATE_EST": "2025-02-20T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612741,
+      "LAST_GAME_HOME_TEAM_CITY": "Chicago",
+      "LAST_GAME_HOME_TEAM_NAME": "Bulls",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 111,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612752,
+      "LAST_GAME_VISITOR_TEAM_CITY": "New York",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Knicks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "NYK",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500825": {
+      "team_stats": {}
+    }
+  }
+}

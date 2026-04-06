@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Box,
@@ -14,6 +14,8 @@ import {
   IconButton,
   Chip,
   Table,
+  Select,
+  Option,
 } from '@mui/joy';
 import { Save, Refresh, DragIndicator } from '@mui/icons-material';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
@@ -21,6 +23,9 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '../utils/supabase';
 import { useIsAdmin } from '../hooks/useIsAdmin';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
+import { DEFAULT_FEED_MODULES } from '../hooks/useFeedModuleVisibility';
+import type { FeedDesktopDrawerLayout } from '../utils/feedDrawerDesktopPack';
 
 interface FeedModuleVisibilityRow {
   id?: string;
@@ -29,24 +34,35 @@ interface FeedModuleVisibilityRow {
   display_order: number;
   grid_size: number;
   grid_size_mobile: number;
+  desktop_layout?: FeedDesktopDrawerLayout;
   created_at?: string;
   updated_at?: string;
 }
 
+/** Modules that are not placed in the 2×2 drawer carousel (full-width header strip only). */
+const DESKTOP_LAYOUT_NOT_APPLICABLE = new Set(['games_carousel']);
+
 const FEED_MODULE_DEFINITIONS = [
   { id: 'games_carousel', name: 'Games Carousel', description: 'Horizontal scrollable game cards' },
-  { id: 'feed_posts', name: 'Feed Posts', description: 'Card grid of published stories' },
-  { id: 'prop_predictions', name: 'Prop Predictions', description: 'Best props for today' },
+  {
+    id: 'prop_predictions',
+    name: 'Prop predictions (legacy)',
+    description: 'Deprecated — replaced by Over / Under / Team conf / Player conf modules',
+  },
+  { id: 'prop_predictions_over', name: 'Prop predictions — Over', description: 'Last-10 hit rate, over side' },
+  { id: 'prop_predictions_under', name: 'Prop predictions — Under', description: 'Last-10 hit rate, under side' },
+  { id: 'prop_predictions_team_confidence', name: 'Prop predictions — Team confidence', description: 'Team-based confidence vs opponent defense' },
+  { id: 'prop_predictions_player_confidence', name: 'Prop predictions — Player confidence', description: 'Player-based confidence vs opponent allowed stats' },
+  { id: 'slip_builder', name: 'Slip Builder', description: 'Build parlays from props; save and track slips' },
   { id: 'prop_performance', name: 'Prop Performance', description: 'Historical prop hit rates' },
   { id: 'standings', name: 'Standings', description: 'NBA conference standings' },
   { id: 'favorite_players', name: 'Favorite Players', description: 'User favorite players' },
-  { id: 'team_of_night_live', name: 'Team of the Night (Live)', description: 'Live games in progress' },
-  { id: 'team_of_night_past', name: 'Team of the Night (Past)', description: 'Top performers from completed games' },
+  { id: 'totn_totw', name: 'Team of the Night / Week', description: 'TOTN and TOTW in one module with tabs' },
   { id: 'leaders', name: 'Leaders', description: 'Season stat leaders' },
   { id: 'injuries', name: 'Injuries', description: 'NBA injury report' },
-  { id: 'team_of_week', name: 'Team of the Week', description: 'Top performers for the week' },
   { id: 'best_games', name: 'Best Games', description: 'Top games by Fun Score' },
   { id: 'draft', name: 'Draft', description: 'Aggregate draft prospect rankings (top 30 in drawer; full list at /draft)' },
+  { id: 'dfs_pools', name: 'DFS Pools', description: 'Upcoming/public DFS pools in drawer; links to /dfs' },
 ];
 
 export default function AdminFeed() {
@@ -76,41 +92,83 @@ export default function AdminFeed() {
     },
   });
 
-  const [localModules, setLocalModules] = useState<Record<string, { is_visible: boolean; grid_size: number; grid_size_mobile: number; display_order: number }>>({});
+  const [localModules, setLocalModules] = useState<
+    Record<
+      string,
+      {
+        is_visible: boolean;
+        grid_size: number;
+        grid_size_mobile: number;
+        display_order: number;
+        desktop_layout: FeedDesktopDrawerLayout;
+      }
+    >
+  >({});
   const [moduleOrder, setModuleOrder] = useState<string[]>([]);
-  const hasInitialized = useRef(false);
+  /** True after local edits; blocks syncing from server refetches until Save (avoids overwriting toggles). */
+  const localDirtyRef = useRef(false);
 
-  const displayModules = (modules ?? []).length > 0
-    ? modules!
-    : FEED_MODULE_DEFINITIONS.map((def, index) => ({
-        id: undefined,
-        module_name: def.id,
-        is_visible: true,
-        display_order: index,
-        grid_size: def.id === 'games_carousel' || def.id === 'feed_posts' ? 12 : 4,
-        grid_size_mobile: 12,
-      })) as FeedModuleVisibilityRow[];
+  // Build list for admin: use DB rows when present, and merge in any FEED_MODULE_DEFINITIONS
+  // that are missing from DB (e.g. dfs_pools) so they appear in the drawer list and can be reordered.
+  const displayModules = useMemo((): FeedModuleVisibilityRow[] => {
+    const dbModules = ((modules ?? []) as FeedModuleVisibilityRow[]).filter((m) => m.module_name !== 'feed_posts');
+    const dbByName = new Map(dbModules.map((m) => [m.module_name, m]));
+    const sortedDb = [...dbModules].sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const missingDefs = FEED_MODULE_DEFINITIONS.filter((d) => !dbByName.has(d.id));
+    const nextOrder = sortedDb.length > 0 ? Math.max(...sortedDb.map((m) => m.display_order ?? 0)) + 1 : 0;
+    if (sortedDb.length > 0) {
+      return [
+        ...sortedDb,
+        ...missingDefs.map((def, i) => ({
+          id: undefined,
+          module_name: def.id,
+          is_visible: true,
+          display_order: nextOrder + i,
+          grid_size: def.id === 'games_carousel' ? 12 : 4,
+          grid_size_mobile: 12,
+          desktop_layout: DEFAULT_FEED_MODULES[def.id as keyof typeof DEFAULT_FEED_MODULES]?.desktop_layout ?? 'cell',
+        })),
+      ] as FeedModuleVisibilityRow[];
+    }
+    return FEED_MODULE_DEFINITIONS.map((def, index) => ({
+      id: undefined,
+      module_name: def.id,
+      is_visible: true,
+      display_order: index,
+      grid_size: def.id === 'games_carousel' ? 12 : 4,
+      grid_size_mobile: 12,
+      desktop_layout: DEFAULT_FEED_MODULES[def.id as keyof typeof DEFAULT_FEED_MODULES]?.desktop_layout ?? 'cell',
+    })) as FeedModuleVisibilityRow[];
+  }, [modules]);
 
+  // Sync form state whenever server data is available. The old hasInitialized ref only ran once and
+  // could lock in placeholder defaults before the query finished, so toggles/saves did not match the DB.
   useEffect(() => {
-    if (!displayModules.length || hasInitialized.current) return;
+    if (modulesLoading || !displayModules.length) return;
+    if (localDirtyRef.current) return;
     const sorted = [...displayModules].sort((a, b) => a.display_order - b.display_order);
     const state: Record<string, { is_visible: boolean; grid_size: number; grid_size_mobile: number; display_order: number }> = {};
     const order: string[] = [];
     sorted.forEach((m, i) => {
+      const defLayout =
+        DEFAULT_FEED_MODULES[m.module_name as keyof typeof DEFAULT_FEED_MODULES]?.desktop_layout ?? 'cell';
+      const dl = m.desktop_layout ?? defLayout;
       state[m.module_name] = {
         is_visible: m.is_visible,
         grid_size: m.grid_size ?? 4,
         grid_size_mobile: m.grid_size_mobile ?? 12,
         display_order: i,
+        desktop_layout:
+          dl === 'tall' || dl === 'wide' || dl === 'full' || dl === 'cell' ? dl : 'cell',
       };
       order.push(m.module_name);
     });
     setLocalModules(state);
     setModuleOrder(order);
-    hasInitialized.current = true;
-  }, [displayModules]);
+  }, [modulesLoading, displayModules, modules]);
 
   const handleToggle = (moduleName: string) => {
+    localDirtyRef.current = true;
     setLocalModules((prev) => ({
       ...prev,
       [moduleName]: {
@@ -120,9 +178,21 @@ export default function AdminFeed() {
     }));
   };
 
+  const handleDesktopLayout = (moduleName: string, value: FeedDesktopDrawerLayout) => {
+    localDirtyRef.current = true;
+    setLocalModules((prev) => ({
+      ...prev,
+      [moduleName]: {
+        ...prev[moduleName]!,
+        desktop_layout: value,
+      },
+    }));
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
+    localDirtyRef.current = true;
     setModuleOrder((items) => {
       const oldIndex = items.indexOf(active.id as string);
       const newIndex = items.indexOf(over.id as string);
@@ -147,6 +217,7 @@ export default function AdminFeed() {
         display_order: index,
         grid_size: local?.grid_size ?? 4,
         grid_size_mobile: local?.grid_size_mobile ?? 12,
+        desktop_layout: local?.desktop_layout ?? 'cell',
         updated_at: new Date().toISOString(),
       };
     });
@@ -159,11 +230,13 @@ export default function AdminFeed() {
       console.error('Save feed module visibility error:', error);
       throw new Error(error.message);
     }
+    localDirtyRef.current = false;
+    console.info('[AdminFeed] feed_module_visibility saved', { rows: updates.length });
     updateMutation.mutate();
   };
 
   const handleReset = () => {
-    hasInitialized.current = false;
+    localDirtyRef.current = false;
     queryClient.invalidateQueries({ queryKey: ['feed-module-visibility'] });
   };
 
@@ -172,11 +245,18 @@ export default function AdminFeed() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  function SortableRow({ moduleName }: { moduleName: string }) {
+  function SortableRow({
+    moduleName,
+    onDesktopLayout,
+  }: {
+    moduleName: string;
+    onDesktopLayout: (name: string, value: FeedDesktopDrawerLayout) => void;
+  }) {
     const def = FEED_MODULE_DEFINITIONS.find((d) => d.id === moduleName);
     const local = localModules[moduleName];
     const isVisible = local?.is_visible ?? true;
-    const isFeedPosts = moduleName === 'feed_posts';
+    const layoutApplicable = !DESKTOP_LAYOUT_NOT_APPLICABLE.has(moduleName);
+    const desktopLayout = local?.desktop_layout ?? 'cell';
 
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: moduleName });
     const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
@@ -200,24 +280,37 @@ export default function AdminFeed() {
             <Typography level="body-sm" sx={{ color: isVisible ? '#FFFFFF' : '#666666', fontWeight: 500 }}>
               {def?.name ?? moduleName}
             </Typography>
-            {isFeedPosts && (
-              <Chip size="sm" variant="soft" color="primary" sx={{ height: 18, fontSize: '0.65rem' }}>Main page</Chip>
-            )}
-            {!isVisible && !isFeedPosts && (
+            {!isVisible && (
               <Chip size="sm" variant="soft" color="neutral" sx={{ height: 18, fontSize: '0.65rem' }}>Hidden</Chip>
             )}
           </Box>
         </td>
-        <td style={{ textAlign: 'center' }}>
-          {isFeedPosts ? (
-            <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>—</Typography>
+        <td>
+          {!layoutApplicable ? (
+            <Typography level="body-xs" sx={{ color: '#666' }}>
+              —
+            </Typography>
           ) : (
-            <Switch
-              checked={isVisible}
-              onChange={() => handleToggle(moduleName)}
-              sx={{ '--Switch-thumbSize': '16px', '--Switch-trackWidth': '36px', '--Switch-trackHeight': '20px' }}
-            />
+            <Select
+              size="sm"
+              value={desktopLayout}
+              onChange={(_, v) => v && onDesktopLayout(moduleName, v as FeedDesktopDrawerLayout)}
+              slotProps={{ listbox: { sx: { zIndex: 2000 } } }}
+              sx={{ minWidth: 140 }}
+            >
+              <Option value="cell">1×1 cell</Option>
+              <Option value="tall">Tall (full height)</Option>
+              <Option value="wide">Wide (full width)</Option>
+              <Option value="full">Full slide</Option>
+            </Select>
           )}
+        </td>
+        <td style={{ textAlign: 'center' }}>
+          <Switch
+            checked={isVisible}
+            onChange={() => handleToggle(moduleName)}
+            sx={{ '--Switch-thumbSize': '16px', '--Switch-trackWidth': '36px', '--Switch-trackHeight': '20px' }}
+          />
         </td>
       </tr>
     );
@@ -238,7 +331,8 @@ export default function AdminFeed() {
           Drawer Modules
         </Typography>
         <Typography level="body-sm" sx={{ color: '#B0B0B0', mb: 3 }}>
-          Choose which modules appear in the drawer on /feed/. The feed is the only content on the page; a button opens this drawer. Drag to reorder.
+          Choose which modules appear in the /feed/ inset drawer (Home, Props, DFS, Draft tabs). The main story feed is always on the page; a button opens this drawer. Drag to reorder.
+          Desktop uses a 2×2 carousel per tab; <strong>Desktop tile</strong> sets how each module fits (quarter, tall column, wide row, or full slide).
         </Typography>
 
         {modulesLoading || moduleOrder.length === 0 ? (
@@ -251,12 +345,13 @@ export default function AdminFeed() {
                   <tr>
                     <th style={{ width: 40, color: '#FFFFFF' }} />
                     <th style={{ color: '#FFFFFF' }}>Module</th>
+                    <th style={{ width: 160, color: '#FFFFFF' }}>Desktop tile</th>
                     <th style={{ width: 80, color: '#FFFFFF', textAlign: 'center' }}>In drawer</th>
                   </tr>
                 </thead>
                 <tbody>
                   {moduleOrder.map((name) => (
-                    <SortableRow key={name} moduleName={name} />
+                    <SortableRow key={name} moduleName={name} onDesktopLayout={handleDesktopLayout} />
                   ))}
                 </tbody>
               </Table>
@@ -267,13 +362,6 @@ export default function AdminFeed() {
         <Box sx={{ mt: 3 }}>
           <Typography level="title-sm" sx={{ color: '#FFFFFF', mb: 2 }}>Preview</Typography>
           <Stack spacing={2}>
-            <Box>
-              <Typography level="body-xs" sx={{ color: '#888', textTransform: 'uppercase', mb: 1 }}>Main page</Typography>
-              <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333', p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 56 }}>
-                <Typography level="body-sm" sx={{ color: '#FFF', fontWeight: 500 }}>Feed Posts</Typography>
-                <Chip size="sm" variant="soft" color="primary" sx={{ ml: 1 }}>Full width</Chip>
-              </Card>
-            </Box>
             <Box>
               <Typography level="body-xs" sx={{ color: '#888', textTransform: 'uppercase', mb: 1 }}>Inset drawer (when user taps &quot;More&quot;)</Typography>
               <Box
@@ -294,7 +382,7 @@ export default function AdminFeed() {
                   }}
                 >
                   {moduleOrder
-                    .filter((name) => name !== 'feed_posts' && localModules[name]?.is_visible)
+                    .filter((name) => localModules[name]?.is_visible)
                     .map((name) => {
                       const def = FEED_MODULE_DEFINITIONS.find((d) => d.id === name);
                       return (
@@ -319,7 +407,7 @@ export default function AdminFeed() {
                       );
                     })}
                 </Box>
-                {moduleOrder.filter((name) => name !== 'feed_posts' && localModules[name]?.is_visible).length === 0 && (
+                {moduleOrder.filter((name) => localModules[name]?.is_visible).length === 0 && (
                   <Typography level="body-sm" sx={{ color: '#888' }}>No modules in drawer</Typography>
                 )}
               </Box>
@@ -361,7 +449,7 @@ export default function AdminFeed() {
   return (
     <Box
       sx={{
-        maxWidth: 1200,
+        maxWidth: CONTENT_MAX_WIDTH,
         mx: 'auto',
         px: { xs: 1.5, sm: 2, md: 3 },
         pt: { xs: 2, md: 3 },

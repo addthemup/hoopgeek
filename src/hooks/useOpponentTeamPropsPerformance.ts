@@ -4,6 +4,7 @@ import { calculatePropResult } from '../utils/playerPropsCalculator';
 import { matchPropsGamesToNbaGames, matchPropsGameToNbaGame } from '../utils/matchPropsGamesToNbaGames';
 import { filterFullGameProps } from '../utils/playerPropsFilter';
 import { utcToESTDate } from '../utils/nbaDateUtils';
+import dayjs from 'dayjs';
 
 export interface OpponentTeamPropsPerformanceData {
   opponentTeamTricode: string;
@@ -67,11 +68,13 @@ export function useOpponentTeamPropsPerformance(
         return null;
       }
 
-      // Get opponent team's last 10 *completed* games (include team names + city for matching when ppg.nba_game_id is null)
+      // Get opponent team's recent historical games by date.
+      // We avoid relying solely on game_status=3 because status backfills can lag.
+      const historicalCutoff = dayjs().add(1, 'day').startOf('day').toISOString();
       const { data: teamGames, error: gamesError } = await supabase
         .from('nba_games')
         .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_name, away_team_name, home_team_city, away_team_city')
-        .eq('game_status', 3) // 3 = Final (finished)
+        .lt('game_date', historicalCutoff)
         .or(`home_team_tricode.eq.${opponentTeamTricode},away_team_tricode.eq.${opponentTeamTricode}`)
         .order('game_date', { ascending: false })
         .limit(10);

@@ -1,16 +1,13 @@
 import { useEffect } from 'react'
 import { Routes, Route, useParams, Navigate } from 'react-router-dom'
-import { Box } from '@mui/joy'
 import Layout from './components/Layout'
 import ScrollToTop from './components/ScrollToTop'
-import Today from './pages/Today'
 import PropPredictions from './pages/PropPredictions'
 import DFS from './pages/DFS'
 import DFSLineup from './pages/DFSLineup'
 import DFSPoolDetails from './pages/DFSPoolDetails'
 import JoinDFSPool from './pages/JoinDFSPool'
 import JoinDFSGroup from './pages/JoinDFSGroup'
-import GamePage from './pages/GamePage'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import League from './pages/League'
@@ -27,7 +24,6 @@ import Betting from './pages/Betting'
 import JoinLeague from './pages/JoinLeague'
 import EditRosterSettings from './pages/EditRosterSettings'
 import CommissionerTools from './pages/CommissionerTools'
-import UserSettings from './pages/UserSettings'
 import PlayerPage from './pages/PlayerPage'
 import TeamPage from './pages/TeamPage'
 import ProspectPage from './pages/ProspectPage'
@@ -40,25 +36,32 @@ import TeamOfNightPage from './pages/TeamOfNightPage'
 
 // Import Highlights and Post pages
 import Highlights from './pages/Highlights'
+import GamesHub from './pages/GamesHub'
+import GamePage from './pages/GamePage'
 import PostStory from './pages/PostStory'
 import Post from './pages/Post'
 import PostCreator from './pages/PostCreator'
+import FeedLayout from './components/Feed/FeedLayout'
+import ProfilePage from './pages/ProfilePage'
+import MockDraftSharePage from './pages/MockDraftSharePage'
+import SharedSlipPage from './pages/SharedSlipPage'
+import Props from './pages/Props'
 
 // Fantasy feature disabled – draft manager service not loaded
 // import './services/draftManagerService'
 
 const Analysis = () => (
-  <Box sx={{ textAlign: 'center', py: 8 }}>
+  <div className="text-center py-8">
     <h1>📊 Basketball Analysis</h1>
     <p>Advanced analytics and insights coming soon</p>
-  </Box>
+  </div>
 )
 
 const Community = () => (
-  <Box sx={{ textAlign: 'center', py: 8 }}>
+  <div className="text-center py-8">
     <h1>💬 Community</h1>
     <p>Discussions and debates coming soon</p>
-  </Box>
+  </div>
 )
 
 // Wrapper component for DeleteLeague to extract leagueId from URL params
@@ -159,56 +162,40 @@ function useSingleVideoPlay() {
 
 function App() {
   useSingleVideoPlay()
+  const gameFirstHomeEnabled = String(import.meta.env.VITE_ENABLE_GAME_FIRST_HOME ?? 'true').toLowerCase() !== 'false'
 
   return (
-    <Box sx={{ 
-      minHeight: '100vh',
-      width: '100%',
-      maxWidth: '100vw',
-      position: 'relative',
-      backgroundColor: 'background.body',
-      // Newspaper texture overlay - adapts to dark/light mode
-      backgroundImage: (theme) => `
-        repeating-linear-gradient(
-          0deg,
-          transparent,
-          transparent 2px,
-          ${theme.palette.mode === 'dark' 
-            ? 'rgba(255,255,255,.015)' 
-            : 'rgba(0,0,0,.015)'
-          } 2px,
-          ${theme.palette.mode === 'dark' 
-            ? 'rgba(255,255,255,.015)' 
-            : 'rgba(0,0,0,.015)'
-          } 4px
-        )
-      `,
-      fontFamily: 'var(--joy-fontFamily-body)',
-    }}>
+    <div className="app-root">
       <ScrollToTop />
       <Routes>
         {/* Public routes without layout */}
         <Route path="/join/:inviteCode" element={<JoinLeague />} />
         
         <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/feed" replace />} />
-          <Route path="feed" element={<Highlights />} />
-          <Route path="feed/:slug" element={<PostStory />} />
+          {/* Single persistent drawer shell for Home/Props/DFS/Draft + story view. */}
+          <Route element={<FeedLayout />}>
+            <Route index element={gameFirstHomeEnabled ? <GamesHub /> : <Highlights />} />
+            <Route path="props" element={<Props />} />
+            <Route path="dfs" element={<DFS />} />
+            <Route path="draft" element={<DraftProspectsPage />} />
+            <Route path="game/:id" element={<GamePage />} />
+
+            {/* Backwards-compatible /feed/* aliases (kept for existing links). */}
+            <Route path="feed" element={<Navigate to="/" replace />} />
+            <Route path="feed/prop-predictions" element={<Navigate to="/props" replace />} />
+            <Route path="feed/:slug" element={<PostStory />} />
+          </Route>
           <Route path="login" element={<Login />} />
           
           {/* DFS Routes */}
-          <Route path="dfs" element={<DFS />} />
           <Route path="dfs/join/:poolId" element={<JoinDFSPool />} />
           <Route path="dfs/group/:slug" element={<JoinDFSGroup />} />
           <Route path="dfs/lineup/:poolId" element={<DFSLineup />} />
           <Route path="dfs/pool/:poolId" element={<DFSPoolDetails />} />
           
-          {/* Game Highlights Routes */}
-          <Route path="game/:id" element={<GamePage />} />
-          
-          {/* Today Route - more specific routes first */}
+          {/* Team of the Night (was under /today/totn; /today redirects to feed) */}
           <Route path="today/totn" element={<TeamOfNightPage />} />
-          <Route path="today" element={<Today />} />
+          <Route path="today" element={<Navigate to="/" replace />} />
           <Route path="prop-predictions/:date" element={<PropPredictions />} />
           
           {/* Fantasy Routes */}
@@ -227,24 +214,30 @@ function App() {
           <Route path="league/:id/draft-order" element={<DraftOrderWrapper />} />
           <Route path="league/:id/roster-settings" element={<EditRosterSettingsWrapper />} />
           <Route path="league/:id/commissioner-tools" element={<CommissionerToolsWrapper />} />
-          <Route path="draft" element={<DraftProspectsPage />} />
           <Route path="draft/:id" element={<Draft />} />
           <Route path="analysis" element={<Analysis />} />
           <Route path="betting" element={<Betting />} />
           <Route path="community" element={<Community />} />
           
-          {/* User Settings */}
-          <Route path="settings" element={<UserSettings />} />
+          <Route path="settings" element={<Navigate to="/profile" replace />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="messages" element={<Navigate to="/?drawer=messages" replace />} />
+          <Route path="mock-draft/:shareToken" element={<MockDraftSharePage />} />
+          <Route path="slip/:shareToken" element={<SharedSlipPage />} />
           
           {/* Admin Routes — single /admin with ?view= for create-post, dfs, analytics */}
           <Route path="admin" element={<Admin />} />
           <Route path="admin/feed" element={<Navigate to="/admin" replace />} />
           <Route path="admin/player" element={<Navigate to="/admin?view=player" replace />} />
+          <Route path="admin/team" element={<Navigate to="/admin?view=team" replace />} />
+          <Route path="admin/draft" element={<Navigate to="/admin?view=draft" replace />} />
+          <Route path="admin/mock-draft" element={<Navigate to="/admin?view=mock-draft" replace />} />
           <Route path="admin/create-post" element={<Navigate to="/admin?view=create-post" replace />} />
           <Route path="admin/create-post/game/:gameId" element={<AdminContentGame />} />
           <Route path="admin/dfs" element={<Navigate to="/admin?view=dfs" replace />} />
           <Route path="admin/dfs/pool/:poolId" element={<AdminDFSPoolDetails />} />
           <Route path="admin/analytics" element={<Navigate to="/admin?view=analytics" replace />} />
+          <Route path="admin/profile" element={<Navigate to="/admin?view=profile" replace />} />
           
           {/* OG Image generation route - handled by Cloudflare Worker, exclude from React Router */}
           <Route path="og-image/*" element={<></>} />
@@ -253,7 +246,7 @@ function App() {
           <Route path=":uuid" element={<Post />} />
         </Route>
       </Routes>
-    </Box>
+    </div>
   )
 }
 

@@ -1,37 +1,68 @@
 #!/usr/bin/env python3
 """
-Import NBA Box Scores for games played yesterday
-Designed to run nightly at 3:30 AM EST via cron job
-Fetches box score data for all completed games from the previous day
+Import NBA Box Scores for games played yesterday (or date range).
+Runs sequential; no time cap by default, 5 min–style waits (same as feed scripts in lax mode).
+
+Uses nba_timeout_patch for longer timeouts; retries with backoff. If stats.nba.com
+repeatedly times out, falls back to a direct requests.get with browser headers (same
+as standings/leaders). If all fail, your IP may be throttled—try a different network or VPN.
 """
 
 import os
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from supabase import create_client, Client
 from nba_api.stats.endpoints import boxscoretraditionalv3, scoreboardv2
 import pandas as pd
 
+try:
+    import requests
+except ImportError:
+    requests = None
+
+# 0 = no per-game time limit; delay between games. Env: FEED_GAME_TIME_BUDGET_SEC, FEED_DELAY_BETWEEN_GAMES.
+GAME_TIME_BUDGET_SEC = int(os.environ.get("FEED_GAME_TIME_BUDGET_SEC", "0"))
+DELAY_BETWEEN_GAMES_SEC = int(os.environ.get("FEED_DELAY_BETWEEN_GAMES", "60"))
+
+# Retries and fallback for box score fetch (stats.nba.com can timeout or throttle)
+BOXSCORE_RETRIES = int(os.environ.get("NBA_BOXSCORE_RETRIES", "3"))
+BOXSCORE_BACKOFF_SEC = float(os.environ.get("NBA_BOXSCORE_BACKOFF_SEC", "30.0"))
+# Direct request timeout (seconds) when using requests.get fallback
+BOXSCORE_DIRECT_TIMEOUT = int(os.environ.get("NBA_BOXSCORE_DIRECT_TIMEOUT", "90"))
+
+# Headers that work for standings/leaders (direct requests); used as fallback when nba_api times out
+NBA_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+}
+
 # Try to load environment variables from .env file
+from pathlib import Path
+script_dir = Path(__file__).resolve().parent
 try:
     from dotenv import load_dotenv
-    from pathlib import Path
-    
-    # Get the project root (assuming script is in scripts/setup/ or scripts/feed/)
-    script_dir = Path(__file__).parent
-    project_root = script_dir.parent.parent  # Go up from scripts/setup/ or scripts/feed/ to project root
-    
-    # Try multiple common env file locations (project root first, then current directory)
+    project_root = script_dir.parent.parent
     load_dotenv(project_root / '.env.local')
     load_dotenv(project_root / '.env')
-    load_dotenv('.env.local')  # Also try current directory
-    load_dotenv('.env')  # Also try current directory
+    load_dotenv('.env.local')
+    load_dotenv('.env')
 except ImportError:
-    pass  # dotenv not installed, skip
-except:
-    pass  # File not found, skip
+    pass
+except Exception:
+    pass
+
+# Longer NBA API timeout (patch stats.nba.com requests)
+try:
+    sys.path.insert(0, str(script_dir.parent / "feed"))
+    import nba_timeout_patch  # noqa: F401
+except Exception:
+    pass
 
 def setup_supabase() -> Client:
     """Initialize Supabase client"""
@@ -170,38 +201,143 @@ def get_or_create_player(supabase: Client, nba_player_id: int, player_name: str,
         print(f"❌ Error with player {player_name}: {e}")
         return None
 
-def fetch_box_score(game_id: str) -> Optional[Dict]:
-    """Fetch box score for a specific game"""
-    try:
-        print(f"📊 Fetching box score for game {game_id}...")
-        
-        # Get box score from NBA API
-        box_score = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id)
-        player_stats = box_score.player_stats.get_data_frame()
-        team_stats = box_score.team_stats.get_data_frame()
-        
-        print(f"✅ Retrieved {len(player_stats)} players from NBA API")
-        
-        # Extract team scores from team_stats
-        away_score = 0
-        home_score = 0
-        if not team_stats.empty and len(team_stats) >= 2:
-            # Team stats are usually ordered: away team first, then home team
-            away_score = int(team_stats.iloc[0]['points']) if 'points' in team_stats.columns else 0
-            home_score = int(team_stats.iloc[1]['points']) if len(team_stats) > 1 and 'points' in team_stats.columns else 0
-        
-        return {
-            'game_id': game_id,
-            'player_stats': player_stats,
-            'team_stats': team_stats,
-            'away_score': away_score,
-            'home_score': home_score,
-            'total_players': len(player_stats)
-        }
-        
-    except Exception as e:
-        print(f"❌ Error fetching box score for game {game_id}: {e}")
+def _fetch_box_score_direct(game_id: str) -> Optional[Dict]:
+    """Fallback: fetch box score via direct requests.get with browser headers (same as standings).
+    Parses the boxScoreTraditional format (homeTeam/awayTeam with players[].statistics).
+    """
+    if not requests:
         return None
+    url = "https://stats.nba.com/stats/boxscoretraditionalv3"
+    params = {
+        "GameID": game_id,
+        "EndPeriod": "0",
+        "EndRange": "0",
+        "RangeType": "0",
+        "StartPeriod": "0",
+        "StartRange": "0",
+    }
+    try:
+        r = requests.get(url, headers=NBA_HEADERS, params=params, timeout=BOXSCORE_DIRECT_TIMEOUT)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"   ⚠️  Direct request fallback failed: {e}")
+        return None
+    box = data.get("boxScoreTraditional")
+    if not box or not isinstance(box, dict):
+        return None
+    away_team = box.get("awayTeam") or {}
+    home_team = box.get("homeTeam") or {}
+    team_list = [away_team, home_team]
+    rows = []
+    team_stats_rows = []
+    for team in team_list:
+        if not isinstance(team, dict):
+            continue
+        team_id = team.get("teamId")
+        team_city = team.get("teamCity") or ""
+        team_name = team.get("teamName") or ""
+        team_tricode = team.get("teamTricode") or ""
+        players = team.get("players") or []
+        team_points = 0
+        for p in players:
+            if not isinstance(p, dict):
+                continue
+            stats = p.get("statistics") or {}
+            row = {
+                "personId": p.get("personId"),
+                "nameI": p.get("nameI") or "",
+                "teamId": team_id,
+                "teamTricode": team_tricode,
+                "teamName": f"{team_city} {team_name}".strip(),
+                "teamCity": team_city,
+                "position": p.get("position"),
+                "jerseyNum": p.get("jerseyNum"),
+                "minutes": stats.get("minutes"),
+                "fieldGoalsMade": stats.get("fieldGoalsMade"),
+                "fieldGoalsAttempted": stats.get("fieldGoalsAttempted"),
+                "fieldGoalsPercentage": stats.get("fieldGoalsPercentage"),
+                "threePointersMade": stats.get("threePointersMade"),
+                "threePointersAttempted": stats.get("threePointersAttempted"),
+                "threePointersPercentage": stats.get("threePointersPercentage"),
+                "freeThrowsMade": stats.get("freeThrowsMade"),
+                "freeThrowsAttempted": stats.get("freeThrowsAttempted"),
+                "freeThrowsPercentage": stats.get("freeThrowsPercentage"),
+                "reboundsOffensive": stats.get("reboundsOffensive"),
+                "reboundsDefensive": stats.get("reboundsDefensive"),
+                "reboundsTotal": stats.get("reboundsTotal"),
+                "assists": stats.get("assists"),
+                "steals": stats.get("steals"),
+                "blocks": stats.get("blocks"),
+                "turnovers": stats.get("turnovers"),
+                "foulsPersonal": stats.get("foulsPersonal"),
+                "points": stats.get("points"),
+                "plusMinusPoints": stats.get("plusMinusPoints"),
+            }
+            rows.append(row)
+            team_points += int(stats.get("points") or 0)
+        team_stats_rows.append({"teamId": team_id, "points": team_points})
+    if not rows:
+        return None
+    player_stats = pd.DataFrame(rows)
+    team_stats = pd.DataFrame(team_stats_rows)
+    away_score = team_stats_rows[0]["points"] if len(team_stats_rows) > 0 else 0
+    home_score = team_stats_rows[1]["points"] if len(team_stats_rows) > 1 else 0
+    return {
+        "game_id": game_id,
+        "player_stats": player_stats,
+        "team_stats": team_stats,
+        "away_score": away_score,
+        "home_score": home_score,
+        "total_players": len(player_stats),
+    }
+
+
+def fetch_box_score(game_id: str) -> Optional[Dict]:
+    """Fetch box score for a specific game (nba_api with retries, then direct-request fallback)."""
+    print(f"📊 Fetching box score for game {game_id}...")
+    last_err = None
+    for attempt in range(1, BOXSCORE_RETRIES + 1):
+        try:
+            box_score = boxscoretraditionalv3.BoxScoreTraditionalV3(game_id=game_id)
+            player_stats = box_score.player_stats.get_data_frame()
+            team_stats = box_score.team_stats.get_data_frame()
+            away_score = 0
+            home_score = 0
+            if not team_stats.empty and len(team_stats) >= 2:
+                away_score = int(team_stats.iloc[0]["points"]) if "points" in team_stats.columns else 0
+                home_score = int(team_stats.iloc[1]["points"]) if len(team_stats) > 1 and "points" in team_stats.columns else 0
+            print(f"✅ Retrieved {len(player_stats)} players from NBA API")
+            return {
+                "game_id": game_id,
+                "player_stats": player_stats,
+                "team_stats": team_stats,
+                "away_score": away_score,
+                "home_score": home_score,
+                "total_players": len(player_stats),
+            }
+        except Exception as e:
+            last_err = e
+            is_retryable = (
+                "timeout" in str(e).lower()
+                or "timed out" in str(e).lower()
+                or "Connection" in str(type(e).__name__)
+                or "ConnectionPool" in str(e)
+            )
+            if attempt < BOXSCORE_RETRIES and is_retryable:
+                wait = BOXSCORE_BACKOFF_SEC * attempt
+                print(f"   ⏳ Attempt {attempt}/{BOXSCORE_RETRIES} failed ({e}); retrying in {wait:.0f}s...")
+                time.sleep(wait)
+            else:
+                break
+    # Fallback: direct request with same headers as standings/leaders (often works when nba_api is throttled)
+    print(f"   ⚠️  Trying direct request with browser headers...")
+    fallback = _fetch_box_score_direct(game_id)
+    if fallback:
+        print(f"✅ Retrieved {fallback['total_players']} players (direct request)")
+        return fallback
+    print(f"❌ Error fetching box score for game {game_id}: {last_err}")
+    return None
 
 def update_game_scores(supabase: Client, game_id: str, away_score: int, home_score: int):
     """Update game scores and mark game as Final in nba_games (so 'last 10 completed games' includes it)."""
@@ -329,6 +465,26 @@ def store_box_score_data(supabase: Client, box_score_data: Dict, game_info: Dict
         print(f"❌ Error storing box score data: {e}")
         return 0
 
+def _fetch_and_maybe_update_scores(supabase: Client, game_id: str):
+    """Fetch box score and update nba_games scores only (for already-imported games)."""
+    box_score_data = fetch_box_score(game_id)
+    if box_score_data and "away_score" in box_score_data and "home_score" in box_score_data:
+        update_game_scores(
+            supabase, game_id,
+            box_score_data["away_score"],
+            box_score_data["home_score"],
+        )
+
+
+def _fetch_and_store_one_game(supabase: Client, game_id: str, game_info: Dict):
+    """Fetch box score and store; returns (stored_count, None) or None on failure."""
+    box_score_data = fetch_box_score(game_id)
+    if not box_score_data:
+        return None
+    stored_count = store_box_score_data(supabase, box_score_data, game_info)
+    return (stored_count, None)
+
+
 def process_date(supabase: Client, target_date: str, skip_existing: bool = True):
     """Process box scores for a single date"""
     print(f"\n{'=' * 80}")
@@ -367,32 +523,43 @@ def process_date(supabase: Client, target_date: str, skip_existing: bool = True)
         
         if skip_existing and box_score_exists:
             print(f"⏭️  Box score already exists for {game_id}.")
-            # Still fetch and update scores in nba_games table
-            box_score_data = fetch_box_score(game_id)
-            if box_score_data and 'away_score' in box_score_data and 'home_score' in box_score_data:
-                update_game_scores(
-                    supabase,
-                    game_id,
-                    box_score_data['away_score'],
-                    box_score_data['home_score']
-                )
+            if GAME_TIME_BUDGET_SEC > 0:
+                try:
+                    with ThreadPoolExecutor(max_workers=1) as ex:
+                        future = ex.submit(_fetch_and_maybe_update_scores, supabase, game_id)
+                        future.result(timeout=GAME_TIME_BUDGET_SEC)
+                except (TimeoutError, FuturesTimeoutError):
+                    print(f"  Time budget ({GAME_TIME_BUDGET_SEC}s) reached for {game_id}; skipping.")
+            else:
+                _fetch_and_maybe_update_scores(supabase, game_id)
             skipped_games += 1
-            time.sleep(1)
+            time.sleep(DELAY_BETWEEN_GAMES_SEC)
             continue
-        
-        # Fetch box score
-        box_score_data = fetch_box_score(game_id)
-        
-        if box_score_data:
-            # Store in database
-            stored_count = store_box_score_data(supabase, box_score_data, game_info)
-            total_players_imported += stored_count
-            successful_games += 1
+
+        # Fetch and store (with optional time cap)
+        if GAME_TIME_BUDGET_SEC > 0:
+            try:
+                with ThreadPoolExecutor(max_workers=1) as ex:
+                    future = ex.submit(_fetch_and_store_one_game, supabase, game_id, game_info)
+                    result = future.result(timeout=GAME_TIME_BUDGET_SEC)
+                if result:
+                    stored_count, _ = result
+                    total_players_imported += stored_count
+                    successful_games += 1
+                else:
+                    print(f"❌ Failed to fetch box score for game {game_id}")
+            except (TimeoutError, FuturesTimeoutError):
+                print(f"  Time budget ({GAME_TIME_BUDGET_SEC}s) reached for {game_id}; skipping.")
         else:
-            print(f"❌ Failed to fetch box score for game {game_id}")
-        
-        # Rate limiting - be nice to NBA API
-        time.sleep(1)
+            result = _fetch_and_store_one_game(supabase, game_id, game_info)
+            if result:
+                stored_count, _ = result
+                total_players_imported += stored_count
+                successful_games += 1
+            else:
+                print(f"❌ Failed to fetch box score for game {game_id}")
+
+        time.sleep(DELAY_BETWEEN_GAMES_SEC)
     
     return {
         'date': target_date,
@@ -484,7 +651,9 @@ def main():
         print(f"   {result['date']}: {result['successful_games']}/{result['total_games']} games, {result['total_players']} players")
     
     print(f"{'=' * 80}")
+    failed = (total_games - total_skipped) - total_successful
     print(f"\n✅ Box score import completed!")
+    print(f"FEED_STEP_SUMMARY: import_daily_boxscores | Successful: {total_successful}  Skipped: {total_skipped}  Failed: {failed}  Total games: {total_games}")
 
 if __name__ == "__main__":
     main()

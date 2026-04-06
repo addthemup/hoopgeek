@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500876",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "awayTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500876",
+      "LAST_GAME_ID": "0012500033",
+      "LAST_GAME_DATE_EST": "2025-10-06T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612742,
+      "LAST_GAME_HOME_TEAM_CITY": "Dallas",
+      "LAST_GAME_HOME_TEAM_NAME": "Mavericks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "DAL",
+      "LAST_GAME_HOME_TEAM_POINTS": 106,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612760,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Oklahoma City",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Thunder",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "OKC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 89
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500876": {
+      "team_stats": {}
+    }
+  }
+}

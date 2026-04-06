@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500872",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612763,
+      "abbreviation": "MEM",
+      "city": "Memphis",
+      "name": "Grizzlies",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 125,
+      "stats": {
+        "fg_pct": 0.511,
+        "ft_pct": 1.0,
+        "fg3_pct": 0.429,
+        "ast": 34,
+        "reb": 40,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612754,
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "name": "Pacers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 106,
+      "stats": {
+        "fg_pct": 0.488,
+        "ft_pct": 0.684,
+        "fg3_pct": 0.385,
+        "ast": 29,
+        "reb": 31,
+        "tov": 18
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500872": {
+      "team_stats": {}
+    }
+  }
+}

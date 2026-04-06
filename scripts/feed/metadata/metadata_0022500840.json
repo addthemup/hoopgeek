@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500840",
+  "gameMetadata": {
+    "date": "2026-02-24T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612753,
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "name": "Magic",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.457,
+        "ft_pct": 0.739,
+        "fg3_pct": 0.241,
+        "ast": 26,
+        "reb": 47,
+        "tov": 10
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612747,
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "name": "Lakers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 109,
+      "stats": {
+        "fg_pct": 0.482,
+        "ft_pct": 0.714,
+        "fg3_pct": 0.31,
+        "ast": 24,
+        "reb": 39,
+        "tov": 12
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500840",
+      "LAST_GAME_ID": "0022401038",
+      "LAST_GAME_DATE_EST": "2025-03-24T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612747,
+      "LAST_GAME_HOME_TEAM_CITY": "Los Angeles",
+      "LAST_GAME_HOME_TEAM_NAME": "Lakers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAL",
+      "LAST_GAME_HOME_TEAM_POINTS": 106,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612753,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Orlando",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Magic",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "ORL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 118
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500840": {
+      "team_stats": {}
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500858",
+  "gameMetadata": {
+    "date": "2026-02-27T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612739,
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "name": "Cavaliers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 119,
+      "stats": {
+        "fg_pct": 0.457,
+        "ft_pct": 0.741,
+        "fg3_pct": 0.371,
+        "ast": 32,
+        "reb": 41,
+        "tov": 17
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 122,
+      "stats": {
+        "fg_pct": 0.46,
+        "ft_pct": 0.727,
+        "fg3_pct": 0.222,
+        "ast": 26,
+        "reb": 56,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500858",
+      "LAST_GAME_ID": "0012500057",
+      "LAST_GAME_DATE_EST": "2025-10-14T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612765,
+      "LAST_GAME_HOME_TEAM_CITY": "Detroit",
+      "LAST_GAME_HOME_TEAM_NAME": "Pistons",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "DET",
+      "LAST_GAME_HOME_TEAM_POINTS": 100,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612739,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Cleveland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CLE",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 118
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500858": {
+      "team_stats": {}
+    }
+  }
+}

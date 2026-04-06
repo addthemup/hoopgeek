@@ -25,7 +25,6 @@ import {
   Table,
 } from '@mui/joy';
 import { useState, useMemo } from 'react';
-import { useMediaQuery } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../utils/supabase';
@@ -38,13 +37,11 @@ import {
   useCreateDFSGroup, 
   useJoinDFSGroup,
   useDFSGroup,
-  useDFSGroupBySlug,
   useDFSGroupMembers,
   useDFSGroupPools,
-  type DFSGroup 
 } from '../hooks/useDFSGroups';
 import { useDFSPoints } from '../hooks/useDFSPoints';
-import { Add, People, Share, Edit, Settings, AttachMoney, CheckCircle, PlayArrow, Schedule, Group } from '@mui/icons-material';
+import { Add, People, Share, Settings, AttachMoney, CheckCircle, PlayArrow, Schedule, Group } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { getIconByName } from '../utils/dfsPoolIcons';
 
@@ -81,11 +78,6 @@ export default function DFS() {
     icon_color_primary: '#FFC72C',
     icon_color_secondary: '#000000',
   });
-
-  // Detect landscape mobile orientation to adjust padding
-  const isMobile = useMediaQuery('(max-width: 900px)')
-  const isLandscape = useMediaQuery('(orientation: landscape)')
-  const isLandscapeMobile = isMobile && isLandscape
 
   // Fetch all pools (for filtering by status)
   const { data: allPoolsData, isLoading: allPoolsLoading } = useQuery({
@@ -291,27 +283,23 @@ export default function DFS() {
 
   return (
     <Box sx={{ 
-      bgcolor: '#000000',
-      minHeight: '100vh',
-      overflowX: 'hidden',
       width: '100%',
+      maxWidth: '100%',
+      minWidth: 0,
+      pt: { xs: 2, md: 3 },
+      pb: 6,
+      boxSizing: 'border-box',
+      overflowX: 'hidden',
     }}>
       <Box sx={{ 
-        maxWidth: { xs: '100%', sm: 805, md: 1035 },
-        minWidth: { xs: '100%', sm: 805, md: 1035 },
-        mx: 'auto',
-        pt: isLandscapeMobile 
-          ? '12px'
-          : { xs: '12px', md: '80px' },
-        pb: 4,
-        px: { xs: 2, sm: 2, md: 2 },
         width: '100%',
+        maxWidth: '100%',
         boxSizing: 'border-box',
       }}>
         <Stack spacing={4}>
           {/* Main Table Card */}
-          <Card variant="outlined" sx={{ bgcolor: 'background.level1', border: '1px solid rgba(255, 255, 255, 0.1)', position: 'relative' }}>
-            <CardContent sx={{ p: 2, bgcolor: '#000000' }}>
+          <Card variant="outlined" sx={{ bgcolor: '#111111', borderColor: '#222222', position: 'relative' }}>
+            <CardContent sx={{ p: 2 }}>
               {/* Header with Tab Icons */}
               <Box sx={{ mb: 2, position: 'relative' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

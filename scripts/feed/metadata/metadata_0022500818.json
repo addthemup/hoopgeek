@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500818",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 104,
+      "stats": {
+        "fg_pct": 0.447,
+        "ft_pct": 0.727,
+        "fg3_pct": 0.353,
+        "ast": 29,
+        "reb": 34,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 115,
+      "stats": {
+        "fg_pct": 0.483,
+        "ft_pct": 0.857,
+        "fg3_pct": 0.394,
+        "ast": 28,
+        "reb": 52,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500818",
+      "LAST_GAME_ID": "0022401169",
+      "LAST_GAME_DATE_EST": "2025-04-10T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612737,
+      "LAST_GAME_HOME_TEAM_CITY": "Atlanta",
+      "LAST_GAME_HOME_TEAM_NAME": "Hawks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "ATL",
+      "LAST_GAME_HOME_TEAM_POINTS": 133,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612751,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Brooklyn",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Nets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "BKN",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 109
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500818": {
+      "team_stats": {}
+    }
+  }
+}

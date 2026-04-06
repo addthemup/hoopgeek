@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500999",
+  "gameMetadata": {
+    "date": null,
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612744,
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "name": "Warriors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 99,
+      "stats": {
+        "fg_pct": 0.4,
+        "ft_pct": 0.708,
+        "fg3_pct": 0.233,
+        "ast": 26,
+        "reb": 39,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612738,
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "name": "Celtics",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 120,
+      "stats": {
+        "fg_pct": 0.478,
+        "ft_pct": 0.947,
+        "fg3_pct": 0.359,
+        "ast": 22,
+        "reb": 49,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500999",
+      "LAST_GAME_ID": "0022400604",
+      "LAST_GAME_DATE_EST": "2025-01-20T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612738,
+      "LAST_GAME_HOME_TEAM_CITY": "Boston",
+      "LAST_GAME_HOME_TEAM_NAME": "Celtics",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BOS",
+      "LAST_GAME_HOME_TEAM_POINTS": 125,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612744,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Golden State",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Warriors",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "GSW",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 85
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500999": {
+      "team_stats": {}
+    }
+  }
+}

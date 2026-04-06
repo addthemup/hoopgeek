@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500861",
+  "gameMetadata": {
+    "date": "2026-02-27T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612763,
+      "abbreviation": "MEM",
+      "city": "Memphis",
+      "name": "Grizzlies",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 124,
+      "stats": {
+        "fg_pct": 0.505,
+        "ft_pct": 0.857,
+        "fg3_pct": 0.375,
+        "ast": 29,
+        "reb": 43,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612742,
+      "abbreviation": "DAL",
+      "city": "Dallas",
+      "name": "Mavericks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 105,
+      "stats": {
+        "fg_pct": 0.42,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.281,
+        "ast": 24,
+        "reb": 46,
+        "tov": 20
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500861",
+      "LAST_GAME_ID": "0052400211",
+      "LAST_GAME_DATE_EST": "2025-04-18T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612742,
+      "LAST_GAME_HOME_TEAM_CITY": "Dallas",
+      "LAST_GAME_HOME_TEAM_NAME": "Mavericks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "DAL",
+      "LAST_GAME_HOME_TEAM_POINTS": 106,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612763,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Memphis",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Grizzlies",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MEM",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 120
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500861": {
+      "team_stats": {}
+    }
+  }
+}

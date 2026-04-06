@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500859",
+  "gameMetadata": {
+    "date": "2026-02-27T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.489,
+        "ft_pct": 0.688,
+        "fg3_pct": 0.412,
+        "ast": 29,
+        "reb": 25,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612738,
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "name": "Celtics",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 148,
+      "stats": {
+        "fg_pct": 0.667,
+        "ft_pct": 0.815,
+        "fg3_pct": 0.647,
+        "ast": 38,
+        "reb": 39,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500859": {
+      "team_stats": {}
+    }
+  }
+}

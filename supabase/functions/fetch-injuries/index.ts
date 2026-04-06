@@ -17,6 +17,40 @@ interface InjuryData {
   matchup?: string
 }
 
+interface ResolvedInjury extends InjuryData {
+  teamAbbreviation: string
+  nbaPlayerId: number
+  matchedWith: string
+}
+
+interface UnmatchedInjury extends InjuryData {
+  teamAbbreviation: string
+  attemptedNames: string[]
+}
+
+interface TeamAuditRow {
+  parsed: number
+  matched: number
+  stored: number
+  updated: number
+  unmatched: number
+}
+
+interface IngestAudit {
+  parsedCount: number
+  matchedCount: number
+  unmatchedCount: number
+  deactivatedCount: number
+  parsedRows: InjuryData[]
+  unmatched: UnmatchedInjury[]
+  teamCounts: Record<string, TeamAuditRow>
+}
+
+interface ParseQuality {
+  suspiciousNameCount: number
+  suspiciousNames: string[]
+}
+
 /**
  * Generate possible PDF URLs for today
  * NBA publishes injury reports multiple times per day (typically 8AM, 4PM, etc.)
@@ -29,24 +63,22 @@ function generatePdfUrls(date: Date): string[] {
   
   const baseUrl = 'https://ak-static.cms.nba.com/referee/injury'
   
-  // Common times NBA publishes injury reports
-  // Prioritize 8:00 AM and 5:00 PM formats (08_00AM, 05_00PM) as these have been successful
-  // Format uses HH_MMAM/PM (e.g., 08_00AM, 05_00PM)
-  // Try both old format (for backwards compatibility) and new format
+  // Common times NBA publishes injury reports.
+  // Always try the latest likely report first so we ingest the newest statuses.
   const timesOldFormat = [
-    '08AM', '05PM', '04PM', '12PM', '10AM', '06PM'
+    '06PM', '05PM', '04PM', '12PM', '10AM', '08AM'
   ]
   const timesNewFormat = [
-    '08_00AM', '05_00PM', '10_00AM', '12_00PM', '04_00PM', '06_00PM'
+    '06_00PM', '05_00PM', '04_00PM', '12_00PM', '10_00AM', '08_00AM'
   ]
   
-  // Generate URLs - prioritize 08_00AM and 05_00PM by trying them first
+  // Generate URLs in newest-to-oldest order.
   const urls: string[] = []
-  // Try new format first (prioritize 08_00AM and 05_00PM)
+  // Try new format first.
   timesNewFormat.forEach(time => {
     urls.push(`${baseUrl}/Injury-Report_${dateStr}_${time}.pdf`)
   })
-  // Then try old format as fallback
+  // Then old format as fallback.
   timesOldFormat.forEach(time => {
     urls.push(`${baseUrl}/Injury-Report_${dateStr}_${time}.pdf`)
   })
@@ -126,6 +158,111 @@ function isStatusToken(t: string): boolean {
   return STATUS_TOKENS.has(t)
 }
 
+function normalizeApostrophes(s: string): string {
+  return s.replace(/[’`]/g, "'")
+}
+
+function canonicalName(s: string): string {
+  return normalizeApostrophes(s)
+    .toLowerCase()
+    .replace(/[.,]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function removeSuffixTokens(name: string): string {
+  return name
+    .replace(/\b(jr|sr|ii|iii|iv|v)\b\.?/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values.map((v) => v.trim()).filter(Boolean)))
+}
+
+function normalizePdfPlayerName(rawName: string): string {
+  const cleaned = normalizeApostrophes(rawName).replace(/\s+/g, ' ').trim()
+  const parts = cleaned.split(' ').filter(Boolean)
+  if (parts.length < 2) return cleaned
+  const normalized = parts.join(' ')
+  return normalized
+}
+
+function extractLikelyPlayerTokens(tokens: string[]): string[] {
+  if (tokens.length === 0) return tokens
+  const commaIndexes = tokens
+    .map((tok, idx) => ({ tok, idx }))
+    .filter(({ tok }) => /[A-Za-z'’`.-]+,$/.test(tok))
+    .map(({ idx }) => idx)
+  if (commaIndexes.length > 0) {
+    let start = commaIndexes[commaIndexes.length - 1]
+    const suffixWithComma = /^(Jr|Sr|II|III|IV|V),$/i
+    if (suffixWithComma.test(tokens[start]) && start > 0) {
+      // Handle "Harper Jr., Ron" style, where suffix token holds the comma.
+      start -= 1
+    }
+    return tokens.slice(start)
+  }
+  return tokens
+}
+
+function looksLikePlayerStartAt(tokens: string[], i: number): boolean {
+  const t = tokens[i] || ''
+  const t1 = tokens[i + 1] || ''
+  const t2 = tokens[i + 2] || ''
+  const t3 = tokens[i + 3] || ''
+  // "Last, First Status" or "Last, First Jr. Status"
+  if (/[A-Za-z'’`.-]+,$/.test(t)) {
+    if (isStatusToken(t2)) return true
+    if (/^(Jr\.?|Sr\.?|II|III|IV|V)$/i.test(t1) && isStatusToken(t3)) return true
+  }
+  // "Last Jr., First Status" (suffix carries comma token)
+  if (/^[A-Za-z'’`.-]+$/.test(t) && /^(Jr|Sr|II|III|IV|V),$/i.test(t1) && isStatusToken(t3)) {
+    return true
+  }
+  // "LastPart- LastPart, First Status"
+  if (t.endsWith('-') && /[A-Za-z'’`.-]+,$/.test(t1) && isStatusToken(tokens[i + 3] || '')) {
+    return true
+  }
+  return false
+}
+
+function sanitizeReason(reason: string): string {
+  return reason
+    .replace(/Injury Report:\s*\d{2}\/\d{2}\/\d{2}\s+\d{2}:\d{2}\s+[AP]M\s+Page\s+\d+\s+of\s+\d+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function evaluateParseQuality(injuries: InjuryData[]): ParseQuality {
+  const suspicious: string[] = []
+  const badStart = /^(Jr\.?|Sr\.?|II|III|IV|V)\b/i
+  for (const injury of injuries) {
+    const name = injury.playerName.trim()
+    if (!name) continue
+    if (badStart.test(name)) suspicious.push(name)
+  }
+  return {
+    suspiciousNameCount: suspicious.length,
+    suspiciousNames: Array.from(new Set(suspicious)).slice(0, 20),
+  }
+}
+
+function buildSearchNames(playerName: string): string[] {
+  const normalized = normalizePdfPlayerName(playerName)
+  const parts = normalized.split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return [normalized]
+
+  const flipped = [...parts].reverse().join(' ')
+  const withoutSuffix = removeSuffixTokens(normalized)
+  const withoutSuffixParts = withoutSuffix.split(/\s+/).filter(Boolean)
+  const withoutSuffixFlipped =
+    withoutSuffixParts.length > 1 ? [...withoutSuffixParts].reverse().join(' ') : withoutSuffix
+
+  return dedupeStrings([normalized, flipped, withoutSuffix, withoutSuffixFlipped])
+}
+
 /**
  * Parse injury data from PDF text.
  * The NBA PDF extractor (unpdf) returns one word per line, so we parse a stream of tokens:
@@ -133,109 +270,182 @@ function isStatusToken(t: string): boolean {
  */
 function parseInjuryData(text: string, _reportDate: Date): InjuryData[] {
   const injuries: InjuryData[] = []
-  const tokens = text.split(/\r?\n/).map((t) => t.trim()).filter((t) => t.length > 0)
+  const lines = text.split(/\r?\n/).map((t) => t.trim()).filter((t) => t.length > 0)
+  const statuses = new Set(['Out', 'Questionable', 'Probable', 'Available'])
+  const nameWordRe = /^[A-Z][A-Za-z'’`.-]*$/
+
+  const isNameWord = (token: string): boolean => nameWordRe.test(token)
+  const cleanReason = (value: string): string => sanitizeReason(value)
+  const teamNames = TEAM_NAMES
+
+  const looksLikePlayerStartAtLine = (idx: number): boolean => {
+    if (idx + 2 >= lines.length) return false
+    const a = lines[idx]
+    const b = lines[idx + 1]
+    const c = lines[idx + 2]
+    if (a.endsWith(',') && isNameWord(a.replace(/,$/, '')) && isNameWord(b) && statuses.has(c)) return true
+    if (idx + 3 < lines.length) {
+      const d = lines[idx + 3]
+      if (
+        a.endsWith(',') &&
+        isNameWord(a.replace(/,$/, '')) &&
+        ['Jr.', 'Jr', 'III', 'II', 'IV', 'Sr.', 'Sr'].includes(b) &&
+        isNameWord(c) &&
+        statuses.has(d)
+      ) {
+        return true
+      }
+      if (a.endsWith('-') && b.endsWith(',') && isNameWord(c) && statuses.has(d)) return true
+    }
+    return false
+  }
 
   let currentGameDate: string | null = null
   let currentGameTime: string | null = null
   let currentMatchup: string | null = null
   let currentTeam: string | null = null
-  let rowStart = 0
 
-  for (let i = 0; i < tokens.length; i++) {
-    const t = tokens[i]
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
 
-    // Skip header / page footer tokens
-    if (t === 'Injury' || t === 'Report:' || t === 'Page' || t === 'of' || t === 'Game' || t === 'Date' || t === 'Time' || t === 'Matchup' || t === 'Team' || t === 'Player' || t === 'Name' || t === 'Current' || t === 'Status' || t === 'Reason') {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(line)) {
+      currentGameDate = line
       continue
     }
-
-    // Game date (MM/DD/YYYY only; skip 02/09/26 style)
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(t)) {
-      currentGameDate = t
-      continue
-    }
-
-    // Game time: "07:00" followed by "(ET)"
-    if (/^\d{1,2}:\d{2}$/.test(t) && tokens[i + 1] === '(ET)') {
-      currentGameTime = t
+    if (/^\d{1,2}:\d{2}$/.test(line) && i + 1 < lines.length && lines[i + 1] === '(ET)') {
+      currentGameTime = line
       i += 1
       continue
     }
-
-    // Matchup: DET@CHA
-    if (/^[A-Z]{3}@[A-Z]{3}$/i.test(t)) {
-      currentMatchup = t
+    if (/^[A-Z]{3}@[A-Z]{3}$/i.test(line)) {
+      currentMatchup = line
       continue
     }
 
-    // Team name (multi-word)
-    const teamAt = matchTeamAt(tokens, i)
-    if (teamAt) {
-      currentTeam = teamAt.name
-      rowStart = i + teamAt.wordCount
-      i += teamAt.wordCount - 1
-      continue
+    let matchedTeam = false
+    for (const teamName of teamNames) {
+      const teamWords = teamName.split(' ')
+      if (i + teamWords.length <= lines.length) {
+        const maybeTeam = lines.slice(i, i + teamWords.length).join(' ')
+        if (maybeTeam === teamName) {
+          currentTeam = teamName
+          i += teamWords.length - 1
+          matchedTeam = true
+          break
+        }
+      }
+    }
+    if (matchedTeam || !currentTeam) continue
+
+    if (i + 2 >= lines.length) continue
+    const firstWord = lines[i]
+    const secondWord = lines[i + 1] || ''
+    const thirdWord = lines[i + 2] || ''
+
+    let status = ''
+    let playerName = ''
+    let j: number | null = null
+
+    // Pattern 1: LastPart-, LastPart, First Status
+    if (
+      i + 3 < lines.length &&
+      firstWord.endsWith('-') &&
+      secondWord.endsWith(',') &&
+      isNameWord(thirdWord) &&
+      statuses.has(lines[i + 3])
+    ) {
+      const lastNamePart1 = firstWord.slice(0, -1)
+      const lastNamePart2 = secondWord.replace(/,$/, '')
+      const firstName = thirdWord
+      status = lines[i + 3]
+      playerName = `${firstName} ${lastNamePart1}-${lastNamePart2}`
+      j = i + 4
+    }
+    // Pattern 2: Last Jr., First Status
+    else if (
+      i + 3 < lines.length &&
+      isNameWord(firstWord) &&
+      secondWord.endsWith(',') &&
+      ['Jr.,', 'Jr,', 'III,', 'II,', 'IV,', 'Sr.,', 'Sr,'].includes(secondWord) &&
+      isNameWord(thirdWord) &&
+      statuses.has(lines[i + 3])
+    ) {
+      const suffix = secondWord.replace(/,$/, '')
+      status = lines[i + 3]
+      playerName = `${thirdWord} ${firstWord} ${suffix}`
+      j = i + 4
+    }
+    // Pattern 3: Last, First Status
+    else if (
+      firstWord.endsWith(',') &&
+      isNameWord(firstWord.replace(/,$/, '')) &&
+      isNameWord(secondWord) &&
+      !secondWord.endsWith(',') &&
+      statuses.has(thirdWord)
+    ) {
+      const lastName = firstWord.replace(/,$/, '')
+      status = thirdWord
+      playerName = `${secondWord} ${lastName}`
+      j = i + 3
+    }
+    // Pattern 4: First Last Status
+    else if (isNameWord(firstWord) && isNameWord(secondWord) && statuses.has(thirdWord)) {
+      status = thirdWord
+      playerName = `${firstWord} ${secondWord}`
+      j = i + 3
+      if (j < lines.length && ['Jr.', 'Jr', 'III', 'II', 'IV'].includes(lines[j])) {
+        playerName = `${playerName} ${lines[j]}`
+        j += 1
+        if (j < lines.length && statuses.has(lines[j])) {
+          status = lines[j]
+          j += 1
+        }
+      }
     }
 
-    // Status token → one injury row: player = tokens[rowStart..i), reason = tokens[i+1..j)
-    if (isStatusToken(t) && currentTeam) {
-      const playerName = tokens.slice(rowStart, i).join(' ').replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
-      if (!playerName || playerName.includes('NOT') && tokens[rowStart] === 'NOT') {
-        i++
+    if (j === null) continue
+
+    const reasonParts: string[] = []
+    while (j < lines.length && j < i + 25) {
+      if (looksLikePlayerStartAtLine(j)) break
+      const maybeTeamSlice = lines.slice(j, Math.min(j + 4, lines.length)).join(' ')
+      if (teamNames.some((teamName) => maybeTeamSlice.includes(teamName))) break
+      const word = lines[j]
+      if (word === 'Injury' && j + 1 < lines.length && lines[j + 1] === 'Illness') {
+        reasonParts.push('Injury/Illness')
+        j += 2
         continue
       }
-
-      let j = i + 1
-      while (j < tokens.length) {
-        const next = tokens[j]
-        if (isStatusToken(next)) break
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(next)) break
-        if (/^\d{1,2}:\d{2}$/.test(next) && tokens[j + 1] === '(ET)') break
-        if (/^[A-Z]{3}@[A-Z]{3}$/i.test(next)) break
-        if (matchTeamAt(tokens, j)) break
-        if (next === 'Injury' && tokens[j + 1] === 'Report:') break
-        j++
-      }
-
-      const reason = tokens.slice(i + 1, j).join(' ').trim()
-      if (!playerName.includes('NOT YET SUBMITTED')) {
-        injuries.push({
-          playerName,
-          team: currentTeam,
-          status: t,
-          reason,
-          gameDate: currentGameDate ?? undefined,
-          gameTime: currentGameTime ?? undefined,
-          matchup: currentMatchup ?? undefined,
-        })
-      }
-
-      if (j < tokens.length && tokens[j] === 'Injury' && tokens[j + 1] === 'Report:') {
-        j += 2
-        while (j < tokens.length) {
-          if (isStatusToken(tokens[j]) || /^\d{2}\/\d{2}\/\d{4}$/.test(tokens[j]) || matchTeamAt(tokens, j) || /^[A-Z]{3}@[A-Z]{3}$/i.test(tokens[j])) break
-          if (tokens[j] === 'Game' && tokens[j + 1] === 'Date') j += 10
-          else j++
-        }
-        // After page header, extraction order may put reason text first. Skip until we see a player last name (PDF uses "Last,").
-        while (j < tokens.length && !tokens[j].endsWith(',')) {
-          if (tokens[j] === 'Game' && tokens[j + 1] === 'Date') j += 10
-          else j++
-        }
-      }
-      if (j < tokens.length && isStatusToken(tokens[j])) {
-        rowStart = j + 1
-      } else if (j < tokens.length) {
-        const nextTeam = matchTeamAt(tokens, j)
-        if (nextTeam) rowStart = j + nextTeam.wordCount
-        else rowStart = j
-      }
-      i = j - 1
-      continue
+      reasonParts.push(word)
+      j += 1
     }
+
+    const reason = cleanReason(reasonParts.join(' ').trim())
+    if (playerName.length > 2 && !playerName.includes('NOT YET SUBMITTED')) {
+      injuries.push({
+        playerName: normalizePdfPlayerName(playerName),
+        team: currentTeam,
+        status,
+        reason,
+        gameDate: currentGameDate ?? undefined,
+        gameTime: currentGameTime ?? undefined,
+        matchup: currentMatchup ?? undefined,
+      })
+    }
+
+    i = j - 1
   }
 
-  return injuries
+  const seen = new Set<string>()
+  const deduped: InjuryData[] = []
+  for (const injury of injuries) {
+    const key = `${injury.team}|${injury.playerName.toLowerCase()}|${injury.status}|${injury.reason}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    deduped.push(injury)
+  }
+
+  return deduped
 }
 
 /**
@@ -284,10 +494,7 @@ function normalizeTeamName(teamName: string): string {
  * Return [original, flipped] so we can try both.
  */
 function searchNamesForLookup(playerName: string): string[] {
-  const parts = playerName.trim().split(/\s+/).filter(Boolean)
-  if (parts.length < 2) return [playerName]
-  const flipped = [...parts].reverse().join(' ')
-  return [playerName, flipped]
+  return buildSearchNames(playerName)
 }
 
 /**
@@ -298,7 +505,7 @@ async function findPlayerId(
   supabase: any,
   playerName: string,
   teamAbbreviation: string
-): Promise<number | null> {
+): Promise<{ playerId: number | null; matchedWith: string; attemptedNames: string[] }> {
   const namesToTry = searchNamesForLookup(playerName)
   try {
     for (const searchName of namesToTry) {
@@ -313,15 +520,15 @@ async function findPlayerId(
       if (error) throw error
 
       if (data && data.length > 0) {
-        if (data.length === 1) return data[0].nba_player_id
-        const normalizedSearch = searchName.toLowerCase().replace(/[.,]/g, '').trim()
+        if (data.length === 1) return { playerId: data[0].nba_player_id, matchedWith: searchName, attemptedNames: namesToTry }
+        const normalizedSearch = canonicalName(searchName)
         for (const player of data) {
-          const normalizedName = player.name.toLowerCase().replace(/[.,]/g, '').trim()
+          const normalizedName = canonicalName(player.name)
           if (normalizedName.includes(normalizedSearch) || normalizedSearch.includes(normalizedName.split(' ')[0])) {
-            return player.nba_player_id
+            return { playerId: player.nba_player_id, matchedWith: searchName, attemptedNames: namesToTry }
           }
         }
-        return data[0].nba_player_id
+        return { playerId: data[0].nba_player_id, matchedWith: searchName, attemptedNames: namesToTry }
       }
     }
 
@@ -334,7 +541,7 @@ async function findPlayerId(
         .limit(1)
 
       if (error2) throw error2
-      if (data2 && data2.length > 0) return data2[0].nba_player_id
+      if (data2 && data2.length > 0) return { playerId: data2[0].nba_player_id, matchedWith: searchName, attemptedNames: namesToTry }
     }
 
     // Fallback: try first name only + team (e.g. "Cade" on DET for "Cunningham Cade")
@@ -348,19 +555,25 @@ async function findPlayerId(
         .eq('team_abbreviation', teamAbbreviation)
         .eq('is_active', true)
         .limit(5)
-      if (!error3 && data3 && data3.length === 1) return data3[0].nba_player_id
+      if (!error3 && data3 && data3.length === 1) {
+        return { playerId: data3[0].nba_player_id, matchedWith: firstName, attemptedNames: namesToTry }
+      }
       if (!error3 && data3 && data3.length > 1) {
         const fullFlipped = [...parts].reverse().join(' ')
-        const match = data3.find((p: { name: string }) => p.name.toLowerCase().includes(fullFlipped.toLowerCase()) || fullFlipped.toLowerCase().includes(p.name.toLowerCase().split(' ')[0]))
-        if (match) return match.nba_player_id
-        return data3[0].nba_player_id
+        const fullFlippedCanonical = canonicalName(fullFlipped)
+        const match = data3.find((p: { name: string }) => {
+          const canonical = canonicalName(p.name)
+          return canonical.includes(fullFlippedCanonical) || fullFlippedCanonical.includes(canonical.split(' ')[0])
+        })
+        if (match) return { playerId: match.nba_player_id, matchedWith: firstName, attemptedNames: namesToTry }
+        return { playerId: data3[0].nba_player_id, matchedWith: firstName, attemptedNames: namesToTry }
       }
     }
 
-    return null
+    return { playerId: null, matchedWith: '', attemptedNames: namesToTry }
   } catch (error) {
     console.error(`❌ Error finding player ${playerName}:`, error)
-    return null
+    return { playerId: null, matchedWith: '', attemptedNames: namesToTry }
   }
 }
 
@@ -381,7 +594,13 @@ function normalizeInjuryStatus(status: string): string {
  * When historical=false (default): mark all current as not current, then insert/update with is_current=true.
  * When historical=true: delete existing records for this report date, then insert all with is_current=false (no touch to "current").
  */
-async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: Date, historical: boolean = false) {
+async function storeInjuries(
+  supabase: any,
+  injuries: InjuryData[],
+  reportDate: Date,
+  historical: boolean = false,
+  auditOnly: boolean = false,
+) {
   console.log(`💾 Processing ${injuries.length} injuries from report dated ${reportDate.toISOString().split('T')[0]}${historical ? ' (historical)' : ''}...`)
   
   const reportTimestamp = new Date().toISOString()
@@ -389,7 +608,16 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
   const dayStart = `${reportDateStr}T00:00:00.000Z`
   const dayEnd = `${reportDateStr}T23:59:59.999Z`
 
-  if (historical) {
+  const teamCounts: Record<string, TeamAuditRow> = {}
+  for (const injury of injuries) {
+    const teamAbbreviation = normalizeTeamName(injury.team)
+    if (!teamCounts[teamAbbreviation]) {
+      teamCounts[teamAbbreviation] = { parsed: 0, matched: 0, stored: 0, updated: 0, unmatched: 0 }
+    }
+    teamCounts[teamAbbreviation].parsed += 1
+  }
+
+  if (historical && !auditOnly) {
     console.log('   📋 Removing existing injuries for this report date (historical overwrite)...')
     try {
       const { error: deleteError } = await supabase
@@ -402,42 +630,68 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
     } catch (e: any) {
       console.log(`   ⚠️  Delete warning: ${e.message}`)
     }
-  } else {
-    // Step 1: Mark all existing injuries as not current (they're from older reports)
-    console.log('   📋 Marking old injuries as not current...')
-    try {
-      const { error: updateError } = await supabase
-        .from('nba_injuries')
-        .update({ is_current: false })
-        .eq('is_current', true)
-      if (updateError) {
-        console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${updateError.message}`)
-      } else {
-        console.log('   ✅ Marked existing injuries as not current')
-      }
-    } catch (error: any) {
-      console.log(`   ⚠️  Warning: Could not mark old injuries as not current: ${error.message}`)
-    }
   }
 
   const currentReportPlayerIds = new Set<number>()
+  const unmatchedInjuries: UnmatchedInjury[] = []
+  const resolvedInjuries: ResolvedInjury[] = []
   let stored = 0
   let updated = 0
   let skipped = 0
   let errors = 0
+  let deactivatedCount = 0
+
+  let previousCurrentPlayerIds = new Set<number>()
+  if (!historical) {
+    const { data: previousCurrentRows, error: previousCurrentErr } = await supabase
+      .from('nba_injuries')
+      .select('nba_player_id')
+      .eq('is_current', true)
+    if (previousCurrentErr) {
+      console.log(`   ⚠️  Warning: Could not fetch pre-run current injuries: ${previousCurrentErr.message}`)
+    } else {
+      previousCurrentPlayerIds = new Set((previousCurrentRows || []).map((r: { nba_player_id: number }) => r.nba_player_id))
+      console.log(`   📋 Found ${previousCurrentPlayerIds.size} pre-run current injury players`)
+    }
+  }
 
   for (const injury of injuries) {
     try {
       const teamAbbreviation = normalizeTeamName(injury.team)
-      const nbaPlayerId = await findPlayerId(supabase, injury.playerName, teamAbbreviation)
+      const teamRow = teamCounts[teamAbbreviation] || { parsed: 0, matched: 0, stored: 0, updated: 0, unmatched: 0 }
+      if (!teamCounts[teamAbbreviation]) teamCounts[teamAbbreviation] = teamRow
+      const matchResult = await findPlayerId(supabase, injury.playerName, teamAbbreviation)
+      const nbaPlayerId = matchResult.playerId
       
       if (!nbaPlayerId) {
         console.log(`⚠️  Could not find player: ${injury.playerName} (${teamAbbreviation})`)
+        teamRow.unmatched += 1
+        unmatchedInjuries.push({
+          ...injury,
+          teamAbbreviation,
+          attemptedNames: matchResult.attemptedNames,
+        })
         skipped++
         continue
       }
       
       currentReportPlayerIds.add(nbaPlayerId)
+      teamRow.matched += 1
+      resolvedInjuries.push({
+        ...injury,
+        teamAbbreviation,
+        nbaPlayerId,
+        matchedWith: matchResult.matchedWith || injury.playerName,
+      })
+
+      if (!historical && !auditOnly) {
+        // Keep roster team assignment aligned with official report team for current runs.
+        await supabase
+          .from('nba_players')
+          .update({ team_abbreviation: teamAbbreviation })
+          .eq('nba_player_id', nbaPlayerId)
+          .neq('team_abbreviation', teamAbbreviation)
+      }
       
       const reasonParts = injury.reason.split(';')
       const injuryType = reasonParts[0]?.trim() || null
@@ -462,6 +716,10 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
         }
       }
 
+      if (auditOnly) {
+        continue
+      }
+
       if (historical) {
         const { error: insertError } = await supabase.from('nba_injuries').insert(injuryData)
         if (insertError) {
@@ -469,6 +727,7 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           errors++
         } else {
           stored++
+          teamRow.stored += 1
         }
         continue
       }
@@ -498,6 +757,7 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           errors++
         } else {
           updated++
+          teamRow.updated += 1
           console.log(`✅ Updated: ${injury.playerName} (${injury.status})`)
         }
       } else {
@@ -511,6 +771,7 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
           errors++
         } else {
           stored++
+          teamRow.stored += 1
           console.log(`✅ Stored: ${injury.playerName} (${injury.status})`)
         }
       }
@@ -525,39 +786,29 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
     return { stored, updated, skipped, errors }
   }
 
-  // Step 4: For players NOT on the current report, ensure their injuries are marked as not current
-  console.log('   🏥 Checking players not on current report...')
-  try {
-    // Get all players with current injuries
-    const { data: allCurrentInjuries, error: fetchError } = await supabase
-      .from('nba_injuries')
-      .select('nba_player_id')
-      .eq('is_current', true)
-    
-    if (fetchError) {
-      console.log(`   ⚠️  Warning: Could not fetch current injuries: ${fetchError.message}`)
-    } else if (allCurrentInjuries) {
-      const playersToMarkHealthy = allCurrentInjuries
-        .filter((inj: any) => !currentReportPlayerIds.has(inj.nba_player_id))
-        .map((inj: any) => inj.nba_player_id)
-      
+  // Step 4: For players NOT on this report, mark prior current injuries as not current.
+  if (!historical && !auditOnly) {
+    console.log('   🏥 Reconciling players not on current report...')
+    try {
+      const playersToMarkHealthy = Array.from(previousCurrentPlayerIds).filter(
+        (playerId) => !currentReportPlayerIds.has(playerId),
+      )
       if (playersToMarkHealthy.length > 0) {
-        // Mark these players' injuries as not current (they're no longer on the report)
         const { error: markError } = await supabase
           .from('nba_injuries')
           .update({ is_current: false })
           .in('nba_player_id', playersToMarkHealthy)
           .eq('is_current', true)
-        
         if (markError) {
           console.log(`   ⚠️  Warning: Could not mark players as healthy: ${markError.message}`)
         } else {
+          deactivatedCount = playersToMarkHealthy.length
           console.log(`   ✅ Marked ${playersToMarkHealthy.length} players as no longer on injury report`)
         }
       }
+    } catch (error: any) {
+      console.log(`   ⚠️  Warning: Could not reconcile players not on report: ${error.message}`)
     }
-  } catch (error: any) {
-    console.log(`   ⚠️  Warning: Could not check players not on report: ${error.message}`)
   }
   
   console.log(`\n📊 Storage Summary:`)
@@ -566,7 +817,17 @@ async function storeInjuries(supabase: any, injuries: InjuryData[], reportDate: 
   console.log(`   Skipped: ${skipped}`)
   console.log(`   Errors: ${errors}`)
   
-  return { stored, updated, skipped, errors }
+  const audit: IngestAudit = {
+    parsedCount: injuries.length,
+    matchedCount: resolvedInjuries.length,
+    unmatchedCount: unmatchedInjuries.length,
+    deactivatedCount,
+    parsedRows: injuries,
+    unmatched: unmatchedInjuries,
+    teamCounts,
+  }
+
+  return { stored, updated, skipped, errors, audit }
 }
 
 serve(async (req) => {
@@ -587,6 +848,7 @@ serve(async (req) => {
       ? new Date(targetDateParam)
       : new Date()
     const historical = url.searchParams.get('historical') === 'true'
+    const auditOnly = url.searchParams.get('audit') === 'true' || url.searchParams.get('dry_run') === 'true'
 
     console.log('🏀 Starting NBA Injury Report Fetch...')
     console.log(`📅 Target date: ${targetDate.toISOString().split('T')[0]}`)
@@ -617,6 +879,23 @@ serve(async (req) => {
     const injuries = parseInjuryData(pdfText, targetDate)
     console.log(`✅ Extracted ${injuries.length} injuries from PDF`)
 
+    const quality = evaluateParseQuality(injuries)
+    if (quality.suspiciousNameCount > 0) {
+      console.error('❌ Parse quality gate failed', quality)
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Parse quality gate failed; refusing to write potentially corrupted injuries.',
+          quality,
+          hint: 'Run with ?audit=true to inspect parsed rows safely.',
+        }),
+        {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     if (injuries.length === 0) {
       const sample = pdfText.slice(0, 4000)
       const lineCount = pdfText.split(/\r?\n/).length
@@ -638,6 +917,22 @@ serve(async (req) => {
       )
     }
 
+    if (auditOnly) {
+      const auditResult = await storeInjuries(supabase, injuries, targetDate, false, true)
+      return new Response(
+        JSON.stringify({
+          success: true,
+          audit_only: true,
+          date: targetDate.toISOString().split('T')[0],
+          injuries_found: injuries.length,
+          audit: auditResult.audit,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      )
+    }
+
     const result = await storeInjuries(supabase, injuries, targetDate, historical)
 
     return new Response(
@@ -649,6 +944,7 @@ serve(async (req) => {
         updated: result.updated,
         skipped: result.skipped,
         errors: result.errors,
+        audit: result.audit,
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 

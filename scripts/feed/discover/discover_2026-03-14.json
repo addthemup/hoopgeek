@@ -1,0 +1,40 @@
+{
+  "date": "2026-03-14",
+  "games": [
+    {
+      "game_id": "0022500973",
+      "matchup": "SAS vs. CHA",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500971",
+      "matchup": "BOS vs. WAS",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500972",
+      "matchup": "MIA vs. ORL",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500969",
+      "matchup": "BKN @ PHI",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500974",
+      "matchup": "LAL vs. DEN",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500970",
+      "matchup": "ATL vs. MIL",
+      "date": "2026-03-14"
+    },
+    {
+      "game_id": "0022500975",
+      "matchup": "SAC @ LAC",
+      "date": "2026-03-14"
+    }
+  ]
+}

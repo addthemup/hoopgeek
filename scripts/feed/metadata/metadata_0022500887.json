@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500887",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612752,
+      "abbreviation": "NYK",
+      "city": "New York",
+      "name": "Knicks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.568,
+        "ft_pct": 0.75,
+        "fg3_pct": 0.345,
+        "ast": 32,
+        "reb": 43,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612761,
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "name": "Raptors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 95,
+      "stats": {
+        "fg_pct": 0.455,
+        "ft_pct": 0.895,
+        "fg3_pct": 0.286,
+        "ast": 24,
+        "reb": 28,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500887": {
+      "team_stats": {}
+    }
+  }
+}

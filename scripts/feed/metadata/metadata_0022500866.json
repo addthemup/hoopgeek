@@ -1,0 +1,99 @@
+{
+  "gameId": "0022500866",
+  "gameMetadata": {
+    "date": "2026-02-28T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612747,
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "name": "Lakers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 129,
+      "stats": {
+        "fg_pct": 0.533,
+        "ft_pct": 0.7,
+        "fg3_pct": 0.463,
+        "ast": 29,
+        "reb": 47,
+        "tov": 9
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612744,
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "name": "Warriors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 101,
+      "stats": {
+        "fg_pct": 0.451,
+        "ft_pct": 0.778,
+        "fg3_pct": 0.273,
+        "ast": 32,
+        "reb": 40,
+        "tov": 10
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500866",
+      "LAST_GAME_ID": "0022500002",
+      "LAST_GAME_DATE_EST": "2025-10-21T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612744,
+      "LAST_GAME_HOME_TEAM_CITY": "Golden State",
+      "LAST_GAME_HOME_TEAM_NAME": "Warriors",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "GSW",
+      "LAST_GAME_HOME_TEAM_POINTS": 119,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612747,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Los Angeles",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Lakers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "LAL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 109
+    },
+    "seriesStandings": {
+      "GAME_ID": "0022500866",
+      "HOME_TEAM_ID": 1610612744,
+      "VISITOR_TEAM_ID": 1610612747,
+      "GAME_DATE_EST": "2026-02-28T00:00:00",
+      "HOME_TEAM_WINS": 1,
+      "HOME_TEAM_LOSSES": 0,
+      "SERIES_LEADER": "Golden State"
+    }
+  },
+  "score": {
+    "0022500866": {
+      "team_stats": {}
+    }
+  }
+}

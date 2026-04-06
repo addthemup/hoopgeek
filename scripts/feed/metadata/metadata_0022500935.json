@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500935",
+  "gameMetadata": {
+    "date": "2026-03-09T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "awayTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500935",
+      "LAST_GAME_ID": "0022401056",
+      "LAST_GAME_DATE_EST": "2025-03-26T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612746,
+      "LAST_GAME_HOME_TEAM_CITY": "LA",
+      "LAST_GAME_HOME_TEAM_NAME": "Clippers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAC",
+      "LAST_GAME_HOME_TEAM_POINTS": 126,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612752,
+      "LAST_GAME_VISITOR_TEAM_CITY": "New York",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Knicks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "NYK",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500935": {
+      "team_stats": {}
+    }
+  }
+}

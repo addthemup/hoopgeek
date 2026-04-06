@@ -1,0 +1,91 @@
+{
+  "gameId": "0022501004",
+  "gameMetadata": {
+    "date": null,
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612762,
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "name": "Jazz",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.43,
+        "ft_pct": 0.692,
+        "fg3_pct": 0.333,
+        "ast": 26,
+        "reb": 46,
+        "tov": 23
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612750,
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "name": "Timberwolves",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 147,
+      "stats": {
+        "fg_pct": 0.542,
+        "ft_pct": 0.833,
+        "fg3_pct": 0.462,
+        "ast": 39,
+        "reb": 46,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022501004",
+      "LAST_GAME_ID": "0022401195",
+      "LAST_GAME_DATE_EST": "2025-04-13T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612750,
+      "LAST_GAME_HOME_TEAM_CITY": "Minnesota",
+      "LAST_GAME_HOME_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIN",
+      "LAST_GAME_HOME_TEAM_POINTS": 116,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612762,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Utah",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Jazz",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "UTA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 105
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022501004": {
+      "team_stats": {}
+    }
+  }
+}

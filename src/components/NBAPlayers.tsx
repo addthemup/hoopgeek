@@ -1,5 +1,6 @@
 import { Box, Typography, Button, Stack, Card, CardContent, Chip, Grid, Alert } from '@mui/joy'
 import { usePlayers, useSyncPlayers } from '../hooks/useNBAData'
+import { CONTENT_MAX_WIDTH } from '../constants/layout'
 import { useImportNBAPlayers } from '../hooks/useNBAImport'
 
 export default function NBAPlayers() {
@@ -42,7 +43,7 @@ export default function NBAPlayers() {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+    <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto' }}>
       <Stack spacing={3}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography level="h2">NBA Players</Typography>

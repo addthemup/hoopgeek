@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500845",
+  "gameMetadata": {
+    "date": "2026-02-25T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612758,
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "name": "Kings",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 97,
+      "stats": {
+        "fg_pct": 0.398,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.219,
+        "ast": 22,
+        "reb": 43,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612745,
+      "abbreviation": "HOU",
+      "city": "Houston",
+      "name": "Rockets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 128,
+      "stats": {
+        "fg_pct": 0.547,
+        "ft_pct": 0.895,
+        "fg3_pct": 0.436,
+        "ast": 29,
+        "reb": 44,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500845",
+      "LAST_GAME_ID": "0022400862",
+      "LAST_GAME_DATE_EST": "2025-03-01T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612745,
+      "LAST_GAME_HOME_TEAM_CITY": "Houston",
+      "LAST_GAME_HOME_TEAM_NAME": "Rockets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "HOU",
+      "LAST_GAME_HOME_TEAM_POINTS": 103,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612758,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Sacramento",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Kings",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500845": {
+      "team_stats": {}
+    }
+  }
+}

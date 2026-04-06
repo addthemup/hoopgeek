@@ -28,6 +28,7 @@ export interface ProspectSearchResult {
   school_team: string | null
   position_primary: string | null
   draft_year: number
+  image_url: string | null
   type: 'prospect'
 }
 
@@ -74,7 +75,7 @@ export function usePlayerSearch(searchQuery: string) {
       // Search draft prospects (name and school)
       const { data: prospectsData, error: prospectsError } = await supabase
         .from('draft_prospects')
-        .select('id, player_name_full, school_team, position_primary, draft_year')
+        .select('id, player_name_full, school_team, position_primary, draft_year, image_url')
         .or(`player_name_full.ilike.%${searchQuery}%,school_team.ilike.%${searchQuery}%`)
         .order('draft_year', { ascending: false })
         .order('player_name_full')
@@ -102,6 +103,7 @@ export function usePlayerSearch(searchQuery: string) {
         school_team: p.school_team ?? null,
         position_primary: p.position_primary ?? null,
         draft_year: p.draft_year,
+        image_url: p.image_url ?? null,
         type: 'prospect' as const
       }))
 

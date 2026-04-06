@@ -1,3 +1,6 @@
+# Feed nightly: skip list written by run_feed_nightly (live games)
+scripts/feed/.skip_live_game_ids
+
 # Logs
 logs
 *.log
@@ -50,3 +53,15 @@ dist-ssr
 public/games/*.json
 !public/games/games-index.json
 scripts/feed/*.json
+
+# macOS resource forks / AppleDouble
+._*
+**/._*
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Accidental local npm cache directory
+LAC/

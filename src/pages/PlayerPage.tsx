@@ -56,6 +56,7 @@ import PaceGaugeChart from '../components/PlayerCharts/PaceGaugeChart';
 import FourFactorsBarChart from '../components/PlayerCharts/FourFactorsBarChart';
 import UsageEfficiencyScatterChart from '../components/PlayerCharts/UsageEfficiencyScatterChart';
 import { formatESTDate } from '../utils/nbaDateUtils';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
 import PlayerPerformanceTrends from '../components/PlayerCharts/PlayerPerformanceTrends';
 import MinutesLineChart from '../components/PlayerCharts/MinutesLineChart';
 import FantasyPointsLineChart from '../components/PlayerCharts/FantasyPointsLineChart';
@@ -852,7 +853,7 @@ export default function PlayerPage({
   if (loading) {
     return (
       <PlayerPageLayout drawerModules={[]}>
-        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
+        <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: 2, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
@@ -868,7 +869,7 @@ export default function PlayerPage({
   if (error) {
     return (
       <PlayerPageLayout drawerModules={[]}>
-        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
+        <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: 2, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
@@ -885,7 +886,7 @@ export default function PlayerPage({
   if (!playerData) {
     return (
       <PlayerPageLayout drawerModules={[]}>
-        <Box sx={{ maxWidth: { xs: '100%', sm: 805, md: 1035 }, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: { xs: 0, sm: 2, md: 2 }, width: '100%', boxSizing: 'border-box' }}>
+        <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', pt: { xs: 2, md: 3 }, pb: 2, px: 2, width: '100%', boxSizing: 'border-box' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
             <Button variant="outlined" startDecorator={<ArrowBack />} onClick={onBack} size="sm" sx={{ mr: 2, borderColor: '#333333', color: '#FFFFFF' }}>
               Back to {teamName ? `${teamName} Roster` : 'Roster'}
@@ -1141,10 +1142,79 @@ export default function PlayerPage({
     { name: 'awards', content: awardsDrawer },
   ];
 
+  const drawerHeaderContent = (
+    <Box
+      sx={{
+        p: 1.25,
+        borderRadius: 'md',
+        bgcolor: '#111318',
+        border: '1px solid #2A2D33',
+        color: '#FFFFFF',
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box
+          component="img"
+          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${playerData.player.nba_player_id}.png`}
+          alt={playerData.player.name}
+          sx={{
+            width: 46,
+            height: 46,
+            borderRadius: '50%',
+            objectFit: 'cover',
+            border: '2px solid #3B3F47',
+            bgcolor: '#1C2027',
+            flexShrink: 0,
+          }}
+        />
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+            <Typography level="title-md" sx={{ fontWeight: 700, color: '#FFFFFF' }}>
+              {playerData.player.name}
+            </Typography>
+            {playerData.player.position && (
+              <Chip
+                size="sm"
+                variant="soft"
+                sx={{
+                  bgcolor: '#21252D',
+                  border: '1px solid #3B3F47',
+                  color: '#E8EAF0',
+                  fontWeight: 700,
+                }}
+              >
+                {playerData.player.position}
+              </Chip>
+            )}
+          </Box>
+          <Typography level="body-sm" sx={{ color: '#B9BEC9' }}>
+            {playerData.player.team_abbreviation || 'FA'}
+          </Typography>
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1.25, mt: 1.1, flexWrap: 'wrap' }}>
+        <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+          <Box component="span" sx={{ fontWeight: 700, color: '#FFC72C' }}>{seasonStats ? seasonStats.ppg.toFixed(1) : 'N/A'}</Box> PPG
+        </Typography>
+        <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+          <Box component="span" sx={{ fontWeight: 700, color: '#60D394' }}>{seasonStats ? seasonStats.rpg.toFixed(1) : 'N/A'}</Box> RPG
+        </Typography>
+        <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+          <Box component="span" sx={{ fontWeight: 700, color: '#FFB347' }}>{seasonStats ? seasonStats.apg.toFixed(1) : 'N/A'}</Box> APG
+        </Typography>
+        {seasonStats && seasonStats.avgFantasyPoints > 0 && (
+          <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+            <Box component="span" sx={{ fontWeight: 700, color: '#B8860B' }}>{seasonStats.avgFantasyPoints.toFixed(1)}</Box> FP
+          </Typography>
+        )}
+      </Box>
+    </Box>
+  );
+
   return (
-    <PlayerPageLayout drawerModules={drawerModules}>
+    <PlayerPageLayout drawerModules={drawerModules} drawerHeaderContent={drawerHeaderContent}>
     <Box sx={{ 
-      bgcolor: '#000000',
+      bgcolor: '#ffffff',
       minHeight: '100vh',
       overflowX: 'hidden',
       width: '100%',
@@ -1152,14 +1222,14 @@ export default function PlayerPage({
       {/* Main Container */}
       {/* No avatar bar on player page, need padding for nav bar only */}
       <Box sx={{ 
-        maxWidth: { xs: '100%', sm: 805, md: 1035 },
-        minWidth: { xs: '100%', sm: 805, md: 1035 },
+        maxWidth: CONTENT_MAX_WIDTH,
+        minWidth: 0,
         mx: 'auto', 
         pt: isLandscapeMobile 
-          ? '12px' // Minimal padding in landscape mobile
-          : { xs: '12px', md: '16px' }, // Tighter top padding so header isn’t too far down
+          ? 0
+          : { xs: 0, md: 0 },
         pb: 2,
-        px: { xs: 0, sm: 2, md: 2 },
+        px: 2,
         width: '100%',
         boxSizing: 'border-box',
         overflowX: 'hidden',
@@ -1170,8 +1240,15 @@ export default function PlayerPage({
           flexDirection: 'row',
           alignItems: 'center', 
           gap: { xs: 1.5, md: 2 }, 
-          mb: 0.5, 
+          mb: 1,
           px: { xs: 2, sm: 0 },
+          py: 1,
+          position: 'sticky',
+          top: 0,
+          zIndex: 5,
+          bgcolor: '#ffffff',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
         }}>
           {/* Back Button - same as game page header */}
           <IconButton
@@ -1183,11 +1260,11 @@ export default function PlayerPage({
               minWidth: 'auto',
               width: { xs: 28, md: 32 },
               height: { xs: 28, md: 32 },
-              borderColor: '#FFFFFF',
-              color: '#FFFFFF',
+              borderColor: '#333333',
+              color: '#333333',
               flexShrink: 0,
               '&:hover': {
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
+                bgcolor: 'rgba(0, 0, 0, 0.06)',
               },
             }}
             title="Back"
@@ -1398,6 +1475,7 @@ export default function PlayerPage({
                     lineHeight: 1.2,
                     m: 0,
                     p: 0,
+                    color: '#1a1a1a',
                   }}
                 >
                   {playerData.player.name}
@@ -1409,6 +1487,9 @@ export default function PlayerPage({
                     sx={{ 
                       fontWeight: 'bold',
                       fontSize: { xs: '0.75rem', md: '0.875rem' },
+                      color: '#333333',
+                      bgcolor: 'rgba(0, 0, 0, 0.08)',
+                      borderColor: 'rgba(0, 0, 0, 0.12)',
                     }}
                   >
                     {playerData.player.position}
@@ -1428,30 +1509,30 @@ export default function PlayerPage({
               width: '100%',
             }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'primary.500', fontSize: { xs: '1rem', md: '1.25rem' } }}>
+                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'primary.600', fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {seasonStats ? seasonStats.ppg.toFixed(1) : 'N/A'}
                 </Typography>
-                <Typography level="body-xs" sx={{ color: '#CCCCCC', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>PPG</Typography>
+                <Typography level="body-xs" sx={{ color: '#555555', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>PPG</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'success.500', fontSize: { xs: '1rem', md: '1.25rem' } }}>
+                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'success.600', fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {seasonStats ? seasonStats.rpg.toFixed(1) : 'N/A'}
                 </Typography>
-                <Typography level="body-xs" sx={{ color: '#CCCCCC', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>RPG</Typography>
+                <Typography level="body-xs" sx={{ color: '#555555', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>RPG</Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.500', fontSize: { xs: '1rem', md: '1.25rem' } }}>
+                <Typography level="h4" sx={{ fontWeight: 'bold', color: 'warning.600', fontSize: { xs: '1rem', md: '1.25rem' } }}>
                   {seasonStats ? seasonStats.apg.toFixed(1) : 'N/A'}
                 </Typography>
-                <Typography level="body-xs" sx={{ color: '#CCCCCC', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>APG</Typography>
+                <Typography level="body-xs" sx={{ color: '#555555', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>APG</Typography>
               </Box>
               {/* Fantasy Points */}
               {seasonStats && seasonStats.avgFantasyPoints > 0 && (
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFD700', fontSize: { xs: '1rem', md: '1.25rem' } }}>
+                  <Typography level="h4" sx={{ fontWeight: 'bold', color: '#B8860B', fontSize: { xs: '1rem', md: '1.25rem' } }}>
                     {seasonStats.avgFantasyPoints.toFixed(1)}
                   </Typography>
-                  <Typography level="body-xs" sx={{ color: '#CCCCCC', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>FP</Typography>
+                  <Typography level="body-xs" sx={{ color: '#555555', fontSize: { xs: '0.7rem', md: '0.75rem' } }}>FP</Typography>
                 </Box>
               )}
             </Box>
@@ -1468,10 +1549,10 @@ export default function PlayerPage({
 
           {!feedPostsLoading && (!playerFeedPosts || playerFeedPosts.length === 0) && (
             <Box sx={{ textAlign: 'center', py: 8, px: 4 }}>
-              <Typography level="h3" sx={{ color: '#FFFFFF', fontFamily: '"Libre Baskerville", serif', mb: 1 }}>
+              <Typography level="h3" sx={{ color: '#1a1a1a', fontFamily: '"Libre Baskerville", serif', mb: 1 }}>
                 No stories yet
               </Typography>
-              <Typography level="body-md" sx={{ color: '#888', maxWidth: 400, mx: 'auto' }}>
+              <Typography level="body-md" sx={{ color: '#555555', maxWidth: 400, mx: 'auto' }}>
                 Stories featuring {playerData?.player?.name || 'this player'} will appear here.
               </Typography>
             </Box>

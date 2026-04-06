@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500874",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 98,
+      "stats": {
+        "fg_pct": 0.398,
+        "ft_pct": 0.727,
+        "fg3_pct": 0.387,
+        "ast": 21,
+        "reb": 37,
+        "tov": 6
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612738,
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "name": "Celtics",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 114,
+      "stats": {
+        "fg_pct": 0.44,
+        "ft_pct": 0.857,
+        "fg3_pct": 0.327,
+        "ast": 27,
+        "reb": 59,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500874",
+      "LAST_GAME_ID": "0022400900",
+      "LAST_GAME_DATE_EST": "2025-03-06T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612738,
+      "LAST_GAME_HOME_TEAM_CITY": "Boston",
+      "LAST_GAME_HOME_TEAM_NAME": "Celtics",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BOS",
+      "LAST_GAME_HOME_TEAM_POINTS": 123,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612755,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_VISITOR_TEAM_NAME": "76ers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHI",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 105
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500874": {
+      "team_stats": {}
+    }
+  }
+}

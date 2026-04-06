@@ -38,7 +38,7 @@ import {
   Select,
   Option,
 } from '@mui/joy';
-import { NavigateBefore, NavigateNext, NavigateNext as NavigateNextIcon, Info, CalendarToday, PlayArrow, Queue, PlaylistPlay, CheckCircle, Favorite, Star, Add, FavoriteBorder, Search, EmojiEvents, BarChart, TrendingUp, CalendarMonth, Close, ArrowBack, Analytics, Check, KeyboardArrowRight, Share } from '@mui/icons-material';
+import { NavigateBefore, NavigateNext, NavigateNext as NavigateNextIcon, Info, CalendarToday, PlayArrow, Queue, PlaylistPlay, CheckCircle, Favorite, Star, Add, FavoriteBorder, Search, EmojiEvents, BarChart, TrendingUp, CalendarMonth, Close, ArrowBack, Analytics, Check, KeyboardArrowRight, Share, ArrowUpward, ArrowDownward } from '@mui/icons-material';
 import { FaBasketballBall, FaFilter, FaSort, FaChartBar, FaGlobe, FaArrowLeft, FaArrowRight, FaSortAmountDown } from 'react-icons/fa';
 import React, { useState, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { useMediaQuery } from '@mui/material';
@@ -77,6 +77,34 @@ import { usePlayerSearch, SearchResult } from '../hooks/usePlayerSearch';
 import { getTodayEST as getTodayESTUtil, utcToESTDate, formatESTTime, isDateInEST } from '../utils/nbaDateUtils';
 import { matchPropsGamesToNbaGames, getNbaGameIdForPropsGame } from '../utils/matchPropsGamesToNbaGames';
 import { cleanPlayerProps, filterGamePropsOnly, type CleanedPlayerProp } from '../utils/cleanPlayerProps';
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from '../components/ui/carousel';
+import { getAllRulebookEntries } from '../utils/propPredictionsRulebook';
+import { enrichPropsWithTeamConfidence, type GameIdToTeamsMap, type NbaGameIdToTeamsMap, type NbaDailyPlayerStatsRow, type PropWithTeamConfidence } from '../utils/propPredictionsTeamConfidence';
+import { enrichPropsWithPlayerConfidence, type PropWithPlayerConfidence } from '../utils/propPredictionsPlayerConfidence';
+import { useSlipBuilder, propToSlipLeg, type SlipLeg } from '../contexts/SlipBuilderContext';
+import { useFeedDrawerRestoreOptional } from '../contexts/FeedDrawerRestoreContext';
+import { buildMatchupRadarData, type PlayerWithOpposition } from '../utils/matchupRadarData';
+import { MATCHUP_FACTORS } from '../utils/matchupFactors';
+import {
+  type TeamLinesByGame,
+  type TeamSide,
+  moneylineToApproxSpread,
+  parseAmericanOddsNumber,
+  formatAmericanOdds,
+  resolveGameTeamLines,
+} from '../utils/gameOddsResolver';
+import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts';
+import {
+  FEED_DRAWER_TABLE_SX,
+  FEED_DRAWER_AVATAR_PLAYER,
+  FEED_DRAWER_AVATAR_FAVORITE,
+} from '../constants/feedDrawerModuleStyles';
 
 interface NightPlayer {
   player_id: string | null;
@@ -135,9 +163,51 @@ const CATEGORY_LABELS: Record<string, string> = {
   'FT_PCT': 'FT%',
 };
 
+// Per-game label by category: ppg, rpg, apg, spg, bpg, or fg%/3p%/ft%
+const LEADER_PER_GAME_LABEL: Record<string, string> = {
+  'PTS': 'ppg',
+  'REB': 'rpg',
+  'AST': 'apg',
+  'STL': 'spg',
+  'BLK': 'bpg',
+  'FG_PCT': 'fg%',
+  'FG3_PCT': '3p%',
+  'FT_PCT': 'ft%',
+};
+
+// Format leader value: integer + commas for main, per-game with one decimal in parentheses
+function formatLeaderValue(leader: Leader, category: string): { main: string; perGame: string } {
+  const gp = leader.games_played || 1;
+  const suffix = LEADER_PER_GAME_LABEL[category] ?? 'per game';
+  if (category.includes('PCT')) {
+    const pct = leader.value * 100;
+    return {
+      main: Math.round(pct).toLocaleString() + '%',
+      perGame: `(${pct.toFixed(1)} ${suffix})`,
+    };
+  }
+  const total = Math.round(leader.value);
+  const perGameVal = leader.value / gp;
+  return {
+    main: total.toLocaleString(),
+    perGame: `(${perGameVal.toFixed(1)} ${suffix})`,
+  };
+}
+
 // Helper function to get today's date in EST
 // Use the utility function from nbaDateUtils
 const getTodayEST = getTodayESTUtil;
+
+function scoreboardGameMatchesESTDate(rawGameDate: string, estDateString: string): boolean {
+  const gameDate = String(rawGameDate || '').trim();
+  if (!gameDate) return false;
+  // Timestamp payloads are UTC and must be converted to ET.
+  if (gameDate.includes('T') || gameDate.includes(' ')) {
+    return isDateInEST(gameDate, estDateString);
+  }
+  // Date-only payloads from scoreboard are already day buckets; do not UTC-shift.
+  return gameDate.slice(0, 10) === estDateString;
+}
 
 export default function Today() {
   const [showPropPredictions, setShowPropPredictions] = useState(false);
@@ -822,25 +892,7 @@ export default function Today() {
         // game.gameDate is a YYYY-MM-DD string from UTC timestamp, need to convert to EST
         const gameDate = game.gameDate || game.game_date;
         if (!gameDate) return false;
-        
-        // gameDate might be a UTC date string (YYYY-MM-DD) or a full timestamp
-        // Convert to EST date and check if it matches selectedDateString
-        try {
-          // If it's just a date string (YYYY-MM-DD), treat it as UTC midnight and convert to EST
-          // If it's a full timestamp, use isDateInEST directly
-          if (gameDate.includes('T') || gameDate.includes(' ')) {
-            // Full timestamp - use isDateInEST
-            return isDateInEST(gameDate, selectedDateString);
-          } else {
-            // Date string only - treat as UTC midnight and convert to EST
-            const utcDate = new Date(gameDate + 'T00:00:00Z');
-            const estDateString = utcToESTDate(utcDate);
-            return estDateString === selectedDateString;
-          }
-        } catch (e) {
-          console.warn('Error filtering game date:', gameDate, e);
-          return false;
-        }
+        return scoreboardGameMatchesESTDate(gameDate, selectedDateString);
       });
     }
     
@@ -936,18 +988,7 @@ export default function Today() {
       const filteredScoreboardGames = nbaScoreboard.games.filter((game: any) => {
         const gameDate = game.gameDate || game.game_date;
         if (!gameDate) return false;
-        
-        try {
-          if (gameDate.includes('T') || gameDate.includes(' ')) {
-            return isDateInEST(gameDate, selectedDateString);
-          } else {
-            const utcDate = new Date(gameDate + 'T00:00:00Z');
-            const estDateString = utcToESTDate(utcDate);
-            return estDateString === selectedDateString;
-          }
-        } catch (e) {
-          return false;
-        }
+        return scoreboardGameMatchesESTDate(gameDate, selectedDateString);
       });
       
       // Transform scoreboard games to have game_id
@@ -2158,6 +2199,54 @@ function FavoriteSearchResults({
   );
 }
 
+/** Format spread for one team: use primary if set, else derive from opposite (e.g. away = -home_spread). */
+function formatSpreadForDisplay(
+  primary: number | null | undefined,
+  opposite: number | null | undefined,
+  _side: 'away' | 'home'
+): string {
+  const value = primary != null ? primary : opposite != null ? -opposite : null;
+  if (value == null || Number.isNaN(value)) return '';
+  const n = typeof value === 'number' ? value : parseFloat(String(value));
+  if (Number.isNaN(n)) return '';
+  const prefix = n > 0 ? '+' : '';
+  return `${prefix}${n.toFixed(1)}`;
+}
+
+function normalizeGameIdKey(value: string | number | null | undefined): string {
+  const raw = String(value ?? '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return raw;
+  const normalizedDigits = digits.replace(/^0+/, '');
+  return normalizedDigits || '0';
+}
+
+function dayDistance(a: string, b: string): number {
+  if (!a || !b) return 999;
+  const ta = new Date(`${a}T00:00:00Z`).getTime();
+  const tb = new Date(`${b}T00:00:00Z`).getTime();
+  if (Number.isNaN(ta) || Number.isNaN(tb)) return 999;
+  return Math.abs(Math.round((ta - tb) / 86400000));
+}
+
+type TeamMarketType = 'spread' | 'moneyline';
+
+function americanToDecimalOdds(value: number | null): number {
+  if (value == null || !Number.isFinite(value)) return 1;
+  if (value >= 0) return 1 + value / 100;
+  return 1 + 100 / Math.abs(value);
+}
+
+function makeTeamLegIdentity(gameId: string, side: TeamSide): number {
+  const seed = `${gameId}:${side}`;
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) | 0;
+  }
+  return -(Math.abs(hash) + 1);
+}
+
 // Games Carousel Component - Horizontal Scrolling
 function GamesCarousel({ 
   games, 
@@ -2174,7 +2263,16 @@ function GamesCarousel({
   const dateString = selectedDate.format('YYYY-MM-DD');
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const todayEST = getTodayEST();
+  const isSelectedDateToday = dateString === todayEST;
+  const nowMs = Date.now();
   const isPastDate = selectedDate.isBefore(dayjs(todayEST), 'day');
+  const { addLeg: addToSlip, canAddPlayer: canAddPlayerToSlip } = useSlipBuilder();
+  const feedRestore = useFeedDrawerRestoreOptional();
+  const [marketSelectionByGame, setMarketSelectionByGame] = useState<Record<string, { away: TeamMarketType; home: TeamMarketType }>>({});
+  const debugHomeCards =
+    typeof window !== 'undefined' &&
+    import.meta.env.DEV &&
+    (window as any).__DEBUG_HOME_CARDS__ !== false
 
   // Fetch props for all games
   const { data: allGameProps } = useQuery({
@@ -2206,62 +2304,113 @@ function GamesCarousel({
       // Try to find props games first by nba_game_id
       // Props are stored with the game's date, which is often the next day in EST
       const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
+      const afterNextDay = dayjs(dateString).add(2, 'day').format('YYYY-MM-DD');
+      const dateCandidates = [dateString, nextDay, afterNextDay];
       let propsGames: any[] = [];
       const { data: propsGamesByNbaId } = await supabase
         .from('player_props_games')
-        .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team')
+        .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team, raw_event_data')
         .in('nba_game_id', gameIds)
-        .in('game_date', [dateString, nextDay]);
+        .in('game_date', dateCandidates);
 
       if (propsGamesByNbaId && propsGamesByNbaId.length > 0) {
         propsGames = propsGamesByNbaId;
-      } else {
-        // Fallback: Match by team codes/names and date
-        const { data: allPropsGamesForDate } = await supabase
-          .from('player_props_games')
-          .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team')
-          .in('game_date', [dateString, nextDay]);
-
-        if (allPropsGamesForDate) {
-          // Filter to match team combinations
-          // Try matching by tricodes first, then fall back to full team names
-          propsGames = allPropsGamesForDate.filter(pg => {
-            return Array.from(gameTeamMap.values()).some(gameTeams => {
-              // Strategy 1: Match by tricodes (if both have them)
-              if (pg.home_team_tricode && pg.away_team_tricode && 
-                  gameTeams.homeTricode && gameTeams.awayTricode) {
-                return (
-                  (pg.home_team_tricode === gameTeams.homeTricode && pg.away_team_tricode === gameTeams.awayTricode) ||
-                  (pg.home_team_tricode === gameTeams.awayTricode && pg.away_team_tricode === gameTeams.homeTricode)
-                );
-              }
-              
-              // Strategy 2: Match by full team names (if tricodes are missing)
-              if (pg.home_team && pg.away_team && 
-                  gameTeams.homeName && gameTeams.awayName) {
-                // Normalize team names for comparison (case-insensitive, handle variations)
-                const normalizeName = (name: string) => name.toLowerCase().trim();
-                const pgHome = normalizeName(pg.home_team);
-                const pgAway = normalizeName(pg.away_team);
-                const gameHome = normalizeName(gameTeams.homeName);
-                const gameAway = normalizeName(gameTeams.awayName);
-                
-                return (
-                  (pgHome === gameHome && pgAway === gameAway) ||
-                  (pgHome === gameAway && pgAway === gameHome)
-                );
-              }
-              
-              return false;
-            });
-          });
-        }
       }
+      const propsGameById = new Map<string, any>(propsGames.map((pg) => [String(pg.id), pg]));
+      // Fallback: Match by team codes/names and date
+      const { data: allPropsGamesForDate } = await supabase
+        .from('player_props_games')
+        .select('id, nba_game_id, event_id, home_team_tricode, away_team_tricode, home_team, away_team, raw_event_data')
+        .in('game_date', dateCandidates);
+
+      if (allPropsGamesForDate) {
+        // Filter to match team combinations
+        // Try matching by tricodes first, then fall back to full team names
+        const matchedFallbackGames = allPropsGamesForDate.filter(pg => {
+          let raw = pg.raw_event_data as any;
+          if (typeof raw === 'string') {
+            try { raw = JSON.parse(raw); } catch { raw = null; }
+          }
+          const teams = raw?.teams as { home?: { names?: { short?: string; long?: string } }; away?: { names?: { short?: string; long?: string } } } | undefined;
+          const rowHomeTri = String(pg.home_team_tricode ?? teams?.home?.names?.short ?? '').trim().toUpperCase();
+          const rowAwayTri = String(pg.away_team_tricode ?? teams?.away?.names?.short ?? '').trim().toUpperCase();
+          const rowHomeName = String(pg.home_team ?? teams?.home?.names?.long ?? '').trim();
+          const rowAwayName = String(pg.away_team ?? teams?.away?.names?.long ?? '').trim();
+          return Array.from(gameTeamMap.values()).some(gameTeams => {
+            // Strategy 1: Match by tricodes (if both have them)
+            if (rowHomeTri && rowAwayTri && 
+                gameTeams.homeTricode && gameTeams.awayTricode) {
+              return (
+                (rowHomeTri === gameTeams.homeTricode && rowAwayTri === gameTeams.awayTricode) ||
+                (rowHomeTri === gameTeams.awayTricode && rowAwayTri === gameTeams.homeTricode)
+              );
+            }
+            
+            // Strategy 2: Match by full team names (if tricodes are missing)
+            if (rowHomeName && rowAwayName && 
+                gameTeams.homeName && gameTeams.awayName) {
+              // Normalize team names for comparison (case-insensitive, handle variations)
+              const normalizeName = (name: string) => name.toLowerCase().trim();
+              const pgHome = normalizeName(rowHomeName);
+              const pgAway = normalizeName(rowAwayName);
+              const gameHome = normalizeName(gameTeams.homeName);
+              const gameAway = normalizeName(gameTeams.awayName);
+              
+              return (
+                (pgHome === gameHome && pgAway === gameAway) ||
+                (pgHome === gameAway && pgAway === gameHome)
+              );
+            }
+            
+            return false;
+          });
+        });
+        matchedFallbackGames.forEach((pg) => {
+          propsGameById.set(String(pg.id), pg);
+        });
+      }
+      propsGames = Array.from(propsGameById.values());
 
       const propsGameIds = propsGames?.map(pg => pg.id).filter(Boolean) || [];
-      const gameIdToEventId = new Map(
-        propsGames?.map(pg => [pg.nba_game_id, pg.event_id]).filter(([gid]) => gid) || []
-      );
+      const normalizeName = (s: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+      const eventIdToGameId = new Map<string, string>();
+      const nbaIdToGameId = new Map<string, string>();
+      for (const pg of propsGames || []) {
+        let canonicalGameId: string | null = null;
+        const pgNba = String(pg?.nba_game_id ?? '').trim();
+        if (pgNba && gameTeamMap.has(pgNba)) {
+          canonicalGameId = pgNba;
+        } else {
+          let raw = pg?.raw_event_data as any;
+          if (typeof raw === 'string') {
+            try { raw = JSON.parse(raw); } catch { raw = null; }
+          }
+          const teams = raw?.teams as { home?: { names?: { short?: string; long?: string } }; away?: { names?: { short?: string; long?: string } } } | undefined;
+          const rowHomeTri = String(pg?.home_team_tricode ?? teams?.home?.names?.short ?? '').trim().toUpperCase();
+          const rowAwayTri = String(pg?.away_team_tricode ?? teams?.away?.names?.short ?? '').trim().toUpperCase();
+          if (rowHomeTri && rowAwayTri) {
+            const triMatch = games.find((g) => {
+              const gHome = String(g.home_team_tricode ?? '').trim().toUpperCase();
+              const gAway = String(g.away_team_tricode ?? '').trim().toUpperCase();
+              return (rowHomeTri === gHome && rowAwayTri === gAway) || (rowHomeTri === gAway && rowAwayTri === gHome);
+            });
+            canonicalGameId = triMatch?.game_id ?? null;
+          }
+          if (!canonicalGameId) {
+            const rowHomeName = normalizeName(String(pg?.home_team ?? teams?.home?.names?.long ?? ''));
+            const rowAwayName = normalizeName(String(pg?.away_team ?? teams?.away?.names?.long ?? ''));
+            const nameMatch = games.find((g) => {
+              const gHome = normalizeName(String(g.home_team_name ?? ''));
+              const gAway = normalizeName(String(g.away_team_name ?? ''));
+              if (!rowHomeName || !rowAwayName || !gHome || !gAway) return false;
+              return (rowHomeName === gHome && rowAwayName === gAway) || (rowHomeName === gAway && rowAwayName === gHome);
+            });
+            canonicalGameId = nameMatch?.game_id ?? null;
+          }
+        }
+        if (pg?.event_id && canonicalGameId) eventIdToGameId.set(String(pg.event_id), canonicalGameId);
+        if (pgNba && canonicalGameId) nbaIdToGameId.set(pgNba, canonicalGameId);
+      }
 
       // Fetch props for all games
       let propsQuery = supabase
@@ -2277,7 +2426,7 @@ function GamesCarousel({
             nba_game_id
           )
         `)
-        .in('game_date', [dateString, nextDayForProps]);
+        .in('game_date', dateCandidates);
 
       if (propsGameIds.length > 0) {
         propsQuery = propsQuery.in('game_id', propsGameIds);
@@ -2286,28 +2435,27 @@ function GamesCarousel({
         return new Map();
       }
 
+      // Avoid clipping late-game props on heavy slates.
+      // A fixed cap (e.g., 500) can return only earliest games.
+      const propsFetchLimit = Math.max(2000, propsGameIds.length * 900);
+
       const { data: propsData, error } = await propsQuery
         .order('line', { ascending: true })
-        .limit(500);
+        .limit(propsFetchLimit);
 
       if (error || !propsData) return new Map();
 
-      // Group props by nba_game_id
+      // Group props by canonical NBA game id.
       const propsMap = new Map<string, any[]>();
       propsData.forEach((prop: any) => {
         const propsGame = prop.player_props_games;
         if (!propsGame) return;
-        
-        // Find the nba_game_id for this prop
-        for (const [nbaGameId, eventId] of gameIdToEventId) {
-          if (propsGame.event_id === eventId || propsGame.nba_game_id === nbaGameId) {
-            if (!propsMap.has(nbaGameId)) {
-              propsMap.set(nbaGameId, []);
-            }
-            propsMap.get(nbaGameId)?.push(prop);
-            break;
-          }
-        }
+        const byEvent = propsGame.event_id ? eventIdToGameId.get(String(propsGame.event_id)) : undefined;
+        const byNba = propsGame.nba_game_id ? nbaIdToGameId.get(String(propsGame.nba_game_id)) : undefined;
+        const canonical = byEvent ?? byNba;
+        if (!canonical) return;
+        if (!propsMap.has(canonical)) propsMap.set(canonical, []);
+        propsMap.get(canonical)?.push(prop);
       });
 
       return propsMap;
@@ -2315,6 +2463,295 @@ function GamesCarousel({
     enabled: games.length > 0,
     staleTime: 5 * 60 * 1000,
   });
+
+  // Fetch spreads from player_props_games: match by nba_game_id or by date + tricodes from raw_event_data.teams; use spread from odds if present, else derive approximate spread from moneyline
+  const { data: linesByGameId } = useQuery({
+    queryKey: ['game-spreads-ppg', dateString, games.map(g => g.game_id).join(','), games.length],
+    queryFn: async (): Promise<Map<string, TeamLinesByGame>> => {
+      if (!games || games.length === 0) return new Map();
+      const normalizedGameIdToCanonical = new Map<string, string>();
+      games.forEach((g) => {
+        const normalized = normalizeGameIdKey(g.game_id);
+        if (normalized) normalizedGameIdToCanonical.set(normalized, g.game_id);
+      });
+      const nextDay = dayjs(dateString).add(1, 'day').format('YYYY-MM-DD');
+      const afterNextDay = dayjs(dateString).add(2, 'day').format('YYYY-MM-DD');
+      const dateCandidates = [dateString, nextDay, afterNextDay];
+      const { data: ppgRows, error } = await supabase
+        .from('player_props_games')
+        .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team, raw_event_data')
+        .in('game_date', dateCandidates);
+
+      if (error || !ppgRows?.length) return new Map();
+      const out = new Map<string, TeamLinesByGame>();
+      const bestDistanceByGameId = new Map<string, number>();
+
+      const normalizeName = (s: string) => (s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+      for (const pg of ppgRows) {
+        let raw = pg.raw_event_data;
+        if (typeof raw === 'string') {
+          try {
+            raw = JSON.parse(raw) as Record<string, unknown>;
+          } catch {
+            continue;
+          }
+        }
+        if (!raw || typeof raw !== 'object') continue;
+
+        const teams = raw.teams as { home?: { names?: { short?: string } }; away?: { names?: { short?: string } } } | undefined;
+        const pgHomeTricode = (teams?.home?.names?.short || pg.home_team_tricode || '').trim().toUpperCase();
+        const pgAwayTricode = (teams?.away?.names?.short || pg.away_team_tricode || '').trim().toUpperCase();
+
+        let homeSpread: number | null = null;
+        let awaySpread: number | null = null;
+        let homeSpreadOdds: string | null = null;
+        let awaySpreadOdds: string | null = null;
+        let homeMoneyline: number | null = null;
+        let awayMoneyline: number | null = null;
+        let homeMoneylineOdds: string | null = null;
+        let awayMoneylineOdds: string | null = null;
+        const odds = raw.odds as Record<string, Record<string, unknown>> | undefined;
+        if (odds) {
+          for (const [key, odd] of Object.entries(odds)) {
+            if (!odd || typeof odd !== 'object') continue;
+            const side = (odd.sideID as string) || '';
+            const marketName = ((odd.marketName as string) || '').toLowerCase();
+            const betType = ((odd.betTypeID as string) || '').toLowerCase();
+            const keyLower = (key || '').toLowerCase();
+            const displayOdds = formatAmericanOdds(odd.bookOdds ?? odd.openBookOdds);
+            const oddsNum = parseAmericanOddsNumber(odd.bookOdds ?? odd.openBookOdds);
+            const isSpread = marketName.includes('spread') || betType === 'spread' || keyLower.includes('spread');
+            if (isSpread) {
+              const spreadNum = odd.bookSpread != null
+                ? Number(odd.bookSpread)
+                : odd.openBookSpread != null
+                  ? Number(odd.openBookSpread)
+                  : odd.bookOdds != null
+                    ? parseFloat(String(odd.bookOdds).replace(/[^0-9.-]/g, ''))
+                    : NaN;
+              if (!Number.isNaN(spreadNum)) {
+                if (side === 'home') {
+                  homeSpread = spreadNum;
+                  homeSpreadOdds = displayOdds;
+                } else if (side === 'away') {
+                  awaySpread = spreadNum;
+                  awaySpreadOdds = displayOdds;
+                }
+              }
+            }
+            const isMoneyline = marketName.includes('moneyline') || betType.includes('ml') || keyLower.includes('-ml-') || keyLower.includes('moneyline');
+            if (isMoneyline && oddsNum != null) {
+              if (side === 'home') {
+                homeMoneyline = oddsNum;
+                homeMoneylineOdds = displayOdds;
+              } else if (side === 'away') {
+                awayMoneyline = oddsNum;
+                awayMoneylineOdds = displayOdds;
+              }
+            }
+          }
+          if (homeSpread != null && awaySpread == null) awaySpread = -homeSpread;
+          if (awaySpread != null && homeSpread == null) homeSpread = -awaySpread;
+        }
+
+        if (odds) {
+          if (homeMoneyline == null) {
+            homeMoneyline = parseAmericanOddsNumber(odds['points-home-game-ml-home']?.bookOdds ?? odds['points-home-game-ml-home']?.openBookOdds);
+            homeMoneylineOdds = formatAmericanOdds(odds['points-home-game-ml-home']?.bookOdds ?? odds['points-home-game-ml-home']?.openBookOdds);
+          }
+          if (awayMoneyline == null) {
+            awayMoneyline = parseAmericanOddsNumber(odds['points-away-game-ml-away']?.bookOdds ?? odds['points-away-game-ml-away']?.openBookOdds);
+            awayMoneylineOdds = formatAmericanOdds(odds['points-away-game-ml-away']?.bookOdds ?? odds['points-away-game-ml-away']?.openBookOdds);
+          }
+        }
+
+        if (homeSpread == null && awaySpread == null && homeMoneyline != null && awayMoneyline != null) {
+          const derived = moneylineToApproxSpread(homeMoneyline, awayMoneyline);
+            if (derived != null) {
+              homeSpread = derived.homeSpread;
+              awaySpread = derived.awaySpread;
+              if (homeSpreadOdds == null) homeSpreadOdds = homeMoneylineOdds;
+              if (awaySpreadOdds == null) awaySpreadOdds = awayMoneylineOdds;
+            }
+        }
+
+        if (homeSpread == null && awaySpread == null && homeMoneyline == null && awayMoneyline == null) continue;
+        const home = homeSpread ?? -awaySpread!;
+        const away = awaySpread ?? -homeSpread!;
+
+        const pgDateOnly = String(pg.game_date ?? '').slice(0, 10);
+        const distance = dayDistance(pgDateOnly, dateString);
+        const nbaId = normalizeGameIdKey(pg.nba_game_id);
+        const canonicalGameId = nbaId ? normalizedGameIdToCanonical.get(nbaId) : undefined;
+        if (canonicalGameId) {
+          const prevBest = bestDistanceByGameId.get(canonicalGameId) ?? Number.POSITIVE_INFINITY;
+          if (distance <= prevBest) {
+            out.set(canonicalGameId, {
+              homeSpread: home,
+              awaySpread: away,
+              homeSpreadOdds,
+              awaySpreadOdds,
+              homeMoneyline,
+              awayMoneyline,
+              homeMoneylineOdds,
+              awayMoneylineOdds,
+            });
+            bestDistanceByGameId.set(canonicalGameId, distance);
+          }
+          continue;
+        }
+        if (nbaId) {
+          out.set(nbaId, {
+            homeSpread: home,
+            awaySpread: away,
+            homeSpreadOdds,
+            awaySpreadOdds,
+            homeMoneyline,
+            awayMoneyline,
+            homeMoneylineOdds,
+            awayMoneylineOdds,
+          });
+          continue;
+        }
+        if (pgHomeTricode && pgAwayTricode) {
+          for (const g of games) {
+            const gHome = (g.home_team_tricode || '').trim().toUpperCase();
+            const gAway = (g.away_team_tricode || '').trim().toUpperCase();
+            if ((pgHomeTricode === gHome && pgAwayTricode === gAway) || (pgHomeTricode === gAway && pgAwayTricode === gHome)) {
+              const prevBest = bestDistanceByGameId.get(g.game_id) ?? Number.POSITIVE_INFINITY;
+              if (distance <= prevBest) {
+                out.set(g.game_id, {
+                  homeSpread: home,
+                  awaySpread: away,
+                  homeSpreadOdds,
+                  awaySpreadOdds,
+                  homeMoneyline,
+                  awayMoneyline,
+                  homeMoneylineOdds,
+                  awayMoneylineOdds,
+                });
+                bestDistanceByGameId.set(g.game_id, distance);
+              }
+              break;
+            }
+          }
+          continue;
+        }
+        const pgHome = normalizeName(pg.home_team || '');
+        const pgAway = normalizeName(pg.away_team || '');
+        for (const g of games) {
+          const gHome = normalizeName(g.home_team_name || '');
+          const gAway = normalizeName(g.away_team_name || '');
+          if (pgHome && pgAway && gHome && gAway &&
+              ((pgHome === gHome && pgAway === gAway) || (pgHome === gAway && pgAway === gHome))) {
+            const prevBest = bestDistanceByGameId.get(g.game_id) ?? Number.POSITIVE_INFINITY;
+            if (distance <= prevBest) {
+              out.set(g.game_id, {
+                homeSpread: home,
+                awaySpread: away,
+                homeSpreadOdds,
+                awaySpreadOdds,
+                homeMoneyline,
+                awayMoneyline,
+                homeMoneylineOdds,
+                awayMoneylineOdds,
+              });
+              bestDistanceByGameId.set(g.game_id, distance);
+            }
+            break;
+          }
+        }
+      }
+      return out;
+    },
+    enabled: games.length > 0,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (!debugHomeCards || !games?.length) return;
+    const scoreboardRows = games.map((g: any) => {
+      const lines = linesByGameId?.get(g.game_id);
+      const props = allGameProps?.get(g.game_id) ?? [];
+      return {
+        game_id: g.game_id,
+        matchup: `${g.away_team_tricode} @ ${g.home_team_tricode}`,
+        game_date: g.game_date,
+        propsCount: props.length,
+        hasLinesEntry: Boolean(lines),
+        awaySpread: lines?.awaySpread ?? null,
+        homeSpread: lines?.homeSpread ?? null,
+        awayMoneyline: lines?.awayMoneyline ?? null,
+        homeMoneyline: lines?.homeMoneyline ?? null,
+      };
+    });
+    console.groupCollapsed(`[Today][GamesCarousel][odds-map] ${dateString} games=${games.length}`);
+    console.table(scoreboardRows);
+    console.groupEnd();
+  }, [debugHomeCards, dateString, games, allGameProps, linesByGameId]);
+
+  const toggleMarket = React.useCallback((gameId: string, side: TeamSide, hasMoneyline: boolean, hasSpread: boolean) => {
+    if (!hasMoneyline || !hasSpread) return;
+    setMarketSelectionByGame((prev) => {
+      const current = prev[gameId] ?? { away: 'spread', home: 'spread' };
+      const nextSideMarket: TeamMarketType = current[side] === 'spread' ? 'moneyline' : 'spread';
+      return { ...prev, [gameId]: { ...current, [side]: nextSideMarket } };
+    });
+  }, []);
+
+  const addTeamLineToSlip = React.useCallback((params: {
+    gameId: string;
+    gameDate: string;
+    teamTricode: string;
+    side: TeamSide;
+    market: TeamMarketType;
+    spreadLine: number | null;
+    spreadOdds: string | null;
+    moneyline: number | null;
+    moneylineOdds: string | null;
+  }) => {
+    const teamLegId = makeTeamLegIdentity(params.gameId, params.side);
+    if (!canAddPlayerToSlip(teamLegId)) return;
+
+    const market = params.market === 'moneyline' && params.moneyline != null ? 'moneyline' : 'spread';
+    const lineValue = market === 'spread' ? params.spreadLine : params.moneyline;
+    if (lineValue == null || Number.isNaN(lineValue)) return;
+
+    const oddsText = market === 'spread'
+      ? params.spreadOdds ?? ''
+      : params.moneylineOdds ?? formatAmericanOdds(params.moneyline) ?? '';
+    const oddsNum = parseAmericanOddsNumber(oddsText) ?? (market === 'moneyline' ? params.moneyline : null);
+
+    const leg: SlipLeg = {
+      id: `team-leg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      player_name: `${params.teamTricode} ${market === 'spread' ? 'Spread' : 'Moneyline'}`,
+      nba_player_id: teamLegId,
+      bet_type: market === 'spread' ? 'team_spread' : 'team_moneyline',
+      line: Number(lineValue),
+      side: 'over',
+      odds_american: oddsText,
+      odds_decimal: americanToDecimalOdds(oddsNum),
+      game_id: params.gameId,
+      game_date: params.gameDate,
+    };
+    const result = addToSlip(leg, feedRestore ? { skipOnLegAddedCallback: true } : undefined);
+    if (!result.added || !feedRestore) return;
+    feedRestore.goToProfileSlipBuilderAfterAdd({
+      feedDrawerTab: 'home',
+      drawerProfileMode: false,
+      moduleName: 'games_carousel',
+      propUi: {
+        mainTab: 'hit_rate',
+        activeTab: 'hottest',
+        propTypeFilter: '',
+        hitRatePage: 1,
+        teamConfidencePage: 1,
+        playerConfidencePage: 1,
+      },
+      dateString,
+    });
+  }, [addToSlip, canAddPlayerToSlip, dateString, feedRestore]);
 
   // Fetch standings for all teams in games
   const { data: standingsMap } = useQuery({
@@ -2554,51 +2991,122 @@ function GamesCarousel({
   };
 
   return (
-    <Box
-      ref={scrollContainerRef}
-      onWheel={handleWheel}
-      sx={{
-        width: '100%',
-        overflowX: 'auto',
-        overflowY: 'hidden',
-        pb: 2,
-        touchAction: 'pan-x pan-y', // Allow both horizontal and vertical panning
-        WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
-        '&::-webkit-scrollbar': {
-          height: '8px',
-        },
-        '&::-webkit-scrollbar-track': {
-          bgcolor: '#1a1a1a',
-          borderRadius: '4px',
-        },
-        '&::-webkit-scrollbar-thumb': {
-          bgcolor: '#FFC72C',
-          borderRadius: '4px',
-          '&:hover': {
-            bgcolor: '#FFD700',
-          },
-        },
-      }}
-    >
-      <Stack
-        direction="row"
-        spacing={{ xs: 1.25, sm: 1.5 }}
+    <Box sx={{ position: 'relative' }}>
+      <Chip
+        size="sm"
+        variant="soft"
+        color="neutral"
         sx={{
-          width: 'max-content',
-          minWidth: '100%',
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          zIndex: 2000,
+          borderRadius: '0 0 0 10px',
+          bgcolor: '#111111',
+          color: '#FFFFFF',
+          fontWeight: 600,
+          border: '1px solid',
+          borderColor: '#3a3a3a',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.45)',
         }}
       >
-        {games.map((game) => {
+        {selectedDate.format('MMM D, YYYY')}
+      </Chip>
+      <Box
+        ref={scrollContainerRef}
+        onWheel={handleWheel}
+        sx={{
+          width: '100%',
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          pb: 2,
+          touchAction: 'pan-x pan-y', // Allow both horizontal and vertical panning
+          WebkitOverflowScrolling: 'touch', // Smooth scrolling on iOS
+          '&::-webkit-scrollbar': {
+            height: '8px',
+          },
+          '&::-webkit-scrollbar-track': {
+            bgcolor: '#1a1a1a',
+            borderRadius: '4px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            bgcolor: '#FFC72C',
+            borderRadius: '4px',
+            '&:hover': {
+              bgcolor: '#FFD700',
+            },
+          },
+        }}
+      >
+        <Stack
+          direction="row"
+          spacing={{ xs: 1.25, sm: 1.5 }}
+          sx={{
+            width: 'max-content',
+            minWidth: '100%',
+          }}
+        >
+          {games.map((game) => {
           const awayTricode = game.away_team_tricode || 'TBD';
           const homeTricode = game.home_team_tricode || 'TBD';
           const hasScore = game.home_team_score > 0 || game.away_team_score > 0;
-          const gameProps = allGameProps?.get(game.game_id) || [];
-          const topProps = gameProps.slice(0, 2);
-          const awayData = teamDataMap?.get(awayTricode);
-          const homeData = teamDataMap?.get(homeTricode);
+          const gameStartMs = game.game_date ? Date.parse(game.game_date) : Number.NaN;
+          const hasStartedToday =
+            isSelectedDateToday &&
+            Number.isFinite(gameStartMs) &&
+            nowMs >= gameStartMs;
+          const showScoreboard = hasScore || hasStartedToday;
+          const linesFromPpg = linesByGameId?.get(game.game_id);
+          const gameProps = allGameProps?.get(game.game_id) ?? [];
+          const resolvedLines = resolveGameTeamLines({
+            homeTricode,
+            awayTricode,
+            gameProps,
+            initial: {
+              awaySpread: linesFromPpg?.awaySpread ?? game.away_spread ?? null,
+              homeSpread: linesFromPpg?.homeSpread ?? game.home_spread ?? null,
+              awaySpreadOdds: linesFromPpg?.awaySpreadOdds ?? null,
+              homeSpreadOdds: linesFromPpg?.homeSpreadOdds ?? null,
+              awayMoneyline: linesFromPpg?.awayMoneyline ?? null,
+              homeMoneyline: linesFromPpg?.homeMoneyline ?? null,
+              awayMoneylineOdds: linesFromPpg?.awayMoneylineOdds ?? null,
+              homeMoneylineOdds: linesFromPpg?.homeMoneylineOdds ?? null,
+            },
+          });
+          const awaySpread = resolvedLines.awaySpread;
+          const homeSpread = resolvedLines.homeSpread;
+          const awayMoneyline = resolvedLines.awayMoneyline;
+          const homeMoneyline = resolvedLines.homeMoneyline;
+          const awayMoneylineOdds = resolvedLines.awayMoneylineOdds;
+          const homeMoneylineOdds = resolvedLines.homeMoneylineOdds;
+          const awaySpreadOdds = resolvedLines.awaySpreadOdds;
+          const homeSpreadOdds = resolvedLines.homeSpreadOdds;
+          const hasSpread = awaySpread != null || homeSpread != null;
+          const awayResolvedSpreadLine = awaySpread ?? (homeSpread != null ? -homeSpread : null);
+          const homeResolvedSpreadLine = homeSpread ?? (awaySpread != null ? -awaySpread : null);
+          const hasAwayMoneyline = awayMoneyline != null;
+          const hasHomeMoneyline = homeMoneyline != null;
+          const awaySelected = marketSelectionByGame[game.game_id]?.away ?? 'spread';
+          const homeSelected = marketSelectionByGame[game.game_id]?.home ?? 'spread';
+          const awayMarket: TeamMarketType = !hasSpread && hasAwayMoneyline
+            ? 'moneyline'
+            : (awaySelected === 'moneyline' && hasAwayMoneyline ? 'moneyline' : 'spread');
+          const homeMarket: TeamMarketType = !hasSpread && hasHomeMoneyline
+            ? 'moneyline'
+            : (homeSelected === 'moneyline' && hasHomeMoneyline ? 'moneyline' : 'spread');
+          const awayMarketText = awayMarket === 'spread'
+            ? formatSpreadForDisplay(awayResolvedSpreadLine, homeResolvedSpreadLine, 'away')
+            : (awayMoneylineOdds ?? formatAmericanOdds(awayMoneyline) ?? '');
+          const homeMarketText = homeMarket === 'spread'
+            ? formatSpreadForDisplay(homeResolvedSpreadLine, awayResolvedSpreadLine, 'home')
+            : (homeMoneylineOdds ?? formatAmericanOdds(homeMoneyline) ?? '');
+          const awayHasLineForSelection = awayMarket === 'spread' ? awayResolvedSpreadLine != null : awayMoneyline != null;
+          const homeHasLineForSelection = homeMarket === 'spread' ? homeResolvedSpreadLine != null : homeMoneyline != null;
+          const awayCanAdd = canAddPlayerToSlip(makeTeamLegIdentity(game.game_id, 'away')) && awayHasLineForSelection;
+          const homeCanAdd = canAddPlayerToSlip(makeTeamLegIdentity(game.game_id, 'home')) && homeHasLineForSelection;
           const awayColors = getTeamColors(awayTricode);
           const homeColors = getTeamColors(homeTricode);
-          const gameStatus = game.game_status_text || (hasScore ? 'Final' : 'Upcoming');
+          const gameStatus = game.game_status_text || (showScoreboard ? 'Live' : 'Upcoming');
           // Game is final if: status text says Final, game_status is 3, OR (past date AND has scores)
           const isFinal = gameStatus === 'Final' || 
                          game.game_status === 3 || 
@@ -2609,20 +3117,24 @@ function GamesCarousel({
               key={game.game_id}
               orientation="horizontal"
               variant="outlined"
-              onClick={() => onGameClick(game.game_id)}
               sx={{
-                width: { xs: 260, sm: 300 },
-                minWidth: { xs: 260, sm: 300 },
-                bgcolor: '#0f0f0f',
-                borderColor: '#2a2a2a',
-                cursor: 'pointer',
+                width: 'auto',
+                minWidth: 'auto',
+                display: 'flex',
+                flexDirection: 'row',
+                flexWrap: 'nowrap',
+                gap: 0,
+                padding: 0,
+                bgcolor: '#FFFFFF',
+                borderColor: 'rgba(0,0,0,0.12)',
                 transition: 'all 0.3s ease',
                 position: 'relative',
                 overflow: 'hidden',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                 '&:hover': {
                   borderColor: '#FFC72C',
-                  transform: 'translateY(-4px)',
-                  boxShadow: '0 12px 40px rgba(255, 199, 44, 0.4)',
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 8px 24px rgba(255, 199, 44, 0.25)',
                   '&::before': {
                     opacity: 1,
                   },
@@ -2633,410 +3145,272 @@ function GamesCarousel({
                   top: 0,
                   left: 0,
                   right: 0,
-                  height: '4px',
+                  height: '2.7px',
                   background: `linear-gradient(90deg, ${awayColors.primary} 0%, ${homeColors.primary} 100%)`,
-                  opacity: 0.7,
+                  opacity: 0.85,
                   transition: 'opacity 0.3s ease',
                 },
               }}
             >
-              <CardOverflow>
+              {/* Ticket split: away (left) | home (right) — logo + tricode + record per side */}
+              <CardOverflow
+                sx={{
+                  width: { xs: 110, sm: 121 },
+                  minWidth: { xs: 110, sm: 121 },
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'row',
+                  p: 0,
+                  m: 0,
+                  borderRight: '1px solid',
+                  borderColor: 'rgba(0,0,0,0.1)',
+                }}
+              >
+                {/* Away: logo + tricode + record + score */}
                 <Box
+                  component="button"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addTeamLineToSlip({
+                      gameId: game.game_id,
+                      gameDate: game.game_date,
+                      teamTricode: awayTricode,
+                      side: 'away',
+                      market: awayMarket,
+                      spreadLine: awayResolvedSpreadLine,
+                      spreadOdds: awaySpreadOdds,
+                      moneyline: awayMoneyline,
+                      moneylineOdds: awayMoneylineOdds,
+                    });
+                  }}
                   sx={{
-                    width: { xs: 66, sm: 77 },
-                    height: { xs: 66, sm: 77 },
-                    minWidth: { xs: 66, sm: 77 },
-                    position: 'relative',
-                    borderRadius: '50%',
-                    border: '3px solid',
-                    borderColor: gameStatus === 'Final' 
-                      ? '#666666'
-                      : gameStatus === 'Live' || gameStatus === 'In Progress'
-                      ? '#FFC72C'
-                      : '#FFFFFF',
-                    bgcolor: 'background.level1',
-                    overflow: 'hidden',
-                    flexShrink: 0,
+                    flex: 1,
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.625,
+                    py: 0.875,
+                    px: 0.5,
+                    minWidth: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: awayCanAdd ? 'pointer' : 'not-allowed',
+                    opacity: awayCanAdd ? 1 : 0.6,
                   }}
                 >
-                  {/* Split background with team colors */}
                   <Box
+                    component="img"
+                    src={getTeamLogoUrl(awayTricode)}
+                    alt={awayTricode}
                     sx={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      bgcolor: getTeamPrimaryColor(awayTricode),
+                      width: { xs: 39, sm: 44 },
+                      height: { xs: 28, sm: 32 },
+                      objectFit: 'contain',
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))',
+                      flexShrink: 0,
+                    }}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
                     }}
                   />
-                  <Box
+                  <Typography
+                    level="title-sm"
                     sx={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      bgcolor: getTeamPrimaryColor(homeTricode),
-                    }}
-                  />
-                  
-                  {/* Away team logo */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1,
+                      color: '#1a1a1a',
+                      fontWeight: 800,
+                      fontSize: '0.79rem',
+                      lineHeight: 1.25,
                     }}
                   >
-                    <Box
-                      component="img"
-                      src={getTeamLogoUrl(awayTricode)}
-                      alt={awayTricode}
-                      sx={{
-                        width: { xs: 26, sm: 31 },
-                        height: { xs: 26, sm: 31 },
-                        objectFit: 'contain',
-                        filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
-                      }}
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                  </Box>
-                  
-                  {/* Home team logo */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 1,
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={getTeamLogoUrl(homeTricode)}
-                      alt={homeTricode}
-                      sx={{
-                        width: { xs: 26, sm: 31 },
-                        height: { xs: 26, sm: 31 },
-                        objectFit: 'contain',
-                        filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
-                      }}
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                  </Box>
-
-                  {/* Vertical divider line */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: '50%',
-                      top: '10%',
-                      bottom: '10%',
-                      width: '1px',
-                      bgcolor: 'rgba(0, 0, 0, 0.3)',
-                      transform: 'translateX(-50%)',
-                      zIndex: 1,
-                    }}
-                  />
-                </Box>
-              </CardOverflow>
-              <CardContent sx={{ flex: 1, minWidth: 0, p: { xs: 0.75, sm: 1 }, py: { xs: 0.75, sm: 1 } }}>
-                <Box sx={{ mb: { xs: 0.5, sm: 0.625 } }}>
-                  {/* Away Team Row */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: { xs: 0.125, sm: 0.25 } }}>
-                    <Typography
-                      level="title-sm"
-                      sx={{
-                        color: '#FFFFFF',
-                        fontWeight: 800,
-                        fontSize: '1.094rem',
-                      }}
-                    >
-                      {awayTricode}
-                    </Typography>
-                    {standingsMap?.get(awayTricode) && (
-                      <Typography
-                        level="body-xs"
-                        sx={{
-                          color: '#B0B0B0',
-                          fontSize: '0.875rem',
-                          fontWeight: 600,
-                        }}
-                      >
-                        ({standingsMap.get(awayTricode)!.wins}-{standingsMap.get(awayTricode)!.losses})
-                      </Typography>
-                    )}
+                    {awayTricode}
+                  </Typography>
+                  {standingsMap?.get(awayTricode) && (
                     <Typography
                       level="body-xs"
-                      sx={{
-                        color: '#B0B0B0',
-                        fontWeight: 600,
-                        fontSize: '0.875rem',
-                      }}
+                      sx={{ color: '#666', fontSize: '0.69rem', fontWeight: 600, lineHeight: 1.25 }}
                     >
-                      @
-                    </Typography>
-                    {/* Display score if available */}
-                    {hasScore && (
-                      <Typography
-                        level="title-md"
-                        sx={{
-                          color: '#FFC72C',
-                          fontWeight: 900,
-                          fontSize: '1.25rem',
-                          ml: 'auto',
-                        }}
-                      >
-                        {game.away_team_score || 0}
-                      </Typography>
-                    )}
-                  </Box>
-                  {/* Home Team Row */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: { xs: 0.125, sm: 0.25 } }}>
-                    <Typography
-                      level="title-sm"
-                      sx={{
-                        color: '#FFFFFF',
-                        fontWeight: 800,
-                        fontSize: '1.094rem',
-                      }}
-                    >
-                      {homeTricode}
-                    </Typography>
-                    {standingsMap?.get(homeTricode) && (
-                      <Typography
-                        level="body-xs"
-                        sx={{
-                          color: '#B0B0B0',
-                          fontSize: '0.875rem',
-                          fontWeight: 600,
-                        }}
-                      >
-                        ({standingsMap.get(homeTricode)!.wins}-{standingsMap.get(homeTricode)!.losses})
-                      </Typography>
-                    )}
-                    {/* Display score if available */}
-                    {hasScore && (
-                      <Typography
-                        level="title-md"
-                        sx={{
-                          color: '#FFC72C',
-                          fontWeight: 900,
-                          fontSize: '1.25rem',
-                          ml: 'auto',
-                        }}
-                      >
-                        {game.home_team_score || 0}
-                      </Typography>
-                    )}
-                  </Box>
-                  {game.arena_name && (
-                    <Typography
-                      level="body-xs"
-                      sx={{
-                        color: '#B0B0B0',
-                        fontSize: '0.875rem',
-                        mt: { xs: 0.125, sm: 0.25 },
-                        mb: { xs: 0.125, sm: 0.25 },
-                      }}
-                    >
-                      {game.arena_name}
+                      ({standingsMap.get(awayTricode)!.wins}-{standingsMap.get(awayTricode)!.losses})
                     </Typography>
                   )}
-                  {/* Display Spread and O/U if available */}
-                  {(() => {
-                    // Calculate spread display text
-                    const getSpreadText = () => {
-                      const homeSpread = game.home_spread;
-                      const awaySpread = game.away_spread;
-                      
-                      // Use home_spread if available (primary source)
-                      if (homeSpread !== null && homeSpread !== undefined) {
-                        if (homeSpread < 0) {
-                          // Home is favored: "LAL -5.5"
-                          return `${homeTricode} ${homeSpread}`;
-                        } else if (homeSpread > 0) {
-                          // Away is favored: "BOS -5.5" (home gets +5.5)
-                          return `${awayTricode} -${homeSpread}`;
-                        } else {
-                          // Pick'em
-                          return `PK`;
-                        }
-                      } 
-                      // Fallback to away_spread if home_spread not available
-                      else if (awaySpread !== null && awaySpread !== undefined) {
-                        if (awaySpread > 0) {
-                          // Away is underdog: "BOS +5.5"
-                          return `${awayTricode} +${awaySpread}`;
-                        } else if (awaySpread < 0) {
-                          // Home is underdog: "LAL +5.5" (away is favored)
-                          return `${homeTricode} +${Math.abs(awaySpread)}`;
-                        } else {
-                          return `PK`;
-                        }
-                      }
-                      return null;
-                    };
-
-                    const spreadText = getSpreadText();
-                    const hasOverUnder = game.over_under !== null && game.over_under !== undefined;
-
-                    // Only show container if we have at least one valid value
-                    if (!spreadText && !hasOverUnder) {
-                      return null;
-                    }
-
-                    return (
-                      <Box sx={{ display: 'flex', gap: 0.5, mt: { xs: 0.125, sm: 0.25 }, flexWrap: 'wrap' }}>
-                        {spreadText && (
-                          <Chip
-                            size="sm"
-                            variant="outlined"
-                            sx={{
-                              borderColor: '#FFC72C',
-                              color: '#FFC72C',
-                              fontSize: '0.813rem',
-                              height: { xs: '20px', sm: '22.5px' },
-                              fontWeight: 600,
-                            }}
-                          >
-                            {spreadText}
-                          </Chip>
-                        )}
-                        {hasOverUnder && (
-                          <Chip
-                            size="sm"
-                            variant="outlined"
-                            sx={{
-                              borderColor: '#B0B0B0',
-                              color: '#B0B0B0',
-                              fontSize: '0.813rem',
-                              height: { xs: '20px', sm: '22.5px' },
-                              fontWeight: 600,
-                            }}
-                          >
-                            O/U {game.over_under}
-                          </Chip>
-                        )}
-                      </Box>
-                    );
-                  })()}
-                </Box>
-
-                {/* Top Props */}
-                {topProps.length > 0 && (
-                  <Box sx={{ mt: { xs: 0.25, sm: 0.375 } }}>
+                  {(awayMarket === 'spread' ? hasSpread : hasAwayMoneyline) && (
                     <Typography
                       level="body-xs"
                       sx={{
-                        color: '#FFFFFF',
+                        color: '#B8860B',
+                        fontSize: '0.69rem',
                         fontWeight: 700,
-                        fontSize: '0.875rem',
-                        mb: { xs: 0.25, sm: 0.375 },
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.5px',
+                        lineHeight: 1.25,
                       }}
                     >
-                      Top Props
+                      {awayMarketText}
                     </Typography>
-                    {topProps.slice(0, 2).map((prop: any, idx: number) => (
-                      <Box
-                        key={idx}
-                        sx={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          mb: { xs: 0.25, sm: 0.375 },
-                        }}
-                      >
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography
-                            level="body-xs"
-                            sx={{
-                              color: '#FFFFFF',
-                              fontWeight: 600,
-                              fontSize: '0.875rem',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {prop.player_name}
-                          </Typography>
-                          <Typography
-                            level="body-xs"
-                            sx={{
-                              color: '#B0B0B0',
-                              fontSize: '0.813rem',
-                            }}
-                          >
-                            {prop.bet_type
-                              .replace(/_/g, ' ')
-                              .replace(/([A-Z])/g, ' $1')
-                              .trim()}
-                          </Typography>
-                        </Box>
-                        <Chip
-                          size="sm"
-                          variant="solid"
-                          sx={{
-                            bgcolor: '#FFC72C',
-                            color: '#000000',
-                            fontWeight: 800,
-                            fontSize: '0.875rem',
-                            minWidth: '40px',
-                            height: { xs: '22px', sm: '25px' },
-                          }}
-                        >
-                          {(() => {
-                            const lineValue = prop.currentLine || prop.line;
-                            if (lineValue == null) return 'N/A';
-                            const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
-                            return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
-                          })()}
-                        </Chip>
-                      </Box>
-                    ))}
-                    {gameProps.length > 2 && (
-                      <Typography
-                        level="body-xs"
-                        sx={{
-                          color: '#FFC72C',
-                          fontSize: '0.813rem',
-                          mt: { xs: 0.25, sm: 0.375 },
-                        }}
-                      >
-                        +{gameProps.length - 2} more
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-              </CardContent>
+                  )}
+                  {hasAwayMoneyline && hasSpread && (
+                    <Box
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleMarket(game.game_id, 'away', hasAwayMoneyline, hasSpread);
+                      }}
+                      sx={{
+                        cursor: 'pointer',
+                        width: '100%',
+                        maxWidth: 20,
+                        height: 6,
+                        borderRadius: 999,
+                        bgcolor: 'rgba(0,0,0,0.14)',
+                        border: '1px solid rgba(0,0,0,0.22)',
+                      }}
+                    />
+                  )}
+                  {showScoreboard && (
+                    <Typography
+                      level="title-sm"
+                      sx={{ color: '#FFC72C', fontWeight: 900, fontSize: '0.99rem' }}
+                    >
+                      {game.away_team_score || 0}
+                    </Typography>
+                  )}
+                </Box>
+                <Box
+                  sx={{
+                    width: '1px',
+                    alignSelf: 'stretch',
+                    bgcolor: 'rgba(0,0,0,0.12)',
+                    flexShrink: 0,
+                  }}
+                />
+                {/* Home: logo + tricode + record + score */}
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addTeamLineToSlip({
+                      gameId: game.game_id,
+                      gameDate: game.game_date,
+                      teamTricode: homeTricode,
+                      side: 'home',
+                      market: homeMarket,
+                      spreadLine: homeResolvedSpreadLine,
+                      spreadOdds: homeSpreadOdds,
+                      moneyline: homeMoneyline,
+                      moneylineOdds: homeMoneylineOdds,
+                    });
+                  }}
+                  sx={{
+                    flex: 1,
+                    width: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.625,
+                    py: 0.875,
+                    px: 0.5,
+                    minWidth: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: homeCanAdd ? 'pointer' : 'not-allowed',
+                    opacity: homeCanAdd ? 1 : 0.6,
+                  }}
+                >
+                  <Box
+                    component="img"
+                    src={getTeamLogoUrl(homeTricode)}
+                    alt={homeTricode}
+                    sx={{
+                      width: { xs: 39, sm: 44 },
+                      height: { xs: 28, sm: 32 },
+                      objectFit: 'contain',
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))',
+                      flexShrink: 0,
+                    }}
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.style.display = 'none';
+                    }}
+                  />
+                  <Typography
+                    level="title-sm"
+                    sx={{
+                      color: '#1a1a1a',
+                      fontWeight: 800,
+                      fontSize: '0.79rem',
+                      lineHeight: 1.25,
+                    }}
+                  >
+                    {homeTricode}
+                  </Typography>
+                  {standingsMap?.get(homeTricode) && (
+                    <Typography
+                      level="body-xs"
+                      sx={{ color: '#666', fontSize: '0.69rem', fontWeight: 600, lineHeight: 1.25 }}
+                    >
+                      ({standingsMap.get(homeTricode)!.wins}-{standingsMap.get(homeTricode)!.losses})
+                    </Typography>
+                  )}
+                  {(homeMarket === 'spread' ? hasSpread : hasHomeMoneyline) && (
+                    <Typography
+                      level="body-xs"
+                      sx={{
+                        color: '#B8860B',
+                        fontSize: '0.69rem',
+                        fontWeight: 700,
+                        lineHeight: 1.25,
+                      }}
+                    >
+                      {homeMarketText}
+                    </Typography>
+                  )}
+                  {hasHomeMoneyline && hasSpread && (
+                    <Box
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleMarket(game.game_id, 'home', hasHomeMoneyline, hasSpread);
+                      }}
+                      sx={{
+                        cursor: 'pointer',
+                        width: '100%',
+                        maxWidth: 20,
+                        height: 6,
+                        borderRadius: 999,
+                        bgcolor: 'rgba(0,0,0,0.14)',
+                        border: '1px solid rgba(0,0,0,0.22)',
+                      }}
+                    />
+                  )}
+                  {showScoreboard && (
+                    <Typography
+                      level="title-sm"
+                      sx={{ color: '#FFC72C', fontWeight: 900, fontSize: '0.99rem' }}
+                    >
+                      {game.home_team_score || 0}
+                    </Typography>
+                  )}
+                </Box>
+              </CardOverflow>
               <CardOverflow
                 variant="soft"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onGameClick(game.game_id);
+                }}
                 sx={{
-                  px: { xs: 0.15, sm: 0.2 },
+                  width: 39,
+                  minWidth: 39,
+                  flexShrink: 0,
+                  p: 0,
+                  m: 0,
+                  pl: 0,
+                  pr: 0.25,
                   writingMode: 'vertical-rl',
                   justifyContent: 'center',
-                  fontSize: { xs: '0.813rem', sm: '0.938rem' },
+                  alignItems: 'center',
+                  fontSize: { xs: '0.805rem', sm: '0.928rem' },
                   fontWeight: 'xl',
                   letterSpacing: '1px',
                   textTransform: 'uppercase',
@@ -3052,14 +3426,16 @@ function GamesCarousel({
                     : gameStatus === 'Live' || gameStatus === 'In Progress'
                     ? '#ef4444'
                     : '#FFC72C',
+                  cursor: 'pointer',
                 }}
               >
-                {isFinal ? 'FINAL' : (!hasScore ? formatESTTime(game.game_date, 'time') : gameStatus)}
+                {isFinal ? 'FINAL' : (showScoreboard ? gameStatus : formatESTTime(game.game_date, 'time'))}
               </CardOverflow>
             </Card>
           );
-        })}
-      </Stack>
+          })}
+        </Stack>
+      </Box>
     </Box>
   );
 }
@@ -3132,20 +3508,7 @@ function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
       const filteredGames = nbaScoreboard.games.filter((game: any) => {
         const gameDate = game.gameDate || game.game_date;
         if (!gameDate) return false;
-        
-        try {
-          // If it's a full timestamp, use isDateInEST directly
-          if (gameDate.includes('T') || gameDate.includes(' ')) {
-            return isDateInEST(gameDate, dateString);
-          } else {
-            // Date string only - treat as UTC midnight and convert to EST
-            const utcDate = new Date(gameDate + 'T00:00:00Z');
-            const estDateString = utcToESTDate(utcDate);
-            return estDateString === dateString;
-          }
-        } catch (e) {
-          return false;
-        }
+        return scoreboardGameMatchesESTDate(gameDate, dateString);
       });
       
       // If we have filtered scoreboard games, use that count
@@ -3233,14 +3596,20 @@ function WeekAndGameCount({ selectedDate }: { selectedDate: Dayjs }) {
 // Games Carousel Header Component - Positioned like player page header (exported for Feed page)
 export function GamesCarouselHeader({
   selectedDate,
-  navigate
+  navigate,
+  onGameClickOverride,
 }: {
   selectedDate: Dayjs;
   navigate: (path: string) => void;
+  onGameClickOverride?: (game: { game_id: string; home_team_tricode: string; away_team_tricode: string }) => void;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
   const todayEST = getTodayEST();
   const isToday = dateString === todayEST;
+  const debugHomeCards =
+    typeof window !== 'undefined' &&
+    import.meta.env.DEV &&
+    (window as any).__DEBUG_HOME_CARDS__ !== false
   
   // Always fetch database games as fallback, even for today
   const { data: games, isLoading } = useGamesByDate(dateString);
@@ -3262,29 +3631,15 @@ export function GamesCarouselHeader({
     const filteredScoreboardGames = nbaScoreboard.games.filter((game: any) => {
       const gameDate = game.gameDate || game.game_date;
       if (!gameDate) return false;
-      
-      try {
-        // If it's just a date string (YYYY-MM-DD), treat it as UTC midnight and convert to EST
-        // If it's a full timestamp, use isDateInEST directly
-        if (gameDate.includes('T') || gameDate.includes(' ')) {
-          // Full timestamp - use isDateInEST
-          return isDateInEST(gameDate, dateString);
-        } else {
-          // Date string only - treat as UTC midnight and convert to EST
-          const utcDate = new Date(gameDate + 'T00:00:00Z');
-          const estDateString = utcToESTDate(utcDate);
-          return estDateString === dateString;
-        }
-      } catch (e) {
-        console.warn('Error filtering game date in carousel:', gameDate, e);
-        return false;
-      }
+      return scoreboardGameMatchesESTDate(gameDate, dateString);
     });
     
     // Create a map of game_id -> live game data (only for games on today's date)
     const liveGamesMap = new Map<string, any>();
     filteredScoreboardGames.forEach((liveGame: any) => {
-      liveGamesMap.set(liveGame.gameId, liveGame);
+      const normalizedLiveId = normalizeGameIdKey(liveGame.gameId || liveGame.game_id);
+      if (!normalizedLiveId) return;
+      liveGamesMap.set(normalizedLiveId, liveGame);
     });
     
     // Start with database games, then merge in live data
@@ -3294,7 +3649,8 @@ export function GamesCarouselHeader({
     // First, add/update games from database with live data
     if (games) {
       games.forEach((dbGame: any) => {
-        const liveGame = liveGamesMap.get(dbGame.game_id);
+        const normalizedDbId = normalizeGameIdKey(dbGame.game_id);
+        const liveGame = normalizedDbId ? liveGamesMap.get(normalizedDbId) : undefined;
         if (liveGame) {
           // Merge: use live scores if available, otherwise use DB scores
           merged.push({
@@ -3305,18 +3661,19 @@ export function GamesCarouselHeader({
             // Add live game data
             liveGame,
           });
-          processedGameIds.add(dbGame.game_id);
+          if (normalizedDbId) processedGameIds.add(normalizedDbId);
         } else {
           // No live data, use DB data
           merged.push(dbGame);
-          processedGameIds.add(dbGame.game_id);
+          if (normalizedDbId) processedGameIds.add(normalizedDbId);
         }
       });
     }
     
     // Add any live games not in database (already filtered to today's date)
     filteredScoreboardGames.forEach((liveGame: any) => {
-      if (!processedGameIds.has(liveGame.gameId)) {
+      const normalizedLiveId = normalizeGameIdKey(liveGame.gameId || liveGame.game_id);
+      if (!normalizedLiveId || !processedGameIds.has(normalizedLiveId)) {
         // Convert live game to database format
         merged.push({
           game_id: liveGame.gameId,
@@ -3330,11 +3687,35 @@ export function GamesCarouselHeader({
           game_status_text: liveGame.gameStatusText || 'Scheduled',
           liveGame,
         });
+        if (normalizedLiveId) processedGameIds.add(normalizedLiveId);
       }
     });
-    
-    return merged;
+
+    const dedupedByGameId = new Map<string, any>();
+    merged.forEach((g: any) => {
+      const key = normalizeGameIdKey(g.game_id);
+      if (!key) return;
+      if (!dedupedByGameId.has(key)) dedupedByGameId.set(key, g);
+    });
+    return Array.from(dedupedByGameId.values());
   }, [isToday, games, nbaScoreboard?.games, dateString]);
+
+  React.useEffect(() => {
+    if (!debugHomeCards) return;
+    const dbCount = (games || []).length;
+    const scoreboardCount = (nbaScoreboard?.games || []).length;
+    const mergedCount = (mergedGames || []).length;
+    const scoreboardDates = Array.from(
+      new Set((nbaScoreboard?.games || []).map((g: any) => String(g.gameDate || g.game_date || '')))
+    );
+    const mergedDates = Array.from(new Set((mergedGames || []).map((g: any) => String(g.game_date || ''))));
+    console.groupCollapsed(`[Today][GamesCarouselHeader][merge] ${dateString} db=${dbCount} scoreboard=${scoreboardCount} merged=${mergedCount}`);
+    console.log('isToday:', isToday, 'todayEST:', todayEST);
+    console.log('scoreboardDates(raw):', scoreboardDates);
+    console.log('mergedGameDates(raw):', mergedDates);
+    console.log('mergedGameIds:', (mergedGames || []).map((g: any) => g.game_id));
+    console.groupEnd();
+  }, [debugHomeCards, dateString, isToday, todayEST, games, nbaScoreboard?.games, mergedGames]);
 
   // Filter games - remove invalid games
   const filteredGames = useMemo(() => {
@@ -3349,9 +3730,20 @@ export function GamesCarouselHeader({
   }, [mergedGames]);
 
   const handleGameClick = (gameId: string) => {
+    if (onGameClickOverride) {
+      const game = filteredGames.find((g: any) => g.game_id === gameId);
+      if (game) {
+        onGameClickOverride({
+          game_id: gameId,
+          home_team_tricode: game.home_team_tricode,
+          away_team_tricode: game.away_team_tricode,
+        });
+        return;
+      }
+    }
     navigate(`/game/${gameId}`, {
       state: {
-        returnPath: '/today',
+        returnPath: '/feed',
         returnDate: dateString,
       }
     });
@@ -3476,7 +3868,7 @@ function GamesTableSection({
   const handleGameClick = (gameId: string) => {
     navigate(`/game/${gameId}`, {
       state: {
-        returnPath: '/today',
+        returnPath: '/feed',
         returnDate: dateString,
       }
     });
@@ -4143,9 +4535,7 @@ function LeadersSection({
             const teamColors = leader.team_abbreviation 
               ? getTeamColors(leader.team_abbreviation)
               : { primary: '#666666', secondary: '#999999' };
-            const valueText = activeCategory.includes('PCT') 
-              ? (leader.value * 100).toFixed(1) + '%'
-              : leader.value.toFixed(1);
+            const { main: valueMain, perGame: valuePerGame } = formatLeaderValue(leader, activeCategory);
 
             return (
               <tr
@@ -4182,7 +4572,7 @@ function LeadersSection({
                   </Box>
                 </td>
                 <td style={{ textAlign: 'right', color: '#FFFFFF', fontWeight: 'bold' }}>
-                  {valueText}
+                  {valueMain} {valuePerGame}
                 </td>
               </tr>
             );
@@ -4251,7 +4641,8 @@ function LeadersSection({
 }
 
 // Players of the Night Section Component (showJersey=false when used on /feed/ grid so jerseys only appear in full feed posts)
-export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers, compact = false, showJersey = true }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[]; compact?: boolean; showJersey?: boolean }) {
+// useTotwLayout: when true, use same Starters/Bench grid and card structure as TeamOfWeekSection (FP, "1 game", $XK)
+export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, customPlayers, compact = false, showJersey = true, useTotwLayout = false }: { navigate: (path: string) => void; selectedDate?: Dayjs; hideHeader?: boolean; customPlayers?: NightPlayer[]; compact?: boolean; showJersey?: boolean; useTotwLayout?: boolean }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   
@@ -4517,12 +4908,149 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
     );
   };
 
-  // Separate starters and bench
+  // Separate starters and bench; when useTotwLayout split bench into two rows like TOTW
   const starters = sortedPlayers.filter(p => p.lineup_order !== undefined && p.lineup_order !== null && p.lineup_order <= 5);
   const bench = sortedPlayers.filter(p => !p.lineup_order || p.lineup_order > 5);
+  const benchMid = useTotwLayout ? Math.ceil(bench.length / 2) : bench.length;
+  const benchRow2 = bench.slice(0, benchMid);
+  const benchRow3 = useTotwLayout ? bench.slice(benchMid) : [];
+
+  const rowGridSxTotw = {
+    display: 'grid',
+    gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)' },
+    gap: 2,
+    justifyItems: 'stretch',
+  };
+  const rowGridSxDefault = {
+    display: 'grid',
+    gridTemplateColumns: {
+      xs: 'repeat(auto-fill, minmax(100px, 1fr))',
+      sm: 'repeat(auto-fill, minmax(120px, 1fr))',
+      md: 'repeat(5, 1fr)',
+    },
+    gap: 2,
+  };
+  const rowGridSx = useTotwLayout ? rowGridSxTotw : rowGridSxDefault;
+
+  const renderCardContent = (player: NightPlayer) => (
+    <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
+      <Typography level="body-xs" sx={{ color: '#E0E0E0', fontSize: '0.75rem', mb: 0.5 }}>
+        {player.player_name}
+      </Typography>
+      <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 800, fontSize: '1rem', mb: 0.5 }}>
+        {(player.fantasy_points ?? 0).toFixed(1)} FP
+      </Typography>
+      <Typography level="body-xs" sx={{ color: '#B0B0B0', fontSize: useTotwLayout ? '0.7rem' : '0.75rem', mt: useTotwLayout ? 0.25 : 0 }}>
+        {useTotwLayout ? `$${(player.salary / 1000000).toFixed(1)}M` : `$${(player.salary / 1000000).toFixed(2)}M`}
+      </Typography>
+    </Box>
+  );
+
+  const playerCard = (player: NightPlayer) => {
+    const playerKey = player.player_id || player.nba_player_id;
+    return (
+      <Card
+        key={playerKey}
+        variant="outlined"
+        onClick={(e) => {
+          e.stopPropagation();
+          if (player.player_id) navigate(`/player/${player.player_id}`);
+        }}
+        sx={{
+          bgcolor: 'transparent',
+          borderColor: 'rgba(255,255,255,0.12)',
+          cursor: 'pointer',
+          transition: 'all 0.3s ease',
+          p: 1.5,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          '&:hover': {
+            borderColor: '#FFC72C',
+            transform: 'translateY(-4px)',
+            boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
+          },
+        }}
+      >
+        {showJersey ? (
+          <PlayerJersey
+            playerName={player.player_name}
+            jerseyNumber={player.jersey_number}
+            nbaTeam={player.team}
+            position={abbreviatePosition(player.player_position)}
+            size="small"
+            textColor="#FFFFFF"
+          />
+        ) : (
+          <Avatar
+            src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+            alt={player.player_name}
+            sx={{ width: 48, height: 48 }}
+          />
+        )}
+        {renderCardContent(player)}
+      </Card>
+    );
+  };
+
+  // Hero carousel for feed (useTotwLayout): slide 1 = overview, slides 2..N = one player per slide by FP
+  const allPlayersForCarousel = useMemo(() => [...starters, ...bench], [starters, bench]);
+  const playersByFp = useMemo(
+    () => [...allPlayersForCarousel].sort((a, b) => (b.fantasy_points ?? 0) - (a.fantasy_points ?? 0)),
+    [allPlayersForCarousel]
+  );
+
+  if (useTotwLayout && !isLoading && playersByFp.length > 0) {
+    const overviewSlide = (
+      <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2 }}>
+        <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
+          <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 1.5, fontSize: '0.875rem', textTransform: 'uppercase' }}>Lineup</Typography>
+          <Table
+            size="sm"
+            sx={{
+              ...FEED_DRAWER_TABLE_SX,
+              '& thead th': { ...FEED_DRAWER_TABLE_SX['& thead th'], color: '#999' },
+              '& tbody td': { ...FEED_DRAWER_TABLE_SX['& tbody td'], color: '#E0E0E0' },
+            }}
+          >
+            <thead><tr><th>Player</th><th style={{ textAlign: 'right' }}>FP</th><th style={{ textAlign: 'right' }}>Salary</th></tr></thead>
+            <tbody>
+              {playersByFp.slice(0, 12).map((p: NightPlayer, i: number) => (
+                <tr key={p.player_id || p.nba_player_id || i}>
+                  <td>{p.player_name}</td>
+                  <td style={{ textAlign: 'right', color: '#FFC72C' }}>{(p.fantasy_points ?? 0).toFixed(1)}</td>
+                  <td style={{ textAlign: 'right' }}>${((p.salary ?? 0) / 1e6).toFixed(1)}M</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+      </Box>
+    );
+    return (
+      <Box sx={{ bgcolor: 'transparent', position: 'relative', width: '100%' }}>
+        <Carousel opts={{ align: 'start', loop: false }}>
+          <CarouselContent>
+            <CarouselItem className="basis-full pl-0">{overviewSlide}</CarouselItem>
+            {playersByFp.map((player) => (
+              <CarouselItem key={player.player_id || player.nba_player_id} className="basis-full pl-0">
+                <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+                  <Box sx={{ position: 'relative' }}>{playerCard(player)}</Box>
+                </Box>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="left-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+          <CarouselNext className="right-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+        </Carousel>
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ bgcolor: '#000000' }}>
+    <Box sx={{ bgcolor: useTotwLayout ? 'transparent' : '#000000' }}>
       {isLoading ? (
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <CircularProgress />
@@ -4545,7 +5073,7 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
           
           {/* Starters Section */}
           {starters.length > 0 && (
-            <Box sx={{ mb: 4 }}>
+            <Box sx={{ mb: useTotwLayout ? 3 : 4 }}>
               <Typography 
                 level="title-sm" 
                 sx={{ 
@@ -4559,185 +5087,57 @@ export function PlayersOfNightSection({ navigate, selectedDate, hideHeader, cust
               >
                 Starters
               </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: 'repeat(auto-fill, minmax(100px, 1fr))',
-                    sm: 'repeat(auto-fill, minmax(120px, 1fr))',
-                    md: 'repeat(5, 1fr)',
-                  },
-                  gap: 2,
-                }}
-              >
-                {starters.map((player) => {
-                const playerKey = player.player_id || player.nba_player_id;
-                return (
-                    <Card
-                      key={playerKey}
-                      variant="outlined"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (player.player_id) navigate(`/player/${player.player_id}`);
-                      }}
-                      sx={{
-                        bgcolor: '#0f0f0f',
-                        borderColor: '#2a2a2a',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        p: 1.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        '&:hover': {
-                          borderColor: '#FFC72C',
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
-                        },
-                      }}
-                    >
-                      {showJersey ? (
-                        <PlayerJersey
-                          playerName={player.player_name}
-                          jerseyNumber={player.jersey_number}
-                          nbaTeam={player.team}
-                          position={abbreviatePosition(player.player_position)}
-                          size="small"
-                          textColor="#FFFFFF"
-                        />
-                      ) : (
-                        <Avatar
-                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                          alt={player.player_name}
-                          sx={{ width: 48, height: 48 }}
-                        />
-                      )}
-                      <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
-                        <Typography 
-                          level="body-sm" 
-                          sx={{ 
-                            color: '#FFC72C', 
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            mb: 0.5,
-                          }}
-                        >
-                          {player.fantasy_points.toFixed(1)} FP
-                        </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                            fontSize: '0.75rem',
-                          }}
-                        >
-                          ${(player.salary / 1000000).toFixed(2)}M
-                        </Typography>
-                      </Box>
-                    </Card>
-                  );
-                })}
+              <Box sx={rowGridSx}>
+                {starters.map(playerCard)}
               </Box>
             </Box>
           )}
 
           {/* Bench Section - Only show if not compact */}
           {!compact && bench.length > 0 && (
-            <Box>
-              <Typography 
-                level="title-sm" 
-                sx={{ 
-                  color: '#FFC72C', 
-                  fontWeight: 700,
-                  mb: 2,
-                  fontSize: '0.875rem',
-                  textTransform: 'uppercase',
-                  letterSpacing: '1px',
-                }}
-              >
-                Bench
-                            </Typography>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: 'repeat(auto-fill, minmax(100px, 1fr))',
-                    sm: 'repeat(auto-fill, minmax(120px, 1fr))',
-                    md: 'repeat(auto-fill, minmax(120px, 1fr))',
-                  },
-                  gap: 2,
-                }}
-              >
-                {bench.map((player) => {
-                  const playerKey = player.player_id || player.nba_player_id;
-                  return (
-                    <Card
-                      key={playerKey}
-                      variant="outlined"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (player.player_id) navigate(`/player/${player.player_id}`);
-                      }}
-                      sx={{
-                        bgcolor: '#0f0f0f',
-                        borderColor: '#2a2a2a',
-                        cursor: 'pointer',
-                        transition: 'all 0.3s ease',
-                        p: 1.5,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        '&:hover': {
-                          borderColor: '#FFC72C',
-                          transform: 'translateY(-4px)',
-                          boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
-                        },
-                      }}
-                    >
-                      {showJersey ? (
-                        <PlayerJersey
-                          playerName={player.player_name}
-                          jerseyNumber={player.jersey_number}
-                          nbaTeam={player.team}
-                          position={abbreviatePosition(player.player_position)}
-                          size="small"
-                          textColor="#FFFFFF"
-                        />
-                      ) : (
-                        <Avatar
-                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                          alt={player.player_name}
-                          sx={{ width: 48, height: 48 }}
-                        />
-                      )}
-                      <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
-                        <Typography 
-                          level="body-sm" 
-                          sx={{ 
-                            color: '#FFC72C', 
-                            fontWeight: 800,
-                            fontSize: '1rem',
-                            mb: 0.5,
-                          }}
-                        >
-                          {player.fantasy_points.toFixed(1)} FP
-                        </Typography>
-                        <Typography 
-                          level="body-xs" 
-                          sx={{ 
-                            color: '#B0B0B0',
-                            fontSize: '0.75rem',
-                          }}
-                        >
-                          ${(player.salary / 1000000).toFixed(2)}M
-                        </Typography>
+            <>
+              {useTotwLayout ? (
+                <>
+                  {benchRow2.length > 0 && (
+                    <Box sx={{ mb: 3 }}>
+                      <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 2, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        Bench
+                      </Typography>
+                      <Box sx={rowGridSx}>
+                        {benchRow2.map(playerCard)}
                       </Box>
-                    </Card>
-                  );
-                })}
-              </Box>
-            </Box>
-          )}
+                    </Box>
+                  )}
+                  {benchRow3.length > 0 && (
+                    <Box>
+                      <Box sx={rowGridSx}>
+                        {benchRow3.map(playerCard)}
+                      </Box>
+                    </Box>
+                  )}
+                </>
+              ) : (
+                <Box>
+                  <Typography 
+                    level="title-sm" 
+                    sx={{ 
+                      color: '#FFC72C', 
+                      fontWeight: 700,
+                      mb: 2,
+                      fontSize: '0.875rem',
+                      textTransform: 'uppercase',
+                      letterSpacing: '1px',
+                    }}
+                  >
+                    Bench
+                  </Typography>
+                  <Box sx={rowGridSx}>
+                    {bench.map(playerCard)}
+                  </Box>
+                </Box>
+              )}
+        </>
+      )}
         </>
       )}
     </Box>
@@ -4752,7 +5152,8 @@ export function TeamOfWeekSection({
   weekEndDate,
   weekNumber,
   weekName,
-  showJersey = true
+  showJersey = true,
+  useCarousel = false,
 }: { 
   navigate: (path: string) => void; 
   hideHeader?: boolean;
@@ -4761,6 +5162,7 @@ export function TeamOfWeekSection({
   weekNumber?: number;
   weekName?: string;
   showJersey?: boolean;
+  useCarousel?: boolean;
 }) {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
@@ -4970,8 +5372,8 @@ export function TeamOfWeekSection({
         variant="outlined"
         onClick={() => player.player_id && navigate(`/player/${player.player_id}`)}
         sx={{
-          bgcolor: '#0f0f0f',
-          borderColor: '#2a2a2a',
+          bgcolor: 'transparent',
+          borderColor: 'rgba(255,255,255,0.12)',
           cursor: 'pointer',
           transition: 'all 0.3s ease',
           p: 1.5,
@@ -5002,6 +5404,9 @@ export function TeamOfWeekSection({
           />
         )}
         <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
+          <Typography level="body-xs" sx={{ color: '#E0E0E0', fontSize: '0.75rem', mb: 0.5 }}>
+            {player.player_name}
+          </Typography>
           <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 800, fontSize: '1rem', mb: 0.5 }}>
             {player.avg_fantasy_points.toFixed(1)} FP
           </Typography>
@@ -5009,7 +5414,7 @@ export function TeamOfWeekSection({
             {player.games_played} games
           </Typography>
           <Typography level="body-xs" sx={{ color: '#B0B0B0', fontSize: '0.7rem', mt: 0.25 }}>
-            ${(player.salary / 1000).toFixed(1)}K
+            ${(player.salary / 1000000).toFixed(1)}M
           </Typography>
         </Box>
       </Card>
@@ -5023,8 +5428,65 @@ export function TeamOfWeekSection({
     justifyItems: 'stretch',
   };
 
+  // Hero carousel for feed: slide 1 = overview, slides 2..N = one player per slide by FP
+  const totwAllPlayers = useMemo(() => [...starters, ...bench], [starters, bench]);
+  const totwPlayersByFp = useMemo(
+    () => [...totwAllPlayers].sort((a, b) => (b.avg_fantasy_points ?? 0) - (a.avg_fantasy_points ?? 0)),
+    [totwAllPlayers]
+  );
+
+  if (useCarousel && !isLoading && totwPlayersByFp.length > 0) {
+    const overviewSlide = (
+      <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2 }}>
+        <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
+          <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 1.5, fontSize: '0.875rem', textTransform: 'uppercase' }}>Lineup</Typography>
+          <Table
+            size="sm"
+            sx={{
+              ...FEED_DRAWER_TABLE_SX,
+              '& thead th': { ...FEED_DRAWER_TABLE_SX['& thead th'], color: '#999' },
+              '& tbody td': { ...FEED_DRAWER_TABLE_SX['& tbody td'], color: '#E0E0E0' },
+            }}
+          >
+            <thead><tr><th>Player</th><th style={{ textAlign: 'right' }}>FP</th><th>Games</th><th style={{ textAlign: 'right' }}>Salary</th></tr></thead>
+            <tbody>
+              {totwPlayersByFp.slice(0, 12).map((p: any, i: number) => (
+                <tr key={p.player_id || p.nba_player_id || i}>
+                  <td>{p.player_name}</td>
+                  <td style={{ textAlign: 'right', color: '#FFC72C' }}>{(p.avg_fantasy_points ?? 0).toFixed(1)}</td>
+                  <td>{p.games_played ?? 0}</td>
+                  <td style={{ textAlign: 'right' }}>${((p.salary ?? 0) / 1e6).toFixed(1)}M</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+      </Box>
+    );
+    return (
+      <Box sx={{ bgcolor: 'transparent', position: 'relative', width: '100%' }}>
+        <Carousel opts={{ align: 'start', loop: false }}>
+          <CarouselContent>
+            <CarouselItem className="basis-full pl-0">{overviewSlide}</CarouselItem>
+            {totwPlayersByFp.map((player) => (
+              <CarouselItem key={player.player_id || player.nba_player_id} className="basis-full pl-0">
+                <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+                  <Box sx={{ position: 'relative' }}>{playerCard(player)}</Box>
+                </Box>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="left-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+          <CarouselNext className="right-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+        </Carousel>
+      </Box>
+    );
+  }
+
   return (
-    <Box sx={{ bgcolor: '#000000' }}>
+    <Box sx={{ bgcolor: 'transparent' }}>
       {isLoading ? (
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <CircularProgress />
@@ -6336,7 +6798,7 @@ export function PropPerformanceModule({
             <CircularProgress />
           </Box>
         ) : pastPropsWithResults && pastPropsWithResults.length > 0 ? (
-          <Table hoverRow size="sm">
+          <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
             <thead>
               <tr>
                 <th style={{ color: '#FFFFFF' }}>Player</th>
@@ -6365,26 +6827,26 @@ export function PropPerformanceModule({
                           : undefined
                         }
                         alt={prop.player_name}
-                        sx={{ width: 24, height: 24 }}
+                        sx={FEED_DRAWER_AVATAR_PLAYER}
                       >
                         {(!prop.nba_player_id || prop.nba_player_id === 0) && (
-                          <Typography sx={{ fontSize: '0.6rem', color: '#FFFFFF' }}>
+                          <Typography sx={{ fontSize: '0.65rem', color: '#FFFFFF' }}>
                             {prop.player_name?.charAt(0) || '?'}
                           </Typography>
                         )}
                       </Avatar>
-                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>
                         {prop.player_name || 'N/A'}
                       </Typography>
                     </Box>
                   </td>
                   <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                    <Typography level="body-sm" sx={{ color: '#CCCCCC', fontSize: '0.8125rem' }}>
                       {formatBetType(prop.bet_type)}
                     </Typography>
                   </td>
                   <td>
-                    <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                    <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600, fontSize: '0.8125rem' }}>
                       {(() => {
                         const lineValue = prop.currentLine || prop.line;
                         if (lineValue == null) return 'N/A';
@@ -6399,13 +6861,14 @@ export function PropPerformanceModule({
                       sx={{ 
                         color: prop.hit ? '#10B981' : '#EF4444',
                         fontWeight: 600,
+                        fontSize: '0.8125rem',
                       }}
                     >
                       {prop.actualValue !== undefined ? prop.actualValue.toFixed(1) : 'N/A'}
                     </Typography>
                   </td>
                   <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                    <Typography level="body-sm" sx={{ color: '#CCCCCC', fontSize: '0.8125rem' }}>
                       {(() => {
                         if (prop.over || prop.under) {
                           const oddsData = activeTab === 'hottest' ? prop.over : prop.under;
@@ -6432,25 +6895,118 @@ export function PropPerformanceModule({
   );
 }
 
+/** Single-card mode for feed/profile: one module per view. `full` keeps HR/10 + Team/Player tabs. */
+export type PropPredictionsEmbedMode =
+  | 'full'
+  | 'over'
+  | 'under'
+  | 'team_confidence'
+  | 'player_confidence';
+
+function embedModeToProfileModuleName(embedMode: PropPredictionsEmbedMode): string {
+  switch (embedMode) {
+    case 'over':
+      return 'prop_predictions_over';
+    case 'under':
+      return 'prop_predictions_under';
+    case 'team_confidence':
+      return 'prop_predictions_team_confidence';
+    case 'player_confidence':
+      return 'prop_predictions_player_confidence';
+    default:
+      return 'prop_predictions_over';
+  }
+}
+
 // Prop Predictions Module - For present/today dates
 export function PropPredictionsModule({ 
   selectedDate, 
   navigate,
   onOpen,
-  nbaScoreboard
+  nbaScoreboard,
+  embedMode = 'full',
 }: { 
   selectedDate: Dayjs; 
   navigate: (path: string) => void;
   onOpen?: (propsData: { pastProps?: any[]; futureProps?: any[]; isLoading: boolean; activeTab: 'hottest' | 'coldest' }) => void;
   nbaScoreboard?: any;
+  embedMode?: PropPredictionsEmbedMode;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
   const todayEST = getTodayEST();
   const isPast = selectedDate.isBefore(todayEST, 'day');
   const isToday = selectedDate.isSame(todayEST, 'day');
+  const shouldShowModule = !isPast && isToday;
   
   const [activeTab, setActiveTab] = useState<'hottest' | 'coldest'>('hottest');
-  
+  type MainTabValue = 'hit_rate' | 'team_confidence' | 'player_confidence';
+  const [mainTab, setMainTab] = useState<MainTabValue>('hit_rate');
+  const [selectedMatchupPlayerId, setSelectedMatchupPlayerId] = useState<number | null>(null);
+  const [selectedMatchupFactorIndex, setSelectedMatchupFactorIndex] = useState(0);
+  const [matchupsPage, setMatchupsPage] = useState(1);
+  const MATCHUPS_PAGE_SIZE = 10;
+  /** Prop type filter: '' = all, otherwise display label e.g. 'PTS', 'REB'. Persists when switching tabs. */
+  const [propTypeFilter, setPropTypeFilter] = useState<string>('');
+  const HIT_RATE_PAGE_SIZE = 10;
+  const [hitRatePage, setHitRatePage] = useState(1);
+  const TEAM_CONFIDENCE_PAGE_SIZE = 10;
+  const [teamConfidencePage, setTeamConfidencePage] = useState(1);
+  const PLAYER_CONFIDENCE_PAGE_SIZE = 10;
+  const [playerConfidencePage, setPlayerConfidencePage] = useState(1);
+
+  const { addLeg: addToSlip, canAddPlayer: canAddPlayerToSlip } = useSlipBuilder();
+  const feedRestore = useFeedDrawerRestoreOptional();
+  const restoreGen = feedRestore?.restoreGeneration ?? 0;
+
+  const handleAddPropToSlip = React.useCallback(
+    (prop: any) => {
+      const leg = propToSlipLeg(prop);
+      if (!leg) return;
+      const isFeedEmbed = embedMode !== 'full';
+      const r = addToSlip(leg, isFeedEmbed && feedRestore ? { skipOnLegAddedCallback: true } : undefined);
+      if (!r.added || !isFeedEmbed || !feedRestore) return;
+      feedRestore.goToProfileSlipBuilderAfterAdd({
+        feedDrawerTab: 'props',
+        drawerProfileMode: false,
+        moduleName: embedModeToProfileModuleName(embedMode),
+        propUi: {
+          mainTab,
+          activeTab,
+          propTypeFilter,
+          hitRatePage,
+          teamConfidencePage,
+          playerConfidencePage,
+        },
+        dateString: dateString,
+      });
+    },
+    [
+      embedMode,
+      feedRestore,
+      addToSlip,
+      mainTab,
+      activeTab,
+      propTypeFilter,
+      hitRatePage,
+      teamConfidencePage,
+      playerConfidencePage,
+      dateString,
+    ]
+  );
+
+  useEffect(() => {
+    if (embedMode === 'full' || !feedRestore) return;
+    const moduleName = embedModeToProfileModuleName(embedMode);
+    const pending = feedRestore.takePendingPropUi(moduleName);
+    if (!pending) return;
+    setMainTab(pending.mainTab);
+    setActiveTab(pending.activeTab);
+    setPropTypeFilter(pending.propTypeFilter);
+    setHitRatePage(pending.hitRatePage);
+    setTeamConfidencePage(pending.teamConfidencePage);
+    setPlayerConfidencePage(pending.playerConfidencePage);
+  }, [embedMode, restoreGen, feedRestore]);
+
   // Fetch games from DB
   const { data: games } = useGamesByDate(dateString);
   // For today: use scoreboard games when nba_games has none yet (games often sync later)
@@ -6462,16 +7018,7 @@ export function PropPredictionsModule({
     const filtered = nbaScoreboard.games.filter((game: any) => {
       const gameDate = game.gameDate || game.game_date;
       if (!gameDate) return false;
-      try {
-        if (gameDate.includes('T') || gameDate.includes(' ')) {
-          return isDateInEST(gameDate, selectedDateString);
-        }
-        const utcDate = new Date(gameDate + 'T00:00:00Z');
-        const estDateString = utcToESTDate(utcDate);
-        return estDateString === selectedDateString;
-      } catch (e) {
-        return false;
-      }
+      return scoreboardGameMatchesESTDate(gameDate, selectedDateString);
     });
     return filtered.map((game: any) => ({
       ...game,
@@ -6485,11 +7032,6 @@ export function PropPredictionsModule({
       away_team_city: game.away_team_city || game.awayTeam?.city,
     }));
   }, [games, isToday, nbaScoreboard, selectedDate]);
-  
-  // Only show for present/today dates
-  if (isPast || !isToday) {
-    return null;
-  }
   
   // Helper function to format bet type for display
   const formatBetType = (betType: string): string => {
@@ -6880,7 +7422,7 @@ export function PropPredictionsModule({
       
       return deduplicatedProps;
     },
-    enabled: true, // Always enabled for PropPredictionsModule (only called for present dates)
+    enabled: shouldShowModule,
   });
   
   const isLoading = predictedPropsLoading;
@@ -6892,221 +7434,1391 @@ export function PropPredictionsModule({
     return fmt === 'FTM' || fmt === 'FTA';
   };
 
-  // For present/today dates: show hottest/coldest props based on last 10 games
+  // For present/today dates: show hottest/coldest props based on last 10 games (all props, paginated)
   // Hottest: Show OVER props sorted by overHitRate (descending) - players consistently going over
   // Coldest: Show UNDER props sorted by underHitRate (descending) - players consistently going under
-  const sortedProps = predictedProps 
-    ? (activeTab === 'hottest' 
-        ? [...predictedProps]
-            .filter((p: any) => !isFtmOrFta(p))
-            .filter((p: any) => p.over && p.overHitRate !== null && p.overHitRate !== undefined) // Only show props with over side and valid hit rate
-            .map((p: any) => ({ 
-              ...p, 
-              displayHitRate: p.overHitRate, 
-              displayHits: p.overHits || 0, 
-              displaySide: 'over',
-              displayOdds: p.over?.american_odds || p.over?.price || 'N/A'
-            }))
-            .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0)) // Highest hit rate first
-            .slice(0, 10)
-        : [...predictedProps]
-            .filter((p: any) => !isFtmOrFta(p))
-            .filter((p: any) => p.under && p.underHitRate !== null && p.underHitRate !== undefined) // Only show props with under side and valid hit rate
-            .map((p: any) => ({ 
-              ...p, 
-              displayHitRate: p.underHitRate, 
-              displayHits: p.underHits || 0, 
-              displaySide: 'under',
-              displayOdds: p.under?.american_odds || p.under?.price || 'N/A'
-            }))
-            .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0)) // Highest hit rate first (players consistently going under)
-            .slice(0, 10))
+  const isEmbed = embedMode !== 'full';
+  const effectiveActiveTab: 'hottest' | 'coldest' =
+    embedMode === 'over' ? 'hottest' : embedMode === 'under' ? 'coldest' : activeTab;
+
+  const hotSortedProps = predictedProps
+    ? [...predictedProps]
+        .filter((p: any) => !isFtmOrFta(p))
+        .filter((p: any) => p.over && p.overHitRate !== null && p.overHitRate !== undefined)
+        .map((p: any) => ({
+          ...p,
+          displayHitRate: p.overHitRate,
+          displayHits: p.overHits || 0,
+          displaySide: 'over',
+          displayOdds: p.over?.american_odds || p.over?.price || 'N/A',
+        }))
+        .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0))
     : [];
-  
-  return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography 
-            level="h4" 
-            sx={{ 
-              fontWeight: 'bold', 
-              color: '#FFFFFF',
-              cursor: 'pointer',
-              '&:hover': {
-                opacity: 0.8,
-                textDecoration: 'underline'
-              }
-            }}
-            onClick={() => {
-              if (onOpen) {
-                // Pass the props data to the parent
-                // For present dates, use predictedProps (cleaned props with hit rates)
-                let propsToPass: any[] = [];
-                
-                if (predictedProps) {
-                  // predictedProps are already cleaned; exclude FTM/FTA for full view
-                  propsToPass = predictedProps.filter((p: any) => !isFtmOrFta(p));
+
+  const coldSortedProps = predictedProps
+    ? [...predictedProps]
+        .filter((p: any) => !isFtmOrFta(p))
+        .filter((p: any) => p.under && p.underHitRate !== null && p.underHitRate !== undefined)
+        .map((p: any) => ({
+          ...p,
+          displayHitRate: p.underHitRate,
+          displayHits: p.underHits || 0,
+          displaySide: 'under',
+          displayOdds: p.under?.american_odds || p.under?.price || 'N/A',
+        }))
+        .sort((a: any, b: any) => (b.displayHitRate || 0) - (a.displayHitRate || 0))
+    : [];
+
+  const sortedProps =
+    effectiveActiveTab === 'hottest' ? hotSortedProps : coldSortedProps;
+
+  /** Union of over + under lists so standalone Team/Player confidence modules see all props. */
+  const mergedConfidenceBaseProps = useMemo(() => {
+    const m = new Map<string, any>();
+    const key = (p: any) => String(p?.id ?? `${p?.nba_player_id}_${p?.bet_type}`);
+    for (const p of hotSortedProps) m.set(key(p), p);
+    for (const p of coldSortedProps) {
+      const k = key(p);
+      if (!m.has(k)) m.set(k, p);
+    }
+    return Array.from(m.values());
+  }, [hotSortedProps, coldSortedProps]);
+
+  const confidenceSortedProps = useMemo(() => {
+    if (embedMode === 'team_confidence' || embedMode === 'player_confidence') {
+      return mergedConfidenceBaseProps;
+    }
+    return sortedProps;
+  }, [embedMode, mergedConfidenceBaseProps, sortedProps]);
+
+  const effectiveMainTab: MainTabValue = useMemo(() => {
+    if (embedMode === 'team_confidence') return 'team_confidence';
+    if (embedMode === 'player_confidence') return 'player_confidence';
+    if (embedMode === 'over' || embedMode === 'under') return 'hit_rate';
+    return mainTab;
+  }, [embedMode, mainTab]);
+
+  const propsForPropTypeLabels = useMemo(() => {
+    if (effectiveMainTab === 'team_confidence' || effectiveMainTab === 'player_confidence') {
+      return confidenceSortedProps;
+    }
+    return sortedProps;
+  }, [effectiveMainTab, confidenceSortedProps, sortedProps]);
+
+  // Unique prop types for filter chips (display labels)
+  const availablePropTypes = useMemo(
+    () =>
+      [...new Set(propsForPropTypeLabels.map((p: any) => formatBetType(p.bet_type || '')))].filter(Boolean).sort(),
+    [propsForPropTypeLabels]
+  );
+
+  // Filter by prop type (shared across hit rate, team confidence, player confidence)
+  const filteredSortedProps = useMemo(
+    () =>
+      propTypeFilter
+        ? sortedProps.filter((p: any) => formatBetType(p.bet_type || '') === propTypeFilter)
+        : sortedProps,
+    [sortedProps, propTypeFilter]
+  );
+
+  // Reset to page 1 when switching between Hottest and Coldest
+  useEffect(() => {
+    setHitRatePage(1);
+  }, [activeTab]);
+
+  // Reset to page 1 when prop filter changes
+  useEffect(() => {
+    setHitRatePage(1);
+    setTeamConfidencePage(1);
+    setPlayerConfidencePage(1);
+  }, [propTypeFilter]);
+
+  // When switching to Hit rate tab, default to Over (up) so content shows without having to click ↑
+  const prevMainTabRef = useRef<MainTabValue>(mainTab);
+  useEffect(() => {
+    if (prevMainTabRef.current !== 'hit_rate' && mainTab === 'hit_rate') {
+      setActiveTab('hottest');
+    }
+    if (mainTab === 'team_confidence') setTeamConfidencePage(1);
+    if (mainTab === 'player_confidence') setPlayerConfidencePage(1);
+    prevMainTabRef.current = mainTab;
+  }, [mainTab]);
+
+  const hitRateTotalPages = filteredSortedProps.length > 0 ? Math.ceil(filteredSortedProps.length / HIT_RATE_PAGE_SIZE) : 0;
+  const hitRateStartIndex = (hitRatePage - 1) * HIT_RATE_PAGE_SIZE;
+  const hitRateEndIndex = Math.min(hitRateStartIndex + HIT_RATE_PAGE_SIZE, filteredSortedProps.length);
+  const paginatedProps = filteredSortedProps.slice(hitRateStartIndex, hitRateEndIndex);
+
+  // Team confidence: same props as hit rate, enriched with opposition nba_daily_team_stats + confidence 1–10
+  const { data: teamConfidenceList, isLoading: teamConfidenceLoading } = useQuery({
+    queryKey: ['prop-team-confidence', dateString, activeTab, confidenceSortedProps.length, allGames?.length],
+    queryFn: async (): Promise<PropWithTeamConfidence[]> => {
+      if (!confidenceSortedProps.length || !dateString) {
+        console.log('[TeamConfidence] query skipped: no props or date', { sortedPropsLength: confidenceSortedProps.length, dateString });
+        return [];
+      }
+      console.log('[TeamConfidence] starting for date', dateString, 'props', confidenceSortedProps.length);
+      const playerIds = [...new Set(confidenceSortedProps.map((p: any) => p.nba_player_id).filter(Boolean))];
+      const { data: players } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation')
+        .in('nba_player_id', playerIds);
+      const playerTeamMap = new Map<number, string>();
+      (players ?? []).forEach((p: { nba_player_id: number; team_abbreviation: string | null }) => {
+        if (p.nba_player_id && (p.team_abbreviation ?? '').trim()) {
+          playerTeamMap.set(p.nba_player_id, (p.team_abbreviation ?? '').trim());
+        }
+      });
+      console.log('[TeamConfidence] nba_players team_abbreviation:', (players ?? []).length, 'rows, map size', playerTeamMap.size);
+      const missingTeamIds = playerIds.filter((id: number) => !playerTeamMap.has(id));
+      if (missingTeamIds.length > 0) {
+        const { data: boxscores } = await supabase
+          .from('nba_boxscores')
+          .select('nba_player_id, team_abbreviation, team_tricode')
+          .in('nba_player_id', missingTeamIds)
+          .order('game_date', { ascending: false });
+        const byPlayer = new Map<number, string>();
+        (boxscores ?? []).forEach((b: any) => {
+          if (b.nba_player_id && !byPlayer.has(b.nba_player_id)) {
+            const team = (b.team_tricode || b.team_abbreviation || '').trim();
+            if (team) byPlayer.set(b.nba_player_id, team);
+          }
+        });
+        byPlayer.forEach((team, id) => playerTeamMap.set(id, team));
+        console.log('[TeamConfidence] boxscore fallback: missing', missingTeamIds.length, 'filled', byPlayer.size);
+      }
+      let statsRows: { endpoint_name: string; data: string | object }[] | null = null;
+      const { data: rowsForDate } = await supabase
+        .from('nba_daily_team_stats')
+        .select('endpoint_name, data')
+        .eq('date', dateString);
+      if (rowsForDate?.length) {
+        statsRows = rowsForDate;
+        console.log('[TeamConfidence] nba_daily_team_stats for date', dateString, 'rows', rowsForDate.length);
+      } else {
+        console.log('[TeamConfidence] no nba_daily_team_stats for', dateString, ', trying latest date');
+        const { data: latestRow } = await supabase
+          .from('nba_daily_team_stats')
+          .select('date')
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const fallbackDate = (latestRow as { date?: string } | null)?.date;
+        if (fallbackDate) {
+          const { data: rowsFallback } = await supabase
+            .from('nba_daily_team_stats')
+            .select('endpoint_name, data')
+            .eq('date', fallbackDate);
+          statsRows = rowsFallback ?? null;
+          console.log('[TeamConfidence] fallback date', fallbackDate, 'rows', statsRows?.length ?? 0);
+        } else {
+          console.log('[TeamConfidence] no rows in nba_daily_team_stats at all');
+        }
+      }
+      // Fallback: when props lack player_props_games, fetch by game_id (player_props_games.id)
+      let gameIdToTeams: GameIdToTeamsMap | undefined;
+      const propGameIds = [...new Set(confidenceSortedProps.map((p: any) => p.game_id).filter(Boolean))];
+      if (propGameIds.length === 0) {
+        console.warn('[TeamConfidence] No game_id on any prop (sample keys):', confidenceSortedProps[0] ? Object.keys(confidenceSortedProps[0]) : []);
+      }
+      if (propGameIds.length > 0) {
+        const { data: ppgRows } = await supabase
+          .from('player_props_games')
+          .select('id, nba_game_id, home_team_tricode, away_team_tricode')
+          .in('id', propGameIds);
+        if (ppgRows?.length) {
+          const gamesList = allGames ?? [];
+          gameIdToTeams = new Map(
+            ppgRows.map((r: { id: string; nba_game_id: string | null; home_team_tricode: string | null; away_team_tricode: string | null }) => {
+              let home = (r.home_team_tricode ?? '').trim();
+              let away = (r.away_team_tricode ?? '').trim();
+              if ((!home || !away) && r.nba_game_id) {
+                const game = gamesList.find((g: any) => (g.game_id || g.gameId) === r.nba_game_id);
+                if (game) {
+                  home = home || (game.home_team_tricode ?? game.homeTeam?.abbreviation ?? game.homeTeam?.tricode ?? '').trim();
+                  away = away || (game.away_team_tricode ?? game.awayTeam?.abbreviation ?? game.awayTeam?.tricode ?? '').trim();
                 }
-                
-                const propsData = {
-                  futureProps: propsToPass,
-                  isLoading: isLoading,
-                  activeTab: activeTab,
-                };
-                onOpen(propsData);
-              } else {
-                // Fallback to navigation if onOpen not provided
-                navigate(`/prop-predictions/${dateString}`);
               }
+              return [
+                r.id,
+                { home_team_tricode: home || '', away_team_tricode: away || '' },
+              ];
+            })
+          );
+          const withTricodes = Array.from(gameIdToTeams.values()).filter((t) => t.home_team_tricode && t.away_team_tricode).length;
+          console.log('[TeamConfidence] gameIdToTeams:', gameIdToTeams.size, 'entries, with both tricodes:', withTricodes);
+        }
+      }
+      // Carousel fallback: nba_game_id -> { home_team_tricode, away_team_tricode } so we can resolve opposition even without game_id on props
+      const nbaGameIdToTeams: NbaGameIdToTeamsMap = new Map();
+      (allGames ?? []).forEach((g: any) => {
+        const nbaId = g.game_id || g.gameId;
+        const home = (g.home_team_tricode ?? g.homeTeam?.abbreviation ?? g.homeTeam?.tricode ?? '').trim();
+        const away = (g.away_team_tricode ?? g.awayTeam?.abbreviation ?? g.awayTeam?.tricode ?? '').trim();
+        if (nbaId && home && away) nbaGameIdToTeams.set(nbaId, { home_team_tricode: home, away_team_tricode: away });
+      });
+      console.log('[TeamConfidence] nbaGameIdToTeams from carousel:', nbaGameIdToTeams.size, 'games');
+      // Fetch player offense stats for "individual offense vs team defense" lookup
+      let playerStatsRows: NbaDailyPlayerStatsRow[] | undefined;
+      const { data: playerStatsForDate } = await supabase
+        .from('nba_daily_player_stats')
+        .select('endpoint_name, data')
+        .eq('date', dateString);
+      if (playerStatsForDate?.length) {
+        playerStatsRows = playerStatsForDate as NbaDailyPlayerStatsRow[];
+        console.log('[TeamConfidence] nba_daily_player_stats for date', dateString, 'rows', playerStatsForDate.length);
+      }
+      const enriched = enrichPropsWithTeamConfidence(
+        confidenceSortedProps as Record<string, unknown>[],
+        playerTeamMap,
+        (statsRows ?? []) as { endpoint_name: string; data: string | object }[],
+        gameIdToTeams,
+        nbaGameIdToTeams,
+        playerStatsRows
+      );
+      const withRating = enriched.filter((e) => e.teamConfidence != null);
+      console.log('[TeamConfidence] enriched:', enriched.length, 'with confidence:', withRating.length);
+      return enriched.sort((a, b) => {
+        const ac = a.teamConfidence ?? -1;
+        const bc = b.teamConfidence ?? -1;
+        return bc - ac;
+      });
+    },
+    enabled:
+      (mainTab === 'team_confidence' ||
+        mainTab === 'player_confidence' ||
+        embedMode === 'team_confidence' ||
+        embedMode === 'player_confidence') &&
+      confidenceSortedProps.length > 0 &&
+      !!dateString,
+  });
+
+  // Player confidence: same props, enriched with nba_daily_player_stats (opposition allowed stats per rulebook)
+  const { data: playerConfidenceList, isLoading: playerConfidenceLoading } = useQuery({
+    queryKey: ['prop-player-confidence', dateString, activeTab, confidenceSortedProps.length, allGames?.length],
+    queryFn: async (): Promise<PropWithPlayerConfidence[]> => {
+      if (!confidenceSortedProps.length || !dateString) return [];
+      const playerIds = [...new Set(confidenceSortedProps.map((p: any) => p.nba_player_id).filter(Boolean))];
+      const { data: players } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation')
+        .in('nba_player_id', playerIds);
+      const playerTeamMap = new Map<number, string>();
+      (players ?? []).forEach((p: { nba_player_id: number; team_abbreviation: string | null }) => {
+        if (p.nba_player_id && (p.team_abbreviation ?? '').trim()) {
+          playerTeamMap.set(p.nba_player_id, (p.team_abbreviation ?? '').trim());
+        }
+      });
+      const missingTeamIds = playerIds.filter((id: number) => !playerTeamMap.has(id));
+      if (missingTeamIds.length > 0) {
+        const { data: boxscores } = await supabase
+          .from('nba_boxscores')
+          .select('nba_player_id, team_abbreviation, team_tricode')
+          .in('nba_player_id', missingTeamIds)
+          .order('game_date', { ascending: false });
+        (boxscores ?? []).forEach((b: any) => {
+          if (b.nba_player_id && !playerTeamMap.has(b.nba_player_id)) {
+            const team = (b.team_tricode || b.team_abbreviation || '').trim();
+            if (team) playerTeamMap.set(b.nba_player_id, team);
+          }
+        });
+      }
+      let gameIdToTeams: GameIdToTeamsMap | undefined;
+      const propGameIds = [...new Set(confidenceSortedProps.map((p: any) => p.game_id).filter(Boolean))];
+      if (propGameIds.length > 0) {
+        const { data: ppgRows } = await supabase
+          .from('player_props_games')
+          .select('id, nba_game_id, home_team_tricode, away_team_tricode')
+          .in('id', propGameIds);
+        if (ppgRows?.length) {
+          const gamesList = allGames ?? [];
+          gameIdToTeams = new Map(
+            ppgRows.map((r: { id: string; nba_game_id: string | null; home_team_tricode: string | null; away_team_tricode: string | null }) => {
+              let home = (r.home_team_tricode ?? '').trim();
+              let away = (r.away_team_tricode ?? '').trim();
+              if ((!home || !away) && r.nba_game_id) {
+                const game = gamesList.find((g: any) => (g.game_id || g.gameId) === r.nba_game_id);
+                if (game) {
+                  home = home || (game.home_team_tricode ?? game.homeTeam?.abbreviation ?? game.homeTeam?.tricode ?? '').trim();
+                  away = away || (game.away_team_tricode ?? game.awayTeam?.abbreviation ?? game.awayTeam?.tricode ?? '').trim();
+                }
+              }
+              return [r.id, { home_team_tricode: home || '', away_team_tricode: away || '' }];
+            })
+          );
+        }
+      }
+      const nbaGameIdToTeams: NbaGameIdToTeamsMap = new Map();
+      (allGames ?? []).forEach((g: any) => {
+        const nbaId = g.game_id || g.gameId;
+        const home = (g.home_team_tricode ?? g.homeTeam?.abbreviation ?? g.homeTeam?.tricode ?? '').trim();
+        const away = (g.away_team_tricode ?? g.awayTeam?.abbreviation ?? g.awayTeam?.tricode ?? '').trim();
+        if (nbaId && home && away) nbaGameIdToTeams.set(nbaId, { home_team_tricode: home, away_team_tricode: away });
+      });
+      const { data: playerStatsRows } = await supabase
+        .from('nba_daily_player_stats')
+        .select('date, data, endpoint_name')
+        .eq('date', dateString);
+      const fallbackRows = !playerStatsRows?.length
+        ? (await supabase.from('nba_daily_player_stats').select('date, data, endpoint_name').order('date', { ascending: false }).limit(1)).data
+        : null;
+      const rowsToUse = (playerStatsRows?.length ? playerStatsRows : fallbackRows ?? []) as { date?: string; data?: unknown; endpoint_name?: string }[];
+      const enriched = enrichPropsWithPlayerConfidence(
+        confidenceSortedProps as Record<string, unknown>[],
+        playerTeamMap,
+        rowsToUse,
+        gameIdToTeams,
+        nbaGameIdToTeams
+      );
+      return enriched.sort((a, b) => {
+        const ac = a.playerConfidence ?? -1;
+        const bc = b.playerConfidence ?? -1;
+        return bc - ac;
+      });
+    },
+    enabled:
+      (mainTab === 'team_confidence' ||
+        mainTab === 'player_confidence' ||
+        embedMode === 'team_confidence' ||
+        embedMode === 'player_confidence') &&
+      confidenceSortedProps.length > 0 &&
+      !!dateString,
+  });
+
+  // Matchups: player offense vs opponent team defense (nba_daily_player_stats + nba_daily_team_stats)
+  // Use sortedProps (same as Hit rate) so we get all tonight's players regardless of prop-type filter
+  const { data: matchupsData, isLoading: matchupsLoading } = useQuery({
+    queryKey: ['prop-matchups', dateString, sortedProps.length],
+    queryFn: async (): Promise<{ radarData: ReturnType<typeof buildMatchupRadarData>; players: PlayerWithOpposition[]; byEndpoint: Record<string, Record<string, string | undefined>[]>; byPlayerEndpoint: Record<string, Record<string, unknown>[]>; debug?: { teamStatsCount: number; playerStatsCount: number } } | null> => {
+      if (!sortedProps.length || !dateString) return null;
+      const playerIds = [...new Set(sortedProps.map((p: any) => p.nba_player_id).filter(Boolean))] as number[];
+      const { data: players } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation')
+        .in('nba_player_id', playerIds);
+      const playerTeamMap = new Map<number, string>();
+      (players ?? []).forEach((p: { nba_player_id: number; team_abbreviation: string | null }) => {
+        if (p.nba_player_id && (p.team_abbreviation ?? '').trim()) {
+          playerTeamMap.set(p.nba_player_id, (p.team_abbreviation ?? '').trim());
+        }
+      });
+      const missingTeamIds = playerIds.filter((id: number) => !playerTeamMap.has(id));
+      if (missingTeamIds.length > 0) {
+        const { data: boxscores } = await supabase
+          .from('nba_boxscores')
+          .select('nba_player_id, team_tricode, team_abbreviation')
+          .in('nba_player_id', missingTeamIds)
+          .order('game_date', { ascending: false });
+        (boxscores ?? []).forEach((b: any) => {
+          if (b.nba_player_id && !playerTeamMap.has(b.nba_player_id)) {
+            const team = (b.team_tricode || b.team_abbreviation || '').trim();
+            if (team) playerTeamMap.set(b.nba_player_id, team);
+          }
+        });
+      }
+      let gameIdToTeams: GameIdToTeamsMap | undefined;
+      const propGameIds = [...new Set(sortedProps.map((p: any) => p.game_id).filter(Boolean))];
+      if (propGameIds.length > 0) {
+        const { data: ppgRows } = await supabase
+          .from('player_props_games')
+          .select('id, nba_game_id, home_team_tricode, away_team_tricode')
+          .in('id', propGameIds);
+        if (ppgRows?.length) {
+          const gamesList = allGames ?? [];
+          gameIdToTeams = new Map(
+            ppgRows.map((r: { id: string; nba_game_id: string | null; home_team_tricode: string | null; away_team_tricode: string | null }) => {
+              let home = (r.home_team_tricode ?? '').trim();
+              let away = (r.away_team_tricode ?? '').trim();
+              if ((!home || !away) && r.nba_game_id) {
+                const game = gamesList.find((g: any) => (g.game_id || g.gameId) === r.nba_game_id);
+                if (game) {
+                  home = home || (game.home_team_tricode ?? game.homeTeam?.abbreviation ?? game.homeTeam?.tricode ?? '').trim();
+                  away = away || (game.away_team_tricode ?? game.awayTeam?.abbreviation ?? game.awayTeam?.tricode ?? '').trim();
+                }
+              }
+              return [r.id, { home_team_tricode: home || '', away_team_tricode: away || '' }];
+            })
+          );
+        }
+      }
+      const nbaGameIdToTeams: NbaGameIdToTeamsMap = new Map();
+      (allGames ?? []).forEach((g: any) => {
+        const nbaId = g.game_id || g.gameId;
+        const home = (g.home_team_tricode ?? g.homeTeam?.abbreviation ?? g.homeTeam?.tricode ?? '').trim();
+        const away = (g.away_team_tricode ?? g.awayTeam?.abbreviation ?? g.awayTeam?.tricode ?? '').trim();
+        if (nbaId && home && away) nbaGameIdToTeams.set(nbaId, { home_team_tricode: home, away_team_tricode: away });
+      });
+      const playersWithOpposition: PlayerWithOpposition[] = [];
+      const seen = new Set<number>();
+      for (const prop of filteredSortedProps as any[]) {
+        const nbaPlayerId = Number(prop.nba_player_id);
+        if (!nbaPlayerId || seen.has(nbaPlayerId)) continue;
+        const playerTeam = playerTeamMap.get(nbaPlayerId);
+        if (!playerTeam) continue;
+        let homeTricode = (prop.player_props_games?.[0]?.home_team_tricode ?? '').trim() || undefined;
+        let awayTricode = (prop.player_props_games?.[0]?.away_team_tricode ?? '').trim() || undefined;
+        if ((!homeTricode || !awayTricode) && gameIdToTeams && prop.game_id) {
+          const teams = gameIdToTeams.get(String(prop.game_id));
+          if (teams?.home_team_tricode && teams?.away_team_tricode) {
+            homeTricode = homeTricode ?? teams.home_team_tricode;
+            awayTricode = awayTricode ?? teams.away_team_tricode;
+          }
+        }
+        const nbaGameId = prop.player_props_games?.[0]?.nba_game_id ?? prop.nba_game_id;
+        if ((!homeTricode || !awayTricode) && nbaGameIdToTeams && nbaGameId) {
+          const teams = nbaGameIdToTeams.get(String(nbaGameId));
+          if (teams?.home_team_tricode && teams?.away_team_tricode) {
+            homeTricode = homeTricode ?? teams.home_team_tricode;
+            awayTricode = awayTricode ?? teams.away_team_tricode;
+          }
+        }
+        const pt = playerTeam.trim().toUpperCase();
+        const oppositionTricode = homeTricode && awayTricode && pt === homeTricode.toUpperCase() ? awayTricode : (pt === awayTricode?.toUpperCase() ? homeTricode : null);
+        if (!oppositionTricode) continue;
+        seen.add(nbaPlayerId);
+        playersWithOpposition.push({
+          nbaPlayerId,
+          playerName: (prop.player_name ?? prop.playerName ?? '').trim() || 'Unknown',
+          playerTeamTricode: playerTeam,
+          oppositionTricode,
+        });
+      }
+      const { data: teamStatsRows } = await supabase
+        .from('nba_daily_team_stats')
+        .select('endpoint_name, data')
+        .eq('date', dateString);
+      let statsRows = teamStatsRows ?? [];
+      if (!statsRows.length) {
+        const { data: latest } = await supabase.from('nba_daily_team_stats').select('date').order('date', { ascending: false }).limit(1).maybeSingle();
+        const fallbackDate = (latest as { date?: string } | null)?.date;
+        if (fallbackDate) {
+          const { data: fallback } = await supabase.from('nba_daily_team_stats').select('endpoint_name, data').eq('date', fallbackDate);
+          statsRows = fallback ?? [];
+        }
+      }
+      const { data: playerStatsRows } = await supabase
+        .from('nba_daily_player_stats')
+        .select('endpoint_name, data')
+        .eq('date', dateString);
+      const byEndpoint: Record<string, Record<string, string | undefined>[]> = {};
+      for (const row of statsRows as { endpoint_name: string; data: string | object }[]) {
+        try {
+          const payload = typeof row.data === 'string' ? (JSON.parse(row.data) as { data?: Record<string, string>[] }) : row.data;
+          const arr = Array.isArray((payload as { data?: Record<string, string>[] })?.data)
+            ? (payload as { data: Record<string, string>[] }).data
+            : Array.isArray(payload)
+              ? (payload as Record<string, string>[])
+              : undefined;
+          if (arr?.length) byEndpoint[row.endpoint_name] = arr as Record<string, string | undefined>[];
+        } catch {
+          // skip
+        }
+      }
+      const byPlayerEndpoint: Record<string, Record<string, unknown>[]> = {};
+      for (const row of (playerStatsRows ?? []) as { endpoint_name?: string; data: string | object }[]) {
+        const ep = row.endpoint_name;
+        if (!ep) continue;
+        try {
+          const raw = row.data;
+          const payload = typeof raw === 'string' ? (() => { try { return JSON.parse(raw); } catch { return null; } })() : raw;
+          const arr = Array.isArray((payload as { data?: unknown[] })?.data)
+            ? (payload as { data: Record<string, unknown>[] }).data
+            : Array.isArray(payload)
+              ? (payload as Record<string, unknown>[])
+              : undefined;
+          if (arr?.length) byPlayerEndpoint[ep] = arr;
+        } catch {
+          // skip
+        }
+      }
+      const radarData = buildMatchupRadarData(byEndpoint, byPlayerEndpoint, playersWithOpposition);
+      return {
+        radarData,
+        players: playersWithOpposition,
+        byEndpoint,
+        byPlayerEndpoint,
+        debug: { teamStatsCount: statsRows.length, playerStatsCount: (playerStatsRows ?? []).length },
+      };
+    },
+    enabled: false, // Matchups tab removed from drawer
+  });
+
+  const matchupsRadarByPlayer = useMemo(() => {
+    if (!matchupsData?.radarData) return new Map<number, (typeof matchupsData.radarData)[0]>();
+    const m = new Map<number, (typeof matchupsData.radarData)[0]>();
+    matchupsData.radarData.forEach((r) => m.set(r.nbaPlayerId, r));
+    return m;
+  }, [matchupsData?.radarData]);
+
+  useEffect(() => {
+    setMatchupsPage(1);
+  }, [selectedMatchupFactorIndex]);
+
+  const matchupsTableRows = useMemo(() => {
+    if (!matchupsData?.byEndpoint || !matchupsData?.byPlayerEndpoint || !matchupsData?.players?.length) return [];
+    const factor = MATCHUP_FACTORS[selectedMatchupFactorIndex];
+    if (!factor) return [];
+    return buildMatchupFactorTableRows(
+      matchupsData.byEndpoint,
+      matchupsData.byPlayerEndpoint,
+      matchupsData.players,
+      factor
+    );
+  }, [matchupsData?.byEndpoint, matchupsData?.byPlayerEndpoint, matchupsData?.players, selectedMatchupFactorIndex]);
+
+  const matchupsTotalPages = matchupsTableRows.length > 0 ? Math.ceil(matchupsTableRows.length / MATCHUPS_PAGE_SIZE) : 0;
+  const matchupsStartIndex = (matchupsPage - 1) * MATCHUPS_PAGE_SIZE;
+  const matchupsEndIndex = Math.min(matchupsStartIndex + MATCHUPS_PAGE_SIZE, matchupsTableRows.length);
+  const paginatedMatchupsRows = matchupsTableRows.slice(matchupsStartIndex, matchupsEndIndex);
+
+  const filteredTeamConfidenceList = useMemo(() => {
+    const list = teamConfidenceList ?? [];
+    if (!propTypeFilter) return list;
+    return list.filter((row: PropWithTeamConfidence) => formatBetType((row.prop as any)?.bet_type || '') === propTypeFilter);
+  }, [teamConfidenceList, propTypeFilter]);
+
+  const filteredPlayerConfidenceList = useMemo(() => {
+    const list = playerConfidenceList ?? [];
+    if (!propTypeFilter) return list;
+    return list.filter((row: PropWithPlayerConfidence) => formatBetType((row.prop as any)?.bet_type || '') === propTypeFilter);
+  }, [playerConfidenceList, propTypeFilter]);
+
+  const teamConfidenceTotalPages = filteredTeamConfidenceList.length > 0
+    ? Math.ceil(filteredTeamConfidenceList.length / TEAM_CONFIDENCE_PAGE_SIZE)
+    : 0;
+  const teamConfidenceStartIndex = (teamConfidencePage - 1) * TEAM_CONFIDENCE_PAGE_SIZE;
+  const teamConfidenceEndIndex = Math.min(teamConfidenceStartIndex + TEAM_CONFIDENCE_PAGE_SIZE, filteredTeamConfidenceList.length);
+  const paginatedTeamConfidence = filteredTeamConfidenceList.slice(teamConfidenceStartIndex, teamConfidenceEndIndex);
+
+  const playerConfidenceTotalPages = filteredPlayerConfidenceList.length > 0
+    ? Math.ceil(filteredPlayerConfidenceList.length / PLAYER_CONFIDENCE_PAGE_SIZE)
+    : 0;
+  const playerConfidenceStartIndex = (playerConfidencePage - 1) * PLAYER_CONFIDENCE_PAGE_SIZE;
+  const playerConfidenceEndIndex = Math.min(playerConfidenceStartIndex + PLAYER_CONFIDENCE_PAGE_SIZE, filteredPlayerConfidenceList.length);
+  const paginatedPlayerConfidence = filteredPlayerConfidenceList.slice(playerConfidenceStartIndex, playerConfidenceEndIndex);
+
+  const playerConfidenceByPropId = useMemo(() => {
+    const m = new Map<string, PropWithPlayerConfidence>();
+    (playerConfidenceList ?? []).forEach((p) => {
+      const id = (p.prop as any)?.id;
+      if (id != null) m.set(String(id), p);
+    });
+    return m;
+  }, [playerConfidenceList]);
+  const teamConfidenceByPropId = useMemo(() => {
+    const m = new Map<string, PropWithTeamConfidence>();
+    (teamConfidenceList ?? []).forEach((t) => {
+      const id = (t.prop as any)?.id;
+      if (id != null) m.set(String(id), t);
+    });
+    return m;
+  }, [teamConfidenceList]);
+
+  if (!shouldShowModule) {
+    return null;
+  }
+
+  return (
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          {embedMode === 'over'
+            ? 'Props · Over'
+            : embedMode === 'under'
+              ? 'Props · Under'
+              : embedMode === 'team_confidence'
+                ? 'Props · Team conf'
+                : embedMode === 'player_confidence'
+                  ? 'Props · Player conf'
+                  : 'Props'}
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: '#1a1a1a' }}>
+        <Box sx={{ mb: 2, bgcolor: '#1a1a1a' }}>
+          <Tabs
+            value={isEmbed ? effectiveMainTab : mainTab}
+            onChange={(_, val) => {
+              if (!isEmbed) setMainTab(val as MainTabValue);
             }}
+            sx={{ width: '100%', bgcolor: '#1a1a1a' }}
           >
-            Prop Predictions
-          </Typography>
-          <Tabs value={activeTab} onChange={(e, val) => setActiveTab(val as 'hottest' | 'coldest')}>
-            <TabList>
-              <Tab value="hottest">Hottest</Tab>
-              <Tab value="coldest">Coldest</Tab>
+            <TabList
+              sx={{
+                display: isEmbed ? 'none' : undefined,
+                width: '100%',
+                bgcolor: '#1a1a1a',
+                '& [role="tab"]': { flex: 1, justifyContent: 'center', bgcolor: '#1a1a1a' },
+                '& [role="tab"][aria-selected="true"]': { bgcolor: 'rgba(255,255,255,0.06)' },
+              }}
+            >
+              <Tab value="hit_rate">
+                <Stack direction="column" alignItems="center" spacing={0.25} sx={{ pr: 0.5 }}>
+                  <Typography level="body-sm" sx={{ fontWeight: 500, lineHeight: 1.2 }}>HR / 10</Typography>
+                  <Stack direction="row" alignItems="center" spacing={0.25}>
+                    <Tooltip title="Over" placement="top">
+                      <IconButton
+                        size="sm"
+                        variant={activeTab === 'hottest' ? 'soft' : 'plain'}
+                        color={activeTab === 'hottest' ? 'success' : 'neutral'}
+                        onClick={(e) => { e.stopPropagation(); setActiveTab('hottest'); }}
+                        sx={{ '--IconButton-size': '28px' }}
+                      >
+                        <ArrowUpward sx={{ fontSize: '1rem' }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Under" placement="top">
+                      <IconButton
+                        size="sm"
+                        variant={activeTab === 'coldest' ? 'soft' : 'plain'}
+                        color={activeTab === 'coldest' ? 'danger' : 'neutral'}
+                        onClick={(e) => { e.stopPropagation(); setActiveTab('coldest'); }}
+                        sx={{ '--IconButton-size': '28px' }}
+                      >
+                        <ArrowDownward sx={{ fontSize: '1rem' }} />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                </Stack>
+              </Tab>
+              <Tab value="team_confidence">TEAM COMF</Tab>
+              <Tab value="player_confidence">PLAYER COMF</Tab>
             </TabList>
-          </Tabs>
-        </Box>
-        
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : sortedProps && sortedProps.length > 0 ? (
-          <Table hoverRow size="sm">
-            <thead>
-              <tr>
-                <th style={{ color: '#FFFFFF' }}>Player</th>
-                <th style={{ color: '#FFFFFF' }}>Prop</th>
-                <th style={{ color: '#FFFFFF' }}>Line</th>
-                <th style={{ color: '#FFFFFF' }}>Last 10 Hit Rate</th>
-                <th style={{ color: '#FFFFFF' }}>Odds</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedProps.map((prop: any, index: number) => (
-                <tr 
-                  key={prop.id || index}
-                  style={{ cursor: 'pointer' }}
-                  onClick={() => {
-                    if (prop.player_id) {
-                      navigate(`/player/${prop.player_id}`);
-                    }
+            {(effectiveMainTab === 'hit_rate' ||
+              effectiveMainTab === 'team_confidence' ||
+              effectiveMainTab === 'player_confidence') &&
+            availablePropTypes.length > 0 ? (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    width: '100%',
+                    pt: 0.5,
+                    pb: (effectiveMainTab === 'team_confidence' || effectiveMainTab === 'player_confidence') && propTypeFilter ? 0.5 : 1,
+                    px: 0,
+                    bgcolor: '#1a1a1a',
                   }}
                 >
-                  <td>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar 
-                        src={prop.nba_player_id && prop.nba_player_id > 0
-                          ? `https://cdn.nba.com/headshots/nba/latest/260x190/${prop.nba_player_id}.png`
-                          : undefined
-                        }
-                        alt={prop.player_name}
-                        sx={{ width: 24, height: 24 }}
-                      >
-                        {(!prop.nba_player_id || prop.nba_player_id === 0) && (
-                          <Typography sx={{ fontSize: '0.6rem', color: '#FFFFFF' }}>
-                            {prop.player_name?.charAt(0) || '?'}
-                          </Typography>
-                        )}
-                      </Avatar>
-                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                        {prop.player_name || 'N/A'}
-                      </Typography>
-                    </Box>
-                  </td>
-                      <td>
-                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                          {formatBetType(prop.bet_type)}
-                        </Typography>
-                      </td>
-                  <td>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
-                        {(() => {
-                          const lineValue = prop.currentLine || prop.line;
-                          if (lineValue == null) return 'N/A';
-                          const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
-                          return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
-                        })()}
-                      </Typography>
-                      {prop.lineMovement !== undefined && prop.lineMovement !== 0 && (
-                        <Chip 
-                          size="sm" 
-                          variant="soft"
-                          color={prop.lineMovement > 0 ? 'success' : 'danger'}
-                          sx={{ height: '16px', fontSize: '0.65rem' }}
-                        >
-                          {prop.lineMovement > 0 ? '↑' : '↓'} {Math.abs(prop.lineMovement).toFixed(1)}
-                        </Chip>
-                      )}
-                    </Stack>
-                  </td>
-                  <td>
-                    <Typography 
-                      level="body-sm" 
-                      sx={{ 
-                        color: activeTab === 'hottest' 
-                          ? ((prop.displayHitRate || prop.last10HitRate) >= 70 ? '#10B981' : (prop.displayHitRate || prop.last10HitRate) >= 50 ? '#FFC72C' : '#CCCCCC')
-                          : ((prop.displayHitRate || prop.last10HitRate) <= 30 ? '#EF4444' : (prop.displayHitRate || prop.last10HitRate) <= 50 ? '#FFC72C' : '#CCCCCC'),
-                        fontWeight: 600,
+                  <FormControl size="sm" sx={{ minWidth: 150, maxWidth: 'min(100%, 220px)', alignItems: 'flex-end' }}>
+                    <FormLabel sx={{ color: '#999', fontSize: '0.75rem', mb: 0.25, width: '100%', textAlign: 'right' }}>
+                      Prop type
+                    </FormLabel>
+                    <Select
+                      size="sm"
+                      value={propTypeFilter}
+                      onChange={(_, v) => setPropTypeFilter((v as string) ?? '')}
+                      slotProps={{ listbox: { sx: { zIndex: 2500 } } }}
+                      sx={{
+                        bgcolor: '#141414',
+                        color: '#e0e0e0',
+                        borderColor: '#333',
+                        width: '100%',
                       }}
                     >
-                      {(prop.displayHitRate !== null && prop.displayHitRate !== undefined) 
-                        ? `${prop.displayHitRate.toFixed(1)}%` 
-                        : (prop.last10HitRate !== null ? `${prop.last10HitRate.toFixed(1)}%` : 'N/A')} 
-                      ({prop.displayHits || prop.last10Hits}/{prop.last10Total})
-                    </Typography>
-                  </td>
-                  <td>
-                    <Stack direction="row" spacing={0.5} alignItems="center">
-                      {prop.displaySide === 'over' && prop.over ? (
-                        <>
-                          <Chip size="sm" variant="soft" color="success" sx={{ fontSize: '0.7rem', height: '18px' }}>
-                            O {prop.displayOdds || prop.over.american_odds || prop.over.price || 'N/A'}
-                          </Chip>
-                          {prop.bestOverOdds && prop.bestOverOdds.bookmaker !== prop.over.bookmaker && (
-                            <Tooltip title={`Best: ${prop.bestOverOdds.bookmaker} ${prop.bestOverOdds.odds}`}>
-                              <Typography level="body-xs" sx={{ color: '#999999' }}>
-                                ⭐
-                              </Typography>
-                            </Tooltip>
-                          )}
-                        </>
-                      ) : prop.displaySide === 'under' && prop.under ? (
-                        <>
-                          <Chip size="sm" variant="soft" color="danger" sx={{ fontSize: '0.7rem', height: '18px' }}>
-                            U {prop.displayOdds || prop.under.american_odds || prop.under.price || 'N/A'}
-                          </Chip>
-                          {prop.bestUnderOdds && prop.bestUnderOdds.bookmaker !== prop.under.bookmaker && (
-                            <Tooltip title={`Best: ${prop.bestUnderOdds.bookmaker} ${prop.bestUnderOdds.odds}`}>
-                              <Typography level="body-xs" sx={{ color: '#999999' }}>
-                                ⭐
-                              </Typography>
-                            </Tooltip>
-                          )}
-                        </>
-                      ) : (
-                        <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                          {prop.displayOdds || prop.over?.american_odds || prop.under?.american_odds || prop.american_odds || prop.price || 'N/A'}
+                      <Option value="">All</Option>
+                      {availablePropTypes.map((label) => (
+                        <Option key={label} value={label}>
+                          {label}
+                        </Option>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Box>
+                {(effectiveMainTab === 'team_confidence' || effectiveMainTab === 'player_confidence') &&
+                  propTypeFilter &&
+                  (() => {
+                    const entry = getAllRulebookEntries().find((e) => e.label === propTypeFilter);
+                    if (!entry) return null;
+                    return (
+                      <Box sx={{ width: '100%', pb: 1, pt: 0, px: 0, bgcolor: '#1a1a1a' }}>
+                        <Typography level="body-xs" sx={{ color: '#999', fontWeight: 600, mb: 0.25 }}>
+                          {entry.label} rule
                         </Typography>
-                      )}
-                    </Stack>
-                  </td>
+                        <Typography level="body-xs" sx={{ color: '#AAA', display: 'block' }}>
+                          Team: {entry.teamStats.map((r) => `${r.endpointName} → ${r.columns.join(', ')} (${r.interpretation === 'higher_favors_over' ? '↑ over' : '↓ over'}). ${r.description}`).join(' ')}
+                        </Typography>
+                        <Typography level="body-xs" sx={{ color: '#AAA', display: 'block', mt: 0.25 }}>
+                          Player: {entry.playerStats.statKeys.join(', ')}. {entry.playerStats.description}
+                        </Typography>
+                      </Box>
+                    );
+                  })()}
+              </>
+            ) : null}
+            <TabPanel value="hit_rate" sx={{ p: 0, bgcolor: '#1a1a1a' }}>
+          {isLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : filteredSortedProps && filteredSortedProps.length > 0 ? (
+            <>
+            <Table
+              hoverRow
+              size="sm"
+              sx={FEED_DRAWER_TABLE_SX}
+            >
+              <thead>
+                <tr>
+                  <th style={{ width: '22%', verticalAlign: 'bottom' }}>Player</th>
+                  <th style={{ width: '28%', verticalAlign: 'bottom' }}>Prop · Last 10</th>
+                  <th style={{ width: '38%', verticalAlign: 'bottom' }}>Line</th>
+                  <th style={{ textAlign: 'center', width: '12%', verticalAlign: 'bottom' }}>+</th>
                 </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : (
-          <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
-            <Typography sx={{ color: '#FFFFFF' }}>
-              No prop predictions available for this date.
-            </Typography>
-          </Alert>
-        )}
+              </thead>
+              <tbody>
+                {paginatedProps.map((prop: any, index: number) => (
+                  <tr
+                    key={prop.id || index}
+                    style={{ cursor: 'default' }}
+                  >
+                    <td onClick={(e) => { e.stopPropagation(); if (prop.player_id) navigate(`/player/${prop.player_id}`); }}>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 0.5,
+                          minWidth: 0,
+                          py: 0.25,
+                          textAlign: 'center',
+                        }}
+                      >
+                        <Avatar
+                          src={prop.nba_player_id && prop.nba_player_id > 0
+                            ? `https://cdn.nba.com/headshots/nba/latest/260x190/${prop.nba_player_id}.png`
+                            : undefined
+                          }
+                          alt={prop.player_name}
+                          sx={{ ...FEED_DRAWER_AVATAR_PLAYER, width: 36, height: 36 }}
+                        >
+                          {(!prop.nba_player_id || prop.nba_player_id === 0) && (
+                            <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
+                              {prop.player_name?.charAt(0) || '?'}
+                            </Typography>
+                          )}
+                        </Avatar>
+                        <Typography
+                          level="body-sm"
+                          sx={{
+                            color: '#FFFFFF',
+                            fontWeight: 600,
+                            lineHeight: 1.2,
+                            fontSize: '0.75rem',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {prop.player_name || 'N/A'}
+                        </Typography>
+                      </Box>
+                    </td>
+                    <td>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5, minWidth: 0 }}>
+                        <Typography level="body-sm" sx={{ color: '#CCCCCC', fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}>
+                          {formatBetType(prop.bet_type)}
+                        </Typography>
+                        <Typography
+                          level="body-sm"
+                          sx={{
+                            color: effectiveActiveTab === 'hottest'
+                              ? ((prop.displayHitRate || prop.last10HitRate) >= 70 ? '#10B981' : (prop.displayHitRate || prop.last10HitRate) >= 50 ? '#FFC72C' : '#CCCCCC')
+                              : ((prop.displayHitRate || prop.last10HitRate) <= 30 ? '#EF4444' : (prop.displayHitRate || prop.last10HitRate) <= 50 ? '#FFC72C' : '#CCCCCC'),
+                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            lineHeight: 1.25,
+                          }}
+                        >
+                          Last 10:{' '}
+                          {(prop.displayHitRate !== null && prop.displayHitRate !== undefined)
+                            ? `${prop.displayHitRate.toFixed(1)}%`
+                            : (prop.last10HitRate !== null ? `${prop.last10HitRate.toFixed(1)}%` : 'N/A')}{' '}
+                          ({prop.displayHits || prop.last10Hits}/{prop.last10Total})
+                        </Typography>
+                      </Box>
+                    </td>
+                    <td>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                          <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                            {(() => {
+                              const lineValue = prop.currentLine || prop.line;
+                              if (lineValue == null) return 'N/A';
+                              const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                              return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                            })()}
+                          </Typography>
+                          {prop.lineMovement !== undefined && prop.lineMovement !== 0 && (
+                            <Chip
+                              size="sm"
+                              variant="soft"
+                              color={prop.lineMovement > 0 ? 'success' : 'danger'}
+                              sx={{ height: '16px', fontSize: '0.65rem' }}
+                            >
+                              {prop.lineMovement > 0 ? '↑' : '↓'} {Math.abs(prop.lineMovement).toFixed(1)}
+                            </Chip>
+                          )}
+                        </Stack>
+                        <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                          {prop.displaySide === 'over' && prop.over ? (
+                            <>
+                              <Chip size="sm" variant="soft" color="success" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                O {prop.displayOdds || prop.over.american_odds || prop.over.price || 'N/A'}
+                              </Chip>
+                              {prop.bestOverOdds && prop.bestOverOdds.bookmaker !== prop.over.bookmaker && (
+                                <Tooltip title={`Best: ${prop.bestOverOdds.bookmaker} ${prop.bestOverOdds.odds}`}>
+                                  <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                    ⭐
+                                  </Typography>
+                                </Tooltip>
+                              )}
+                            </>
+                          ) : prop.displaySide === 'under' && prop.under ? (
+                            <>
+                              <Chip size="sm" variant="soft" color="danger" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                U {prop.displayOdds || prop.under.american_odds || prop.under.price || 'N/A'}
+                              </Chip>
+                              {prop.bestUnderOdds && prop.bestUnderOdds.bookmaker !== prop.under.bookmaker && (
+                                <Tooltip title={`Best: ${prop.bestUnderOdds.bookmaker} ${prop.bestUnderOdds.odds}`}>
+                                  <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                    ⭐
+                                  </Typography>
+                                </Tooltip>
+                              )}
+                            </>
+                          ) : (
+                            <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                              {prop.displayOdds || prop.over?.american_odds || prop.under?.american_odds || prop.american_odds || prop.price || 'N/A'}
+                            </Typography>
+                          )}
+                        </Stack>
+                      </Box>
+                    </td>
+                    <td>
+                      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                        <IconButton
+                          size="sm"
+                          variant="soft"
+                          color="neutral"
+                          disabled={!canAddPlayerToSlip(prop?.nba_player_id ?? null)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddPropToSlip(prop);
+                          }}
+                          aria-label={`Add ${prop?.player_name || 'player'} prop to slip`}
+                        >
+                          <Add sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, flexWrap: 'wrap', gap: 1 }}>
+                <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                  Showing {hitRateStartIndex + 1}&ndash;{hitRateEndIndex} of {filteredSortedProps.length} props
+                </Typography>
+                {hitRateTotalPages > 1 && (
+                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={hitRatePage <= 1}
+                      onClick={() => setHitRatePage((p) => Math.max(1, p - 1))}
+                    >
+                      <NavigateBefore />
+                    </IconButton>
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', alignSelf: 'center', px: 1.5 }}>
+                      Page {hitRatePage} of {hitRateTotalPages}
+                    </Typography>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={hitRatePage >= hitRateTotalPages}
+                      onClick={() => setHitRatePage((p) => Math.min(hitRateTotalPages, p + 1))}
+                    >
+                      <NavigateNext />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            </>
+          ) : sortedProps?.length > 0 && filteredSortedProps.length === 0 ? (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No props match the selected filter. Try &quot;All&quot; or another prop type.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No prop predictions available for this date.
+              </Typography>
+            </Alert>
+          )}
+        </TabPanel>
+
+        <TabPanel value="team_confidence" sx={{ p: 0, bgcolor: '#1a1a1a' }}>
+          {teamConfidenceLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : paginatedTeamConfidence.length > 0 ? (
+            <>
+              <Table
+                hoverRow
+                size="sm"
+                sx={FEED_DRAWER_TABLE_SX}
+              >
+                <thead>
+                  <tr>
+                    <th style={{ width: '22%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Player</th>
+                    <th style={{ width: '28%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Prop · Opp / conf</th>
+                    <th style={{ width: '38%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Line</th>
+                    <th style={{ textAlign: 'center', width: '12%', verticalAlign: 'bottom', color: '#FFFFFF' }}>+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedTeamConfidence.map((row: PropWithTeamConfidence, index: number) => {
+                    const prop = row.prop as any;
+                    const playerRow = prop?.id != null ? playerConfidenceByPropId.get(String(prop.id)) : null;
+                    const oppLine =
+                      row.playerOffenseStatValue != null && row.oppositionStatValue != null
+                        ? `${row.playerOffenseStatLabel ?? row.oppositionStatLabel} ${row.playerOffenseStatValue} vs Opp ${row.oppositionStatValue}`
+                        : `${row.oppositionStatLabel}${row.oppositionStatValue != null ? ` ${row.oppositionStatValue}` : ' —'}`;
+                    const confTone = (v: number | null | undefined) =>
+                      v != null && v >= 7 ? '#10B981' : v != null && v >= 4 ? '#FFC72C' : '#CCCCCC';
+                    return (
+                      <tr
+                        key={prop?.id ?? index}
+                        style={{ cursor: 'default' }}
+                      >
+                        <td onClick={(e) => { e.stopPropagation(); if (prop?.player_id) navigate(`/player/${prop.player_id}`); }}>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              minWidth: 0,
+                              py: 0.25,
+                              textAlign: 'center',
+                            }}
+                          >
+                            <Avatar
+                              src={prop?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${prop.nba_player_id}.png` : undefined}
+                              alt={prop?.player_name}
+                              sx={{ ...FEED_DRAWER_AVATAR_PLAYER, width: 36, height: 36 }}
+                            >
+                              {(!prop?.nba_player_id || prop.nba_player_id === 0) && (
+                                <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
+                                  {prop?.player_name?.charAt(0) || '?'}
+                                </Typography>
+                              )}
+                            </Avatar>
+                            <Typography
+                              level="body-sm"
+                              sx={{
+                                color: '#FFFFFF',
+                                fontWeight: 600,
+                                lineHeight: 1.2,
+                                fontSize: '0.75rem',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {prop?.player_name || 'N/A'}
+                            </Typography>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5, minWidth: 0 }}>
+                            <Typography level="body-sm" sx={{ color: '#CCCCCC', fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}>
+                              {formatBetType(prop?.bet_type)}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ color: '#AAAAAA', fontWeight: 400, fontSize: '0.75rem', lineHeight: 1.25 }}>
+                              {oppLine}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ fontWeight: 600, fontSize: '0.75rem', lineHeight: 1.25 }}>
+                              <Box component="span" sx={{ color: confTone(row.teamConfidence) }}>
+                                Team {row.teamConfidence != null ? `${row.teamConfidence}/10` : '—'}
+                              </Box>
+                              <Box component="span" sx={{ color: '#666', mx: 0.5 }}>
+                                ·
+                              </Box>
+                              <Box component="span" sx={{ color: confTone(playerRow?.playerConfidence) }}>
+                                Player {playerRow?.playerConfidence != null ? `${playerRow.playerConfidence}/10` : '—'}
+                              </Box>
+                            </Typography>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                            <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                              <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                                {(() => {
+                                  const lineValue = prop?.currentLine ?? prop?.line;
+                                  if (lineValue == null) return 'N/A';
+                                  const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                                  return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                                })()}
+                              </Typography>
+                              {prop?.lineMovement !== undefined && prop?.lineMovement !== 0 && (
+                                <Chip
+                                  size="sm"
+                                  variant="soft"
+                                  color={prop.lineMovement > 0 ? 'success' : 'danger'}
+                                  sx={{ height: '16px', fontSize: '0.65rem' }}
+                                >
+                                  {prop.lineMovement > 0 ? '↑' : '↓'} {Math.abs(prop.lineMovement).toFixed(1)}
+                                </Chip>
+                              )}
+                            </Stack>
+                            <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                              {prop?.displaySide === 'over' && prop?.over ? (
+                                <>
+                                  <Chip size="sm" variant="soft" color="success" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                    O {prop.displayOdds || prop.over.american_odds || prop.over.price || 'N/A'}
+                                  </Chip>
+                                  {prop.bestOverOdds && prop.bestOverOdds.bookmaker !== prop.over.bookmaker && (
+                                    <Tooltip title={`Best: ${prop.bestOverOdds.bookmaker} ${prop.bestOverOdds.odds}`}>
+                                      <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                        ⭐
+                                      </Typography>
+                                    </Tooltip>
+                                  )}
+                                </>
+                              ) : prop?.displaySide === 'under' && prop?.under ? (
+                                <>
+                                  <Chip size="sm" variant="soft" color="danger" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                    U {prop.displayOdds || prop.under.american_odds || prop.under.price || 'N/A'}
+                                  </Chip>
+                                  {prop.bestUnderOdds && prop.bestUnderOdds.bookmaker !== prop.under.bookmaker && (
+                                    <Tooltip title={`Best: ${prop.bestUnderOdds.bookmaker} ${prop.bestUnderOdds.odds}`}>
+                                      <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                        ⭐
+                                      </Typography>
+                                    </Tooltip>
+                                  )}
+                                </>
+                              ) : (
+                                <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                                  {prop?.displayOdds || prop?.over?.american_odds || prop?.under?.american_odds || prop?.american_odds || prop?.price || 'N/A'}
+                                </Typography>
+                              )}
+                            </Stack>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                            <IconButton
+                              size="sm"
+                              variant="soft"
+                              color="neutral"
+                              disabled={!canAddPlayerToSlip(prop?.nba_player_id ?? null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddPropToSlip(prop);
+                              }}
+                              aria-label={`Add ${prop?.player_name || 'player'} prop to slip`}
+                            >
+                              <Add sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Box>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, flexWrap: 'wrap', gap: 1 }}>
+                <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                  Showing {teamConfidenceStartIndex + 1}&ndash;{teamConfidenceEndIndex} of {filteredTeamConfidenceList.length} props
+                </Typography>
+                {teamConfidenceTotalPages > 1 && (
+                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={teamConfidencePage <= 1}
+                      onClick={() => setTeamConfidencePage((p) => Math.max(1, p - 1))}
+                    >
+                      <NavigateBefore />
+                    </IconButton>
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', alignSelf: 'center', px: 1.5 }}>
+                      Page {teamConfidencePage} of {teamConfidenceTotalPages}
+                    </Typography>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={teamConfidencePage >= teamConfidenceTotalPages}
+                      onClick={() => setTeamConfidencePage((p) => Math.min(teamConfidenceTotalPages, p + 1))}
+                    >
+                      <NavigateNext />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            </>
+          ) : (teamConfidenceList?.length ?? 0) > 0 && filteredTeamConfidenceList.length === 0 ? (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No props match the selected filter. Try &quot;All&quot; or another prop type.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No team confidence data. Same games and props as Hit rate; uses <code>nba_daily_team_stats</code> for the opposition team per rulebook. Ensure stats are scraped for this date.
+              </Typography>
+            </Alert>
+          )}
+        </TabPanel>
+
+        <TabPanel value="player_confidence" sx={{ p: 0, bgcolor: '#1a1a1a' }}>
+          {playerConfidenceLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : paginatedPlayerConfidence.length > 0 ? (
+            <>
+              <Table
+                hoverRow
+                size="sm"
+                sx={FEED_DRAWER_TABLE_SX}
+              >
+                <thead>
+                  <tr>
+                    <th style={{ width: '22%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Player</th>
+                    <th style={{ width: '28%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Prop · Opp / conf</th>
+                    <th style={{ width: '38%', verticalAlign: 'bottom', color: '#FFFFFF' }}>Line</th>
+                    <th style={{ textAlign: 'center', width: '12%', verticalAlign: 'bottom', color: '#FFFFFF' }}>+</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedPlayerConfidence.map((row: PropWithPlayerConfidence, index: number) => {
+                    const prop = row.prop as any;
+                    const teamRow = prop?.id != null ? teamConfidenceByPropId.get(String(prop.id)) : null;
+                    const oppLine =
+                      teamRow?.playerOffenseStatValue != null && teamRow?.oppositionStatValue != null
+                        ? `${teamRow.playerOffenseStatLabel ?? teamRow.oppositionStatLabel} ${teamRow.playerOffenseStatValue} vs Opp ${teamRow.oppositionStatValue}`
+                        : `${row.oppositionStatLabel}${row.oppositionStatValue != null ? ` ${row.oppositionStatValue}` : ' —'}`;
+                    const confTone = (v: number | null | undefined) =>
+                      v != null && v >= 7 ? '#10B981' : v != null && v >= 4 ? '#FFC72C' : '#CCCCCC';
+                    return (
+                      <tr
+                        key={prop?.id ?? index}
+                        style={{ cursor: 'default' }}
+                      >
+                        <td onClick={(e) => { e.stopPropagation(); if (prop?.player_id) navigate(`/player/${prop.player_id}`); }}>
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              minWidth: 0,
+                              py: 0.25,
+                              textAlign: 'center',
+                            }}
+                          >
+                            <Avatar
+                              src={prop?.nba_player_id ? `https://cdn.nba.com/headshots/nba/latest/260x190/${prop.nba_player_id}.png` : undefined}
+                              alt={prop?.player_name}
+                              sx={{ ...FEED_DRAWER_AVATAR_PLAYER, width: 36, height: 36 }}
+                            >
+                              {(!prop?.nba_player_id || prop.nba_player_id === 0) && (
+                                <Typography sx={{ fontSize: '0.7rem', color: '#FFFFFF' }}>
+                                  {prop?.player_name?.charAt(0) || '?'}
+                                </Typography>
+                              )}
+                            </Avatar>
+                            <Typography
+                              level="body-sm"
+                              sx={{
+                                color: '#FFFFFF',
+                                fontWeight: 600,
+                                lineHeight: 1.2,
+                                fontSize: '0.75rem',
+                                display: '-webkit-box',
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical',
+                                overflow: 'hidden',
+                              }}
+                            >
+                              {prop?.player_name || 'N/A'}
+                            </Typography>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.5, minWidth: 0 }}>
+                            <Typography level="body-sm" sx={{ color: '#CCCCCC', fontWeight: 600, fontSize: '0.8125rem', lineHeight: 1.2 }}>
+                              {formatBetType(prop?.bet_type)}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ color: '#AAAAAA', fontWeight: 400, fontSize: '0.75rem', lineHeight: 1.25 }}>
+                              {oppLine}
+                            </Typography>
+                            <Typography level="body-sm" sx={{ fontWeight: 600, fontSize: '0.75rem', lineHeight: 1.25 }}>
+                              <Box component="span" sx={{ color: confTone(row.playerConfidence) }}>
+                                Player {row.playerConfidence != null ? `${row.playerConfidence}/10` : '—'}
+                              </Box>
+                              <Box component="span" sx={{ color: '#666', mx: 0.5 }}>
+                                ·
+                              </Box>
+                              <Box component="span" sx={{ color: confTone(teamRow?.teamConfidence) }}>
+                                Team {teamRow?.teamConfidence != null ? `${teamRow.teamConfidence}/10` : '—'}
+                              </Box>
+                            </Typography>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                            <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                              <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 600 }}>
+                                {(() => {
+                                  const lineValue = prop?.currentLine ?? prop?.line;
+                                  if (lineValue == null) return 'N/A';
+                                  const numValue = typeof lineValue === 'string' ? parseFloat(lineValue) : lineValue;
+                                  return isNaN(numValue) ? 'N/A' : numValue.toFixed(1);
+                                })()}
+                              </Typography>
+                              {prop?.lineMovement !== undefined && prop?.lineMovement !== 0 && (
+                                <Chip
+                                  size="sm"
+                                  variant="soft"
+                                  color={prop.lineMovement > 0 ? 'success' : 'danger'}
+                                  sx={{ height: '16px', fontSize: '0.65rem' }}
+                                >
+                                  {prop.lineMovement > 0 ? '↑' : '↓'} {Math.abs(prop.lineMovement).toFixed(1)}
+                                </Chip>
+                              )}
+                            </Stack>
+                            <Stack direction="row" spacing={0.5} alignItems="center" justifyContent="flex-end">
+                              {prop?.displaySide === 'over' && prop?.over ? (
+                                <>
+                                  <Chip size="sm" variant="soft" color="success" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                    O {prop.displayOdds || prop.over.american_odds || prop.over.price || 'N/A'}
+                                  </Chip>
+                                  {prop.bestOverOdds && prop.bestOverOdds.bookmaker !== prop.over.bookmaker && (
+                                    <Tooltip title={`Best: ${prop.bestOverOdds.bookmaker} ${prop.bestOverOdds.odds}`}>
+                                      <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                        ⭐
+                                      </Typography>
+                                    </Tooltip>
+                                  )}
+                                </>
+                              ) : prop?.displaySide === 'under' && prop?.under ? (
+                                <>
+                                  <Chip size="sm" variant="soft" color="danger" sx={{ fontSize: '0.7rem', height: '18px' }}>
+                                    U {prop.displayOdds || prop.under.american_odds || prop.under.price || 'N/A'}
+                                  </Chip>
+                                  {prop.bestUnderOdds && prop.bestUnderOdds.bookmaker !== prop.under.bookmaker && (
+                                    <Tooltip title={`Best: ${prop.bestUnderOdds.bookmaker} ${prop.bestUnderOdds.odds}`}>
+                                      <Typography level="body-xs" sx={{ color: '#999999' }}>
+                                        ⭐
+                                      </Typography>
+                                    </Tooltip>
+                                  )}
+                                </>
+                              ) : (
+                                <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                                  {prop?.displayOdds || prop?.over?.american_odds || prop?.under?.american_odds || prop?.american_odds || prop?.price || 'N/A'}
+                                </Typography>
+                              )}
+                            </Stack>
+                          </Box>
+                        </td>
+                        <td>
+                          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                            <IconButton
+                              size="sm"
+                              variant="soft"
+                              color="neutral"
+                              disabled={!canAddPlayerToSlip(prop?.nba_player_id ?? null)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddPropToSlip(prop);
+                              }}
+                              aria-label={`Add ${prop?.player_name || 'player'} prop to slip`}
+                            >
+                              <Add sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          </Box>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2, flexWrap: 'wrap', gap: 1 }}>
+                <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                  Showing {playerConfidenceStartIndex + 1}&ndash;{playerConfidenceEndIndex} of {filteredPlayerConfidenceList.length} props
+                </Typography>
+                {playerConfidenceTotalPages > 1 && (
+                  <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={playerConfidencePage <= 1}
+                      onClick={() => setPlayerConfidencePage((p) => Math.max(1, p - 1))}
+                    >
+                      <NavigateBefore />
+                    </IconButton>
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', alignSelf: 'center', px: 1.5 }}>
+                      Page {playerConfidencePage} of {playerConfidenceTotalPages}
+                    </Typography>
+                    <IconButton
+                      size="sm"
+                      variant="outlined"
+                      color="neutral"
+                      disabled={playerConfidencePage >= playerConfidenceTotalPages}
+                      onClick={() => setPlayerConfidencePage((p) => Math.min(playerConfidenceTotalPages, p + 1))}
+                    >
+                      <NavigateNext />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            </>
+          ) : (playerConfidenceList?.length ?? 0) > 0 && filteredPlayerConfidenceList.length === 0 ? (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No props match the selected filter. Try &quot;All&quot; or another prop type.
+              </Typography>
+            </Alert>
+          ) : (
+            <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+              <Typography sx={{ color: '#FFFFFF' }}>
+                No player confidence data. Uses <code>nba_daily_player_stats</code> for the opposition team (e.g. pts/reb/ast allowed per game). Same games and props as Hit rate. Ensure player stats are scraped for this date.
+              </Typography>
+            </Alert>
+          )}
+        </TabPanel>
+          </Tabs>
+        </Box>
       </CardContent>
     </Card>
   );
@@ -7713,7 +9425,7 @@ export function StandingsModule({
 
   const tableCell = (children: React.ReactNode, sx = {}) => (
     <td>
-      <Typography level="body-sm" sx={{ color: '#E0E0E0', ...sx }}>{children}</Typography>
+      <Typography level="body-sm" sx={{ color: '#E0E0E0', fontSize: '0.8125rem', lineHeight: 1.25, ...sx }}>{children}</Typography>
     </td>
   );
 
@@ -7723,7 +9435,7 @@ export function StandingsModule({
         <Avatar
           src={getTeamLogoUrl(team.team_abbreviation || team.abbreviation || '')}
           alt={team.team_abbreviation || team.abbreviation}
-          sx={{ width: 28, height: 28 }}
+          sx={{ width: 24, height: 24 }}
         >
           {(team.team_abbreviation || team.abbreviation || '?').charAt(0)}
         </Avatar>
@@ -7781,17 +9493,38 @@ export function StandingsModule({
   };
 
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-      <CardContent>
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          Standings
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: '#1a1a1a' }}>
         <Tabs
           value={tabIndex}
           onChange={(_e, v) => setTabIndex(v === null ? 0 : (v as number))}
           sx={{
-            '& .MuiTabList-root': { borderColor: '#333333', width: '100%', mx: 0 },
+            mt: '10px',
+            bgcolor: '#1a1a1a',
+            '& .MuiTabList-root': { borderColor: '#333333', width: '100%', mx: 0, bgcolor: '#1a1a1a' },
             '& .MuiTab-root': { ...tabSx, flex: 1, minWidth: 0, px: 1 },
           }}
         >
-          <TabList variant="plain" size="sm" sx={{ width: '100%', '& button': { flex: 1 } }}>
+          <TabList variant="plain" size="sm" sx={{ width: '100%', bgcolor: '#1a1a1a', '& [role="tab"]': { flex: 1, bgcolor: '#1a1a1a' }, '& [role="tab"][aria-selected="true"]': { bgcolor: 'rgba(255,255,255,0.06)' } }}>
             <Tab value={0}>
               <FaGlobe style={{ marginRight: 6, fontSize: '1rem' }} />
               Overall
@@ -7820,21 +9553,21 @@ export function StandingsModule({
             </Alert>
           ) : (
             <>
-              <TabPanel value={0} sx={{ p: 0, pt: 1 }}>
-                <Table hoverRow size="sm">
+              <TabPanel value={0} sx={{ p: 0, pt: 1, bgcolor: '#1a1a1a' }}>
+                <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
                   <thead>
                     <tr>
-                      <th style={{ color: '#FFFFFF', width: 32 }}>#</th>
-                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
-                      <th style={{ color: '#FFFFFF' }}>W-L</th>
-                      <th style={{ color: '#FFFFFF' }}>PCT</th>
-                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                      <th style={{ width: 32 }}>#</th>
+                      <th style={{ width: 48 }}></th>
+                      <th>W-L</th>
+                      <th>PCT</th>
+                      <th style={{ textAlign: 'right' }}>GB</th>
                     </tr>
                   </thead>
                   <tbody>
                     {overall.map((team: any) => (
                       <tr key={team.team_id} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
-                        <td><Typography level="body-sm" sx={{ color: '#E0E0E0', fontWeight: 600 }}>{team.overallRank}</Typography></td>
+                        <td><Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>{team.overallRank}</Typography></td>
                         {teamLogoCell(team)}
                         {tableCell(`${team.wins ?? 0}-${team.losses ?? 0}`)}
                         {tableCell(team.win_percentage ? team.win_percentage.toFixed(3) : '—')}
@@ -7844,20 +9577,22 @@ export function StandingsModule({
                   </tbody>
                 </Table>
               </TabPanel>
-              <TabPanel value={1} sx={{ p: 0, pt: 1 }}>
-                <Table hoverRow size="sm">
+              <TabPanel value={1} sx={{ p: 0, pt: 1, bgcolor: '#1a1a1a' }}>
+                <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
                   <thead>
                     <tr>
-                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
-                      <th style={{ color: '#FFFFFF' }}>W</th>
-                      <th style={{ color: '#FFFFFF' }}>L</th>
-                      <th style={{ color: '#FFFFFF' }}>PCT</th>
-                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                      <th style={{ width: 32 }}>#</th>
+                      <th style={{ width: 48 }}></th>
+                      <th>W</th>
+                      <th>L</th>
+                      <th>PCT</th>
+                      <th style={{ textAlign: 'right' }}>GB</th>
                     </tr>
                   </thead>
                   <tbody>
                     {west.map((team: any, index: number) => (
                       <tr key={team.team_id || index} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                        <td><Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>{index + 1}</Typography></td>
                         {teamLogoCell(team)}
                         {tableCell(team.wins ?? team.w)}
                         {tableCell(team.losses ?? team.l)}
@@ -7868,20 +9603,22 @@ export function StandingsModule({
                   </tbody>
                 </Table>
               </TabPanel>
-              <TabPanel value={2} sx={{ p: 0, pt: 1 }}>
-                <Table hoverRow size="sm">
+              <TabPanel value={2} sx={{ p: 0, pt: 1, bgcolor: '#1a1a1a' }}>
+                <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
                   <thead>
                     <tr>
-                      <th style={{ color: '#FFFFFF', width: 48 }}></th>
-                      <th style={{ color: '#FFFFFF' }}>W</th>
-                      <th style={{ color: '#FFFFFF' }}>L</th>
-                      <th style={{ color: '#FFFFFF' }}>PCT</th>
-                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
+                      <th style={{ width: 32 }}>#</th>
+                      <th style={{ width: 48 }}></th>
+                      <th>W</th>
+                      <th>L</th>
+                      <th>PCT</th>
+                      <th style={{ textAlign: 'right' }}>GB</th>
                     </tr>
                   </thead>
                   <tbody>
                     {east.map((team: any, index: number) => (
                       <tr key={team.team_id || index} style={{ cursor: 'pointer' }} onClick={() => handleTeamClick(team)}>
+                        <td><Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>{index + 1}</Typography></td>
                         {teamLogoCell(team)}
                         {tableCell(team.wins ?? team.w)}
                         {tableCell(team.losses ?? team.l)}
@@ -7892,15 +9629,15 @@ export function StandingsModule({
                   </tbody>
                 </Table>
               </TabPanel>
-              <TabPanel value={3} sx={{ p: 0, pt: 1 }}>
-                <Table hoverRow size="sm">
+              <TabPanel value={3} sx={{ p: 0, pt: 1, bgcolor: '#1a1a1a' }}>
+                <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
                   <thead>
                     <tr>
-                      <th style={{ color: '#FFFFFF', width: 36 }}>Pick</th>
-                      <th style={{ color: '#FFFFFF', width: 56 }}></th>
-                      <th style={{ color: '#FFFFFF' }}>Prospect</th>
-                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>GB</th>
-                      <th style={{ color: '#FFFFFF', textAlign: 'right' }}>#1 Ovr</th>
+                      <th style={{ width: 36 }}>Pick</th>
+                      <th style={{ width: 56 }}></th>
+                      <th>Prospect</th>
+                      <th style={{ textAlign: 'right' }}>GB</th>
+                      <th style={{ textAlign: 'right' }}>#1 Ovr</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -8036,10 +9773,10 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
             </Typography>
           </Alert>
         ) : (
-          <Table hoverRow size="sm">
+          <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
             <thead>
               <tr>
-                <th style={{ color: '#FFFFFF', width: 64 }}></th>
+                <th style={{ color: '#FFFFFF', width: 48 }}></th>
                 <th style={{ color: '#FFFFFF' }}>Player</th>
                 <th style={{ color: '#FFFFFF' }}>Team</th>
                 <th style={{ width: '40px' }}></th>
@@ -8061,26 +9798,26 @@ export function FavoritePlayersModule({ navigate }: { navigate: (path: string) =
                       }
                     }}
                   >
-                    <td style={{ verticalAlign: 'middle', padding: '8px' }}>
+                    <td style={{ verticalAlign: 'middle' }}>
                       <Avatar
                         src={nbaPlayerId ? `https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png` : undefined}
                         alt={fullName}
-                        sx={{ width: 56, height: 56 }}
+                        sx={FEED_DRAWER_AVATAR_FAVORITE}
                       >
                         {fullName.charAt(0)}
                       </Avatar>
                     </td>
                     <td>
-                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>
                         {fullName}
                       </Typography>
                     </td>
                     <td>
-                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
+                      <Typography level="body-sm" sx={{ color: '#CCCCCC', fontSize: '0.8125rem' }}>
                         {teamAbbr}
                       </Typography>
                     </td>
-                    <td style={{ padding: '8px', textAlign: 'right' }}>
+                    <td style={{ textAlign: 'right' }}>
                       <IconButton
                         size="sm"
                         variant="plain"
@@ -8282,17 +10019,7 @@ export function InjuriesModule({
       const filteredScoreboardGames = nbaScoreboard.games.filter((game: any) => {
         const gameDate = game.gameDate || game.game_date;
         if (!gameDate) return false;
-        try {
-          if (gameDate.includes('T') || gameDate.includes(' ')) {
-            return isDateInEST(gameDate, targetDate);
-          } else {
-            const utcDate = new Date(gameDate + 'T00:00:00Z');
-            const estDateString = utcToESTDate(utcDate);
-            return estDateString === targetDate;
-          }
-        } catch (e) {
-          return false;
-        }
+        return scoreboardGameMatchesESTDate(gameDate, targetDate);
       });
       return filteredScoreboardGames.length > 0 ? filteredScoreboardGames : (games || []);
     }
@@ -8581,58 +10308,65 @@ export function InjuriesModule({
     }
   }, [availableStatuses, selectedStatus]);
 
+  // Short header labels: O, Q, Game (Day-to-Day = Game)
+  const statusHeaderLabel = (status: string) =>
+    status === 'Out' ? 'O' : status === 'Questionable' ? 'Q' : 'Game';
+
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-      <CardContent>
-        {/* Header Row 1: Title */}
-        <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF', mb: 2 }}>
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
           Injuries
-          {isPastDate && (
-            <Typography level="body-xs" component="span" sx={{ color: '#999999', ml: 1 }}>
-              ({selectedDate?.format('MMM D, YYYY')})
-            </Typography>
-          )}
         </Typography>
-        
-        {/* Header Row 2: Status Chips and Game Filter */}
+      </Box>
+      <CardContent sx={{ pt: 2 }}>
+        {/* Compact header: O | Q | Game (status chips) + Game filter */}
         {!isLoading && availableStatuses.length > 0 && (
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1, flex: 1 }}>
-              {availableStatuses.map((status) => {
-                // Short labels for header
-                const statusLabel = status === 'Out' ? 'O' : status === 'Questionable' ? 'Q' : status;
-                return (
-                  <Chip
-                    key={status}
-                    size="md"
-                    color={getStatusColor(status)}
-                    variant={selectedStatus === status ? 'solid' : 'soft'}
-                    onClick={() => handleStatusChange(status)}
-                    sx={{
-                      cursor: 'pointer',
-                      fontWeight: selectedStatus === status ? 'bold' : 'normal',
-                    }}
-                  >
-                    {statusLabel} ({injuriesByStatus[status]?.length || 0})
-                  </Chip>
-                );
-              })}
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2, flexWrap: 'wrap' }}>
+            <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', gap: 0.5, flex: 1 }}>
+              {availableStatuses.map((status) => (
+                <Chip
+                  key={status}
+                  size="sm"
+                  color={getStatusColor(status)}
+                  variant={selectedStatus === status ? 'solid' : 'soft'}
+                  onClick={() => handleStatusChange(status)}
+                  sx={{
+                    cursor: 'pointer',
+                    fontWeight: selectedStatus === status ? 'bold' : 'normal',
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {statusHeaderLabel(status)} ({injuriesByStatus[status]?.length || 0})
+                </Chip>
+              ))}
             </Stack>
-            
-            {/* Game Filter */}
             {uniqueGames.length > 0 && (
-              <FormControl size="sm" sx={{ minWidth: 200 }}>
-                <FormLabel sx={{ fontSize: '0.75rem', mb: 0.5 }}>Game</FormLabel>
+              <FormControl size="sm" sx={{ minWidth: 160 }}>
                 <Select
                   value={gameFilter}
                   onChange={(e, val) => {
                     setGameFilter(val || '');
-                    setPage({ ...page, [selectedStatus]: 1 }); // Reset to page 1 when filter changes
+                    setPage({ ...page, [selectedStatus]: 1 });
                   }}
                   placeholder="All Games"
-                  sx={{ minHeight: '32px' }}
+                  sx={{ minHeight: '28px', fontSize: '0.75rem' }}
                 >
-                  <Option value="">All Games</Option>
+                  <Option value="">Game: All</Option>
                   {uniqueGames.map((game) => (
                     <Option key={game.id} value={game.id}>
                       {game.label}
@@ -8659,7 +10393,7 @@ export function InjuriesModule({
             {/* Injuries Table */}
             {visibleInjuries.length > 0 && (
               <>
-                <Table hoverRow size="sm">
+                <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
                   <tbody>
                     {visibleInjuries.map((injury: any) => {
                       const playerId = injury.nba_player_id;
@@ -8677,9 +10411,9 @@ export function InjuriesModule({
                           }}
                         >
                           <td style={{ width: '100%' }}>
-                            <Stack spacing={1}>
-                              <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                                <Stack direction="row" spacing={1} alignItems="center">
+                            <Stack spacing={0.5}>
+                              <Stack direction="row" spacing={0.75} alignItems="center" justifyContent="space-between">
+                                <Stack direction="row" spacing={0.75} alignItems="center">
                                   <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
                                     {injury.nba_players?.name || 'Unknown'}
                                   </Typography>
@@ -8768,11 +10502,15 @@ export function InjuriesModule({
 export function LiveTeamOfNightModule({ 
   navigate, 
   selectedDate,
-  nbaScoreboard
+  nbaScoreboard,
+  embedInCard = true,
+  useTotwLayout = false,
 }: { 
   navigate: (path: string) => void; 
   selectedDate: Dayjs;
   nbaScoreboard: any;
+  embedInCard?: boolean;
+  useTotwLayout?: boolean;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
   
@@ -8947,16 +10685,264 @@ export function LiveTeamOfNightModule({
     return liveTeamOfNight.reduce((sum, p) => sum + (p.salary || 0), 0);
   }, [liveTeamOfNight]);
   
-  // If no live games, don't render (Prop Predictions will show instead)
-  if (!isLoading && !hasLiveGames) {
+  const liveRowGridSx = {
+    display: 'grid',
+    gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(3, 1fr)' },
+    gap: 2,
+    justifyItems: 'stretch',
+  };
+
+  // If no live games, don't render (Prop Predictions will show instead) unless embedInCard (parent shows past TOTN)
+  if (!isLoading && !hasLiveGames && embedInCard) {
     return null;
   }
-  
+
+  const liveStarters = (sortedPlayers || []).filter((p: any) => p.lineup_order != null && p.lineup_order <= 5);
+  const liveBench = (sortedPlayers || []).filter((p: any) => !p.lineup_order || p.lineup_order > 5);
+  const liveBenchMid = Math.ceil(liveBench.length / 2);
+  const liveBenchRow2 = liveBench.slice(0, liveBenchMid);
+  const liveBenchRow3 = liveBench.slice(liveBenchMid);
+
+  const livePlayerCard = (player: any) => (
+    <Card
+      key={player.player_id || player.nba_player_id}
+      variant="outlined"
+      onClick={(e) => {
+        e.stopPropagation();
+        if (player.player_id) navigate(`/player/${player.player_id}`);
+      }}
+      sx={{
+        bgcolor: 'transparent',
+        borderColor: 'rgba(255,255,255,0.12)',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        p: 1.5,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        '&:hover': {
+          borderColor: '#FFC72C',
+          transform: 'translateY(-4px)',
+          boxShadow: '0 8px 24px rgba(255, 199, 44, 0.3)',
+        },
+      }}
+    >
+      <Avatar
+        src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+        alt={player.player_name}
+        sx={{ width: 48, height: 48 }}
+      />
+      <Box sx={{ mt: 1.5, width: '100%', textAlign: 'center' }}>
+        <Typography level="body-xs" sx={{ color: '#E0E0E0', fontSize: '0.75rem', mb: 0.5 }}>
+          {player.player_name}
+        </Typography>
+        <Typography level="body-sm" sx={{ color: '#FFC72C', fontWeight: 800, fontSize: '1rem', mb: 0.5 }}>
+          {(player.fantasy_points ?? 0).toFixed(1)} FP
+        </Typography>
+        <Typography level="body-xs" sx={{ color: '#B0B0B0', fontSize: '0.7rem', mt: 0.25 }}>
+          ${((player.salary ?? 0) / 1000000).toFixed(1)}M
+        </Typography>
+      </Box>
+    </Card>
+  );
+
+  // For hero carousel: players sorted by FP desc (starters first by lineup_order, then by FP within)
+  const playersByFp = useMemo(() => {
+    if (!sortedPlayers || sortedPlayers.length === 0) return [];
+    return [...sortedPlayers].sort((a: any, b: any) => (b.fantasy_points ?? 0) - (a.fantasy_points ?? 0));
+  }, [sortedPlayers]);
+
+  const liveGridContent = useTotwLayout && (isLoading || (sortedPlayers && sortedPlayers.length > 0)) && (
+    <Box sx={{ bgcolor: 'transparent' }}>
+      {isLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <>
+          {liveStarters.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 2, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                Starters
+              </Typography>
+              <Box sx={liveRowGridSx}>
+                {liveStarters.map(livePlayerCard)}
+              </Box>
+            </Box>
+          )}
+          {liveBenchRow2.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+              <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 2, fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                Bench
+              </Typography>
+              <Box sx={liveRowGridSx}>
+                {liveBenchRow2.map(livePlayerCard)}
+              </Box>
+            </Box>
+          )}
+          {liveBenchRow3.length > 0 && (
+            <Box>
+              <Box sx={liveRowGridSx}>
+                {liveBenchRow3.map(livePlayerCard)}
+              </Box>
+            </Box>
+          )}
+        </>
+      )}
+    </Box>
+  );
+
+  const innerContent = (
+    <>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
+          Live Team of the Night
+        </Typography>
+        {totalSalary > 0 && (
+          <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
+            ${(totalSalary / 1000000).toFixed(2)}M salary
+          </Typography>
+        )}
+      </Box>
+      {isLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : sortedPlayers && sortedPlayers.length > 0 ? (
+        <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Team</th>
+              <th>Salary</th>
+              <th>FP</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedPlayers.slice(0, 12).map((player: any, index: number) => (
+              <tr 
+                key={player.player_id || player.nba_player_id || index}
+                style={{ cursor: 'pointer' }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (player.player_id) {
+                    navigate(`/player/${player.player_id}`);
+                  }
+                }}
+              >
+                <td>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar 
+                      src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
+                      alt={player.player_name}
+                      sx={FEED_DRAWER_AVATAR_PLAYER}
+                    />
+                    <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>
+                      {player.player_name || 'N/A'}
+                    </Typography>
+                  </Box>
+                </td>
+                <td>
+                  <Typography level="body-sm" sx={{ color: '#CCCCCC', fontSize: '0.8125rem' }}>
+                    {player.team || 'N/A'}
+                  </Typography>
+                </td>
+                <td>
+                  <Typography 
+                    level="body-sm" 
+                    sx={{ 
+                      color: '#B0B0B0',
+                      fontWeight: 500,
+                      fontSize: '0.8125rem',
+                    }}
+                  >
+                    {player.salary ? `$${(player.salary / 1000000).toFixed(2)}M` : 'N/A'}
+                  </Typography>
+                </td>
+                <td>
+                  <Typography 
+                    level="body-sm" 
+                    sx={{ 
+                      color: '#FFC72C',
+                      fontWeight: 600,
+                      fontSize: '0.8125rem',
+                    }}
+                  >
+                    {player.fantasy_points ? player.fantasy_points.toFixed(1) : '0.0'}
+                  </Typography>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      ) : (
+        <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
+          <Typography sx={{ color: '#FFFFFF' }}>
+            No live game data available yet. Games may not have started.
+          </Typography>
+        </Alert>
+      )}
+    </>
+  );
+
+  // Hero carousel for feed: slide 1 = overview (starters + bench), slides 2..N = one player per slide by FP
+  if (!embedInCard && useTotwLayout && sortedPlayers && sortedPlayers.length > 0) {
+    const overviewSlide = (
+      <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2 }}>
+        <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+        <Box sx={{ position: 'relative', display: 'flex', flexDirection: 'column', justifyContent: 'center', height: '100%' }}>
+          <Typography level="title-sm" sx={{ color: '#FFC72C', fontWeight: 700, mb: 1.5, fontSize: '0.875rem', textTransform: 'uppercase' }}>Lineup</Typography>
+          <Table
+            size="sm"
+            sx={{
+              ...FEED_DRAWER_TABLE_SX,
+              '& thead th': { ...FEED_DRAWER_TABLE_SX['& thead th'], color: '#999' },
+              '& tbody td': { ...FEED_DRAWER_TABLE_SX['& tbody td'], color: '#E0E0E0' },
+            }}
+          >
+            <thead><tr><th>Player</th><th style={{ textAlign: 'right' }}>FP</th><th style={{ textAlign: 'right' }}>Salary</th></tr></thead>
+            <tbody>
+              {sortedPlayers.slice(0, 12).map((p: any, i: number) => (
+                <tr key={p.player_id || p.nba_player_id || i}>
+                  <td>{p.player_name}</td>
+                  <td style={{ textAlign: 'right', color: '#FFC72C' }}>{(p.fantasy_points ?? 0).toFixed(1)}</td>
+                  <td style={{ textAlign: 'right' }}>${((p.salary ?? 0) / 1e6).toFixed(1)}M</td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+      </Box>
+    );
+    return (
+      <Box sx={{ bgcolor: 'transparent', position: 'relative', width: '100%' }} className="totn-live-carousel">
+        <Carousel opts={{ align: 'start', loop: false }}>
+          <CarouselContent>
+            <CarouselItem className="basis-full pl-0">{overviewSlide}</CarouselItem>
+            {playersByFp.map((player: any) => (
+              <CarouselItem key={player.player_id || player.nba_player_id} className="basis-full pl-0">
+                <Box sx={{ position: 'relative', overflow: 'hidden', borderRadius: 'lg', bgcolor: '#1a1a1a', minHeight: 280, p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.6), transparent)', pointerEvents: 'none' }} />
+                  <Box sx={{ position: 'relative' }}>{livePlayerCard(player)}</Box>
+                </Box>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="left-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+          <CarouselNext className="right-2 border-[#333] bg-[#252525] hover:bg-[#333]" />
+        </Carousel>
+      </Box>
+    );
+  }
+
+  if (!embedInCard) return <Box sx={{ bgcolor: 'transparent' }}>{useTotwLayout ? (liveGridContent || innerContent) : innerContent}</Box>;
+
   return (
     <Card 
       variant="outlined" 
       onClick={() => navigate(`/today/totn?date=${dateString}`)}
       sx={{ 
+        position: 'relative',
         bgcolor: '#1a1a1a', 
         borderColor: '#333333', 
         height: '100%',
@@ -8968,95 +10954,26 @@ export function LiveTeamOfNightModule({
         },
       }}
     >
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
-            Live Team of the Night
-          </Typography>
-          {totalSalary > 0 && (
-            <Typography level="body-sm" sx={{ color: '#B0B0B0' }}>
-              ${(totalSalary / 1000000).toFixed(2)}M salary
-            </Typography>
-          )}
-        </Box>
-        
-        {isLoading ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : sortedPlayers && sortedPlayers.length > 0 ? (
-          <Table hoverRow size="sm">
-            <thead>
-              <tr>
-                <th style={{ color: '#FFFFFF' }}>Player</th>
-                <th style={{ color: '#FFFFFF' }}>Team</th>
-                <th style={{ color: '#FFFFFF' }}>Salary</th>
-                <th style={{ color: '#FFFFFF' }}>FP</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedPlayers.slice(0, 12).map((player: any, index: number) => (
-                <tr 
-                  key={player.player_id || player.nba_player_id || index}
-                  style={{ cursor: 'pointer' }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (player.player_id) {
-                      navigate(`/player/${player.player_id}`);
-                    }
-                  }}
-                >
-                  <td>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Avatar 
-                        src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`}
-                        alt={player.player_name}
-                        sx={{ width: 24, height: 24 }}
-                      />
-                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
-                        {player.player_name || 'N/A'}
-                      </Typography>
-                    </Box>
-                  </td>
-                  <td>
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      {player.team || 'N/A'}
-                    </Typography>
-                  </td>
-                  <td>
-                    <Typography 
-                      level="body-sm" 
-                      sx={{ 
-                        color: '#B0B0B0',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {player.salary ? `$${(player.salary / 1000000).toFixed(2)}M` : 'N/A'}
-                    </Typography>
-                  </td>
-                  <td>
-                    <Typography 
-                      level="body-sm" 
-                      sx={{ 
-                        color: '#FFC72C',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {player.fantasy_points ? player.fantasy_points.toFixed(1) : '0.0'}
-                    </Typography>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        ) : (
-          <Alert color="neutral" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333' }}>
-            <Typography sx={{ color: '#FFFFFF' }}>
-              No live game data available yet. Games may not have started.
-            </Typography>
-          </Alert>
-        )}
-      </CardContent>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          Team of the Night
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: '#1a1a1a' }}>{innerContent}</CardContent>
     </Card>
   );
 }
@@ -9065,19 +10982,29 @@ export function LiveTeamOfNightModule({
 export function TeamOfNightModule({ 
   navigate, 
   selectedDate,
-  showJersey = true
+  showJersey = true,
+  embedInCard = true,
+  useTotwLayout = false,
 }: { 
   navigate: (path: string) => void; 
   selectedDate: Dayjs;
   showJersey?: boolean;
+  embedInCard?: boolean;
+  useTotwLayout?: boolean;
 }) {
   const dateString = selectedDate.format('YYYY-MM-DD');
+  const content = (
+    <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} compact={true} showJersey={showJersey} useTotwLayout={useTotwLayout} />
+  );
+
+  if (!embedInCard) return <Box sx={{ bgcolor: 'transparent' }}>{content}</Box>;
 
   return (
     <Card 
       variant="outlined" 
       onClick={() => navigate(`/today/totn?date=${dateString}`)}
       sx={{ 
+        position: 'relative',
         bgcolor: '#1a1a1a', 
         borderColor: '#333333', 
         height: '100%',
@@ -9089,8 +11016,27 @@ export function TeamOfNightModule({
         },
       }}
     >
-      <CardContent>
-        <PlayersOfNightSection navigate={navigate} selectedDate={selectedDate} hideHeader={false} compact={true} showJersey={showJersey} />
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          Team of the Night
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: '#1a1a1a' }}>
+        {content}
       </CardContent>
     </Card>
   );
@@ -9161,13 +11107,29 @@ export function LeadersModule({
   };
   
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-      <CardContent>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography level="h4" sx={{ fontWeight: 'bold', color: '#FFFFFF' }}>
-            Leaders
-          </Typography>
-          <Stack direction="row" spacing={1}>
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          Leaders
+        </Typography>
+      </Box>
+      <CardContent sx={{ pt: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', mb: 2 }}>
+          <Stack direction="row" spacing={1} sx={{ pr: 8 }}>
             <IconButton
               size="sm"
               variant="outlined"
@@ -9220,7 +11182,7 @@ export function LeadersModule({
             <CircularProgress />
           </Box>
         ) : leaders && leaders.length > 0 ? (
-          <Table hoverRow size="sm">
+          <Table hoverRow size="sm" sx={FEED_DRAWER_TABLE_SX}>
             <thead>
               <tr>
                 <th style={{ color: '#FFFFFF' }}>Player</th>
@@ -9229,9 +11191,7 @@ export function LeadersModule({
             </thead>
             <tbody>
               {leaders.map((leader) => {
-                const valueText = activeCategory.includes('PCT') 
-                  ? (leader.value * 100).toFixed(1) + '%'
-                  : leader.value.toFixed(1);
+                const { main: valueMain, perGame: valuePerGame } = formatLeaderValue(leader, activeCategory);
 
                 return (
                   <tr
@@ -9250,13 +11210,13 @@ export function LeadersModule({
                     }}
                   >
                     <td>
-                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600 }}>
+                      <Typography level="body-sm" sx={{ color: '#FFFFFF', fontWeight: 600, fontSize: '0.8125rem' }}>
                         {leader.player_name || 'Unknown'}
                       </Typography>
                     </td>
                     <td>
-                      <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                        {valueText}
+                      <Typography level="body-sm" sx={{ color: '#CCCCCC', fontSize: '0.8125rem' }}>
+                        {valueMain} {valuePerGame}
                       </Typography>
                     </td>
                   </tr>
@@ -9276,11 +11236,130 @@ export function LeadersModule({
   );
 }
 
+// Combined Team of the Night / Team of the Week — tabs: Live TOTN (when applicable), TOTN, TOTW
+export function TeamOfNightWeekCombinedModule({
+  navigate,
+  selectedDate,
+  nbaScoreboard,
+  hasLiveGames,
+}: {
+  navigate: (path: string) => void;
+  selectedDate: Dayjs;
+  nbaScoreboard: any;
+  hasLiveGames: boolean;
+}) {
+  const [activeTab, setActiveTab] = useState<'live_totn' | 'totn' | 'totw'>('totw');
+
+  // When games go off live, switch off live_totn so we don't show an invalid tab
+  useEffect(() => {
+    if (!hasLiveGames && activeTab === 'live_totn') {
+      setActiveTab('totn');
+    }
+  }, [hasLiveGames, activeTab]);
+
+  const tabSx = (selected: boolean) => ({
+    px: 1.5,
+    py: 0.75,
+    borderRadius: 'sm',
+    border: '1px solid',
+    borderColor: selected ? '#FFC72C' : '#333333',
+    bgcolor: selected ? 'rgba(255, 199, 44, 0.15)' : 'transparent',
+    color: selected ? '#FFC72C' : '#999',
+    fontWeight: 700,
+    fontSize: '0.7rem',
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase' as const,
+    cursor: 'pointer',
+    '&:hover': { color: '#FFC72C', borderColor: '#FFC72C' },
+  });
+
+  return (
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: 'transparent', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: hasLiveGames ? '1fr 1fr 1fr' : '1fr 1fr',
+          alignItems: 'center',
+          gap: 0.5,
+          px: 1.5,
+          py: 1,
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          bgcolor: 'transparent',
+        }}
+      >
+        <Typography
+          component="button"
+          type="button"
+          onClick={() => setActiveTab('totn')}
+          sx={{ ...tabSx(activeTab === 'totn'), justifySelf: 'start' }}
+        >
+          TOTN
+        </Typography>
+        {hasLiveGames && (
+          <Typography
+            component="button"
+            type="button"
+            onClick={() => setActiveTab('live_totn')}
+            sx={{ ...tabSx(activeTab === 'live_totn'), justifySelf: 'center' }}
+          >
+            LIVE
+          </Typography>
+        )}
+        <Typography
+          component="button"
+          type="button"
+          onClick={() => setActiveTab('totw')}
+          sx={{ ...tabSx(activeTab === 'totw'), justifySelf: 'end' }}
+        >
+          TOTW
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: 'transparent', pt: 1 }}>
+        {activeTab === 'live_totn' && hasLiveGames && (
+          <LiveTeamOfNightModule
+            navigate={navigate}
+            selectedDate={selectedDate}
+            nbaScoreboard={nbaScoreboard}
+            embedInCard={false}
+            useTotwLayout
+          />
+        )}
+        {activeTab === 'totn' && (
+          <TeamOfNightModule navigate={navigate} selectedDate={selectedDate} showJersey={false} embedInCard={false} useTotwLayout />
+        )}
+        {activeTab === 'totw' && (
+          <TeamOfWeekSection navigate={navigate} hideHeader={false} showJersey={false} useCarousel />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Team of the Week Module
 function TeamOfWeekModule({ navigate }: { navigate: (path: string) => void }) {
   return (
-    <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
-      <CardContent>
+    <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#1a1a1a', borderColor: '#333333', height: '100%' }}>
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          px: 1.5,
+          py: 0.5,
+          borderLeft: '1px solid',
+          borderBottom: '1px solid',
+          borderColor: '#333333',
+          borderTopRightRadius: 6,
+          bgcolor: '#252525',
+          zIndex: 10,
+        }}
+      >
+        <Typography level="body-xs" sx={{ fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em', color: '#CCCCCC', textTransform: 'uppercase' }}>
+          Team of the Week
+        </Typography>
+      </Box>
+      <CardContent sx={{ bgcolor: '#1a1a1a' }}>
         <TeamOfWeekSection navigate={navigate} hideHeader={false} />
       </CardContent>
     </Card>

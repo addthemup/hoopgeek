@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500864",
+  "gameMetadata": {
+    "date": "2026-02-28T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612745,
+      "abbreviation": "HOU",
+      "city": "Houston",
+      "name": "Rockets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 105,
+      "stats": {
+        "fg_pct": 0.432,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.25,
+        "ast": 26,
+        "reb": 47,
+        "tov": 10
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612748,
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "name": "Heat",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 115,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.7,
+        "fg3_pct": 0.355,
+        "ast": 22,
+        "reb": 47,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500864",
+      "LAST_GAME_ID": "0022401015",
+      "LAST_GAME_DATE_EST": "2025-03-21T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612748,
+      "LAST_GAME_HOME_TEAM_CITY": "Miami",
+      "LAST_GAME_HOME_TEAM_NAME": "Heat",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIA",
+      "LAST_GAME_HOME_TEAM_POINTS": 98,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612745,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Houston",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Rockets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "HOU",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 102
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500864": {
+      "team_stats": {}
+    }
+  }
+}

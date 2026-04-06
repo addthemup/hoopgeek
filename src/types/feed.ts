@@ -18,6 +18,27 @@ export type PostType =
   | 'injury_report'
   | 'upcoming'
   | 'blog'
+  | 'draft'
+  | 'dfs'
+
+/** Shown only via parent posts (e.g. upcoming / recap), never in the main feed grid. */
+export const FEED_SUB_POST_TYPES = ['prop_prediction', 'prop_results', 'injury_report'] as const
+
+export type FeedSubPostType = (typeof FEED_SUB_POST_TYPES)[number]
+
+/** Allowed in /feed infinite query and "All" scope (excludes FEED_SUB_POST_TYPES). */
+export const PARENT_FEED_POST_TYPES: PostType[] = [
+  'game_recap',
+  'player_spotlight',
+  'team_of_night',
+  'team_of_week',
+  'player_of_week',
+  'player_of_month',
+  'upcoming',
+  'blog',
+  'draft',
+  'dfs',
+]
 
 export type PostStatus = 'draft' | 'published' | 'archived'
 
@@ -40,6 +61,12 @@ export type SectionType =
   | 'game_log'
   | 'post_link'
   | 'tweet_embed'
+  | 'injury_module'
+  | 'prop_module'
+  | 'team_of_night_module'
+  | 'team_of_week_module'
+  | 'tank_module'
+  | 'dfs_module'
 
 // ─── Feed tag values ────────────────────────────────────────
 export type FeedTag = 'highlights' | 'awards' | 'props' | 'injuries' | 'recap' | 'analysis'
@@ -71,6 +98,7 @@ export interface FeedPost {
   team_tricodes: string[] | null
   player_ids: number[] | null
   person_id: number | null
+  draft_prospect_ids: string[] | null  // draft_prospects.id UUIDs
   metadata: Record<string, any>
   tags: FeedTag[]
   likes_count: number
@@ -184,6 +212,12 @@ export type SectionContent =
   | GameLogContent
   | PostLinkContent
   | TweetEmbedContent
+  | InjuryModuleContent
+  | PropModuleContent
+  | TeamOfNightModuleContent
+  | TeamOfWeekModuleContent
+  | TankModuleContent
+  | DfsModuleContent
 
 export interface HeroContent {
   image_url?: string
@@ -303,6 +337,12 @@ export interface PropCardContent {
   trend?: number[]
 }
 
+export interface InjuryProgressSegment {
+  status: string                 // 'Healthy' | 'Out' | 'Questionable' | 'Probable'
+  startPercent: number           // 0–100 (position in season timeline)
+  widthPercent: number           // 0–100 (duration in season timeline)
+}
+
 export interface InjuryCardContent {
   player_id: number
   player_name: string
@@ -311,6 +351,150 @@ export interface InjuryCardContent {
   injury: string                 // 'Left knee soreness'
   expected_return?: string
   impact_note?: string
+  /** Season injury timeline — green/red/orange progress bar segments */
+  progress_segments?: InjuryProgressSegment[]
+}
+
+// ── Module-embed section types ──────────────────────────────
+// These store frozen data snapshots but render with the same
+// display component the live feed modules use, so visual
+// changes propagate automatically to past posts.
+
+export interface InjuryModuleEntry {
+  nba_player_id: number
+  player_name: string
+  team_tricode: string
+  injury_status: string          // 'Out' | 'Questionable' | 'Day-to-Day' | 'Doubtful'
+  injury_type: string            // e.g. 'Left knee'
+  progress_segments: InjuryProgressSegment[]
+}
+
+export interface InjuryModuleContent {
+  injuries: InjuryModuleEntry[]
+  teams: string[]
+  date: string                   // YYYY-MM-DD
+}
+
+export interface PropModuleEntry {
+  nba_player_id: number
+  player_name: string
+  team_tricode: string
+  bet_type: string               // 'points' | 'rebounds' | 'assists' | ...
+  line: number
+  line_movement?: number
+  over_odds?: string
+  under_odds?: string
+  over_hit_rate?: number | null   // 0–100
+  under_hit_rate?: number | null  // 0–100
+  over_hits?: number
+  under_hits?: number
+  last10_total?: number
+  /** Team confidence 1–10 (opposition team stat vs rulebook). */
+  team_confidence?: number | null
+  /** Player confidence 1–10 (opposition allowed stats). */
+  player_confidence?: number | null
+  /** Opposition stat label for confidence views (e.g. "DFG%"). */
+  opposition_stat_label?: string
+  opposition_stat_value?: string | null
+  /** Player offense stat (team conf view: "X vs Opp Y"). */
+  player_offense_stat_label?: string
+  player_offense_stat_value?: string | null
+  /** For results posts: actual stat value */
+  actual?: number
+  /** For results posts: 'over' | 'under' | 'push' */
+  result?: string
+}
+
+/** Matches drawer `PropPredictionsModule` embed modes. Omitted or `full` = tabbed module (legacy). */
+export type PropModuleEmbedMode = 'full' | 'over' | 'under' | 'team_confidence' | 'player_confidence'
+
+export interface PropModuleContent {
+  props: PropModuleEntry[]
+  teams: string[]
+  date: string                   // YYYY-MM-DD
+  mode: 'prediction' | 'results'
+  /** When set, story shows only this slice (same rows as drawer modules). */
+  embedMode?: PropModuleEmbedMode
+}
+
+/** Frozen snapshot of a Team of the Night lineup (same shape as live module). */
+export interface TeamOfNightPlayerEntry {
+  player_id: string | null
+  nba_player_id: number
+  player_name: string
+  team: string
+  player_position: string
+  jersey_number: string
+  salary: number
+  fantasy_points: number
+  games_played: number
+  lineup_order?: number
+  lineup_unit?: string
+  unit_position?: number
+  weighted_points?: number
+}
+
+export interface TeamOfNightModuleContent {
+  players: TeamOfNightPlayerEntry[]
+  date: string                   // YYYY-MM-DD or display string
+}
+
+/** Frozen snapshot of a Team of the Week lineup. */
+export interface TeamOfWeekPlayerEntry {
+  player_id: string | null
+  nba_player_id: number
+  player_name: string
+  team: string
+  player_position: string
+  jersey_number: string
+  salary: number
+  avg_fantasy_points: number
+  games_played: number
+}
+
+export interface TeamOfWeekModuleContent {
+  players: TeamOfWeekPlayerEntry[]
+  week_name?: string
+  start_date?: string            // YYYY-MM-DD
+  end_date?: string              // YYYY-MM-DD
+}
+
+/** Frozen prospect snapshot for tank/draft module (one per pick). */
+export interface TankProspectEntry {
+  id: string                     // draft_prospects.id
+  player_name_full: string
+  player_slug?: string
+  school_team: string | null
+  position_primary: string | null
+  image_url?: string | null
+}
+
+/** Frozen tank row: pick slot + team + lottery odds + prospect at that pick. */
+export interface TankRowEntry {
+  pick: number                   // 1-14
+  team_id: number
+  team_abbreviation: string
+  team_internal_id?: string      // nba_teams.id for /team/:id navigation
+  wins: number
+  losses: number
+  tank_gb: number               // games behind worst (tank leader)
+  top4_pct: number | null       // lottery top-4 %
+  one_ovr_pct: number | null    // #1 overall %
+  prospect: TankProspectEntry | null
+}
+
+export interface TankModuleContent {
+  rows: TankRowEntry[]
+  season: string                 // e.g. '2025-26'
+  snapshot_date: string         // YYYY-MM-DD when data was frozen
+  snapshot_week?: string        // draft_rankings snapshot_week if applicable
+}
+
+/** Placeholder for DFS feed post section; will expand with dfs_pools, dfs_entries, etc. */
+export interface DfsModuleContent {
+  snapshot_date: string         // YYYY-MM-DD
+  pools?: Array<{ id: string; name: string; status: string; entry_count?: number }>
+  message?: string              // e.g. "DFS data will be integrated here"
 }
 
 export interface PullQuoteContent {
@@ -383,6 +567,8 @@ export interface PostLinkContent {
   slug: string
   title: string
   subtitle?: string
+  /** Extra line for hover previews (Glimpse) when subtitle is empty or too short */
+  preview_text?: string
   post_type: PostType
   cover_image_url?: string
   context?: string              // e.g. "This player was on the Team of the Week"
@@ -440,7 +626,7 @@ export interface EngagementState {
 // FILTER / ALGORITHM OPTIONS
 // =====================================================================
 
-export type FeedFilterType = 'all' | PostType
+export type FeedFilterType = 'all' | 'favorites' | 'last_night' | PostType
 
 export interface FeedFilters {
   postType: FeedFilterType
@@ -450,8 +636,11 @@ export interface FeedFilters {
   dateRange?: { from: string; to: string }
 }
 
-/** Single active filter (post type, team, or player) for feed chip + filtering */
-export type ActiveFilterType = 'post_type' | 'team' | 'player'
+/** Single active filter (post type, team, player, or favorites) for feed chip + filtering */
+export type ActiveFilterType = 'post_type' | 'team' | 'player' | 'favorites' | 'last_night' | 'feed_scope'
+
+/** `feed_scope` values e.g. all_parent = main-feed "All" (parent post types only). */
+export type FeedScopeValue = 'all_parent'
 
 export interface ActiveFilter {
   id: string

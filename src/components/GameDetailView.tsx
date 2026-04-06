@@ -90,7 +90,7 @@ interface GameDetailViewProps {
 export default function GameDetailView({
   gameId,
   onBack,
-  returnPath = '/today',
+  returnPath = '/feed',
   returnDate,
   selectedDate: propSelectedDate,
   onDateChange,

@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import dayjs, { Dayjs } from 'dayjs';
 import { supabase } from '../../utils/supabase';
 import { getTodayEST } from '../../utils/nbaDateUtils';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
 import { TeamOfWeekSection } from '../../pages/Today';
 import BestGamesModule from './BestGamesModule';
 
@@ -63,7 +64,7 @@ export default function TodayWeekly({ week, navigate, onNavigateToWeek }: TodayW
     : null;
 
   return (
-    <Box sx={{ width: '100%', maxWidth: 1200, mx: 'auto' }}>
+    <Box sx={{ width: '100%', maxWidth: CONTENT_MAX_WIDTH, mx: 'auto' }}>
       {/* Week Header with Navigation */}
       <Card variant="outlined" sx={{ bgcolor: '#1a1a1a', borderColor: '#333333', mb: 2 }}>
         <CardContent sx={{ py: 1, px: 2 }}>

@@ -16,6 +16,12 @@ import { generateGameRecapSections } from './gameRecap'
 import { generatePlayerSpotlightSections } from './playerSpotlight'
 import { generateTeamLineupSections } from './teamLineup'
 import { generatePlayerAwardSections } from './playerAward'
+import { generateInjuryReportSections } from './injuryReport'
+import { generatePropPredictionSections } from './propPrediction'
+import { generatePropResultsSections } from './propResults'
+import { generateUpcomingSections } from './upcoming'
+import { generateDraftSections } from './draft'
+import { generateDfsSections } from './dfs'
 import { generateManualSections } from './manual'
 
 const registry: Record<PostType, SectionGenerator> = {
@@ -25,15 +31,21 @@ const registry: Record<PostType, SectionGenerator> = {
   team_of_week: (ctx) => generateTeamLineupSections(ctx, 'totw'),
   player_of_week: (ctx) => generatePlayerAwardSections(ctx, 'pow'),
   player_of_month: (ctx) => generatePlayerAwardSections(ctx, 'pom'),
-  prop_prediction: generateManualSections,
-  prop_results: generateManualSections,
-  injury_report: generateManualSections,
-  upcoming: generateManualSections,
+  prop_prediction: generatePropPredictionSections,
+  prop_results: generatePropResultsSections,
+  injury_report: generateInjuryReportSections,
+  upcoming: generateUpcomingSections,
   blog: generateManualSections,
+  draft: generateDraftSections,
+  dfs: generateDfsSections,
 }
 
 export function getSectionGenerator(postType: PostType): SectionGenerator {
-  return registry[postType] ?? generateManualSections
+  const gen = registry[postType]
+  if (!gen) {
+    console.warn('[SectionGen] No generator for', postType, '— falling back to manual')
+  }
+  return gen ?? generateManualSections
 }
 
 export { registry as sectionGenerators }

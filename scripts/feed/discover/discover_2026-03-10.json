@@ -1,0 +1,60 @@
+{
+  "date": "2026-03-10",
+  "games": [
+    {
+      "game_id": "0022500946",
+      "matchup": "MIN @ LAL",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500939",
+      "matchup": "DAL @ ATL",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500941",
+      "matchup": "MIL vs. PHX",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500938",
+      "matchup": "WAS @ MIA",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500945",
+      "matchup": "IND @ SAC",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500943",
+      "matchup": "CHI @ GSW",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500942",
+      "matchup": "SAS vs. BOS",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500936",
+      "matchup": "MEM @ PHI",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500944",
+      "matchup": "POR vs. CHA",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500940",
+      "matchup": "TOR @ HOU",
+      "date": "2026-03-10"
+    },
+    {
+      "game_id": "0022500937",
+      "matchup": "BKN vs. DET",
+      "date": "2026-03-10"
+    }
+  ]
+}

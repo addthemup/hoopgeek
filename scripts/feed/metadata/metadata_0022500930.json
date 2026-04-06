@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500930",
+  "gameMetadata": {
+    "date": "2026-03-08T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.417,
+        "ft_pct": 0.676,
+        "fg3_pct": 0.378,
+        "ast": 27,
+        "reb": 49,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612758,
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "name": "Kings",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.448,
+        "ft_pct": 0.913,
+        "fg3_pct": 0.379,
+        "ast": 33,
+        "reb": 55,
+        "tov": 3
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500930": {
+      "team_stats": {}
+    }
+  }
+}

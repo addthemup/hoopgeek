@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500831",
+  "gameMetadata": {
+    "date": "2026-02-24T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 135,
+      "stats": {
+        "fg_pct": 0.576,
+        "ft_pct": 0.84,
+        "fg3_pct": 0.276,
+        "ast": 29,
+        "reb": 44,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612754,
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "name": "Pacers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 114,
+      "stats": {
+        "fg_pct": 0.432,
+        "ft_pct": 0.864,
+        "fg3_pct": 0.302,
+        "ast": 27,
+        "reb": 41,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500831",
+      "LAST_GAME_ID": "0022400959",
+      "LAST_GAME_DATE_EST": "2025-03-14T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612754,
+      "LAST_GAME_HOME_TEAM_CITY": "Indiana",
+      "LAST_GAME_HOME_TEAM_NAME": "Pacers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "IND",
+      "LAST_GAME_HOME_TEAM_POINTS": 112,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612755,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_VISITOR_TEAM_NAME": "76ers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHI",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 100
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500831": {
+      "team_stats": {}
+    }
+  }
+}

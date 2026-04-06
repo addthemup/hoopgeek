@@ -199,8 +199,8 @@ export async function loadGameJson(gameId: string): Promise<GameJsonData | null>
     // Try multiple possible paths for development
     const possiblePaths = [
       `/scripts/feed/${gameId}.json`,
-      `/game-data/feed/${gameId}.json`,
       `/game-data/${gameId}.json`,
+      `/game-data/feed/${gameId}.json`,
       `/${gameId}.json`,
     ];
     
@@ -210,8 +210,13 @@ export async function loadGameJson(gameId: string): Promise<GameJsonData | null>
         
         if (response.ok) {
           const data = await response.json();
+          // Monolithic scrape uses `shotChartData`; keep `shotCharts` alias for older typings/paths
+          const d = data as GameJsonData & { shotChartData?: GameJsonData['shotCharts'] };
+          if (d.shotChartData && !d.shotCharts) {
+            (d as any).shotCharts = d.shotChartData;
+          }
           console.log(`✅ Loaded game JSON from ${path}`);
-          return data as GameJsonData;
+          return d as GameJsonData;
         }
       } catch (err) {
         // Try next path

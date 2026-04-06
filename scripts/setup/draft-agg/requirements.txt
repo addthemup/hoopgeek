@@ -1,0 +1,10 @@
+# For scrape_draft_rankings.py and backfill_prospect_images.py
+requests>=2.21
+beautifulsoup4>=4.9
+supabase>=2.0
+
+# For backfill_prospect_images.py --search (default: Selenium)
+selenium>=4.0
+
+# Optional: for --search-engine=google_images (needs GOOGLE_API_KEY + GOOGLE_CSE_ID)
+Google-Images-Search>=1.4

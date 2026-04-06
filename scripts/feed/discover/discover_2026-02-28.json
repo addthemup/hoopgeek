@@ -1,0 +1,30 @@
+{
+  "date": "2026-02-28",
+  "games": [
+    {
+      "game_id": "0022500867",
+      "matchup": "NOP @ UTA",
+      "date": "2026-02-28"
+    },
+    {
+      "game_id": "0022500865",
+      "matchup": "WAS vs. TOR",
+      "date": "2026-02-28"
+    },
+    {
+      "game_id": "0022500863",
+      "matchup": "CHA vs. POR",
+      "date": "2026-02-28"
+    },
+    {
+      "game_id": "0022500866",
+      "matchup": "GSW vs. LAL",
+      "date": "2026-02-28"
+    },
+    {
+      "game_id": "0022500864",
+      "matchup": "MIA vs. HOU",
+      "date": "2026-02-28"
+    }
+  ]
+}

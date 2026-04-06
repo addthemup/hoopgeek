@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500849",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612748,
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "name": "Heat",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 117,
+      "stats": {
+        "fg_pct": 0.46,
+        "ft_pct": 0.769,
+        "fg3_pct": 0.425,
+        "ast": 25,
+        "reb": 45,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 124,
+      "stats": {
+        "fg_pct": 0.479,
+        "ft_pct": 0.944,
+        "fg3_pct": 0.395,
+        "ast": 26,
+        "reb": 49,
+        "tov": 14
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500849",
+      "LAST_GAME_ID": "0022401145",
+      "LAST_GAME_DATE_EST": "2025-04-07T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612755,
+      "LAST_GAME_HOME_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_HOME_TEAM_NAME": "76ers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "PHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 105,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612748,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Miami",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Heat",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MIA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 117
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500849": {
+      "team_stats": {}
+    }
+  }
+}

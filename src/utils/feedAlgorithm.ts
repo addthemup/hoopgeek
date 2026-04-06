@@ -7,6 +7,7 @@
  */
 
 import type { FeedPost, PostType, FeedFilters } from '../types/feed'
+import { getTodayEST } from './nbaDateUtils'
 
 // ─── Re-exports so old import paths still work ─────────────
 export type { FeedPost } from '../types/feed'
@@ -72,6 +73,27 @@ export interface FeedAlgorithmOptions {
 
 // ─── Helpers ────────────────────────────────────────────────
 
+/**
+ * After automation floods `published_at` with player_spotlight rows, the newest N posts
+ * are often all spotlights — diversify() cannot mix types that are not in the pool.
+ * Interleave every other post type with spotlights (order preserved within each group)
+ * so recaps, props, etc. still appear on /feed without hiding spotlights entirely.
+ */
+export function interleaveNonSpotlightWithSpotlight(posts: FeedPost[]): FeedPost[] {
+  const rest = posts.filter((p) => p.post_type !== 'player_spotlight')
+  const spots = posts.filter((p) => p.post_type === 'player_spotlight')
+  if (rest.length === 0) return spots
+  if (spots.length === 0) return rest
+  const out: FeedPost[] = []
+  let ri = 0
+  let si = 0
+  while (ri < rest.length || si < spots.length) {
+    if (ri < rest.length) out.push(rest[ri++])
+    if (si < spots.length) out.push(spots[si++])
+  }
+  return out
+}
+
 export function seededShuffle<T>(array: T[], seed: number): T[] {
   const shuffled = [...array]
   let random = seed
@@ -85,7 +107,14 @@ export function seededShuffle<T>(array: T[], seed: number): T[] {
 
 function parseMetadata(post: FeedPost): Record<string, any> {
   if (!post.metadata) return {}
-  return typeof post.metadata === 'string' ? JSON.parse(post.metadata) : post.metadata
+  if (typeof post.metadata === 'string') {
+    try {
+      return JSON.parse(post.metadata || '{}')
+    } catch {
+      return {}
+    }
+  }
+  return post.metadata as Record<string, unknown>
 }
 
 function getDaysAgo(dateStr: string | null): number {
@@ -126,13 +155,15 @@ const POST_TYPE_PRIORITY: Record<PostType, number> = {
   team_of_week:     16,
   player_of_week:   14,
   player_of_month:  14,
-  game_recap:       12,
-  player_spotlight: 10,
+  game_recap:       24,
+  player_spotlight: 16,
   prop_results:      8,
   prop_prediction:   6,
   injury_report:     4,
-  upcoming:          5,
+  upcoming:         22,
   blog:              5,
+  draft:            10,
+  dfs:               4,
 }
 
 // ─── Engagement score ───────────────────────────────────────
@@ -192,6 +223,16 @@ export function calculatePostWeight(
 
   // 3. Post type tier
   score += POST_TYPE_PRIORITY[post.post_type] ?? 6
+
+  // Upcoming games (today or future slate): core product surface — boost so they surface in small-page feeds
+  if (post.post_type === 'upcoming' && post.game_date) {
+    const gd = String(post.game_date).slice(0, 10)
+    const today = getTodayEST()
+    if (gd.length === 10 && gd >= today) {
+      score += 26
+      if (gd === today) score += 14
+    }
+  }
 
   // 4. Quality signal per type
   if (post.post_type === 'game_recap') {
@@ -349,6 +390,71 @@ function diversify(posts: FeedPost[]): FeedPost[] {
   return result
 }
 
+/** Prioritized home-feed blend: recaps/upcoming first, elite spotlights next, draft sprinkled in. */
+function composeHomeFeed(posts: FeedPost[], seed: number): FeedPost[] {
+  if (posts.length <= 4) return posts
+
+  const recap = seededShuffle(posts.filter((p) => p.post_type === 'game_recap'), seed + 11)
+  const upcoming = seededShuffle(posts.filter((p) => p.post_type === 'upcoming'), seed + 23)
+  const draft = seededShuffle(posts.filter((p) => p.post_type === 'draft'), seed + 37)
+  const spotlightRaw = seededShuffle(posts.filter((p) => p.post_type === 'player_spotlight'), seed + 41)
+  const highSpotlight = spotlightRaw.filter((p) => {
+    const metadata = parseMetadata(p)
+    const fp = Number(metadata?.fantasyPoints ?? 0)
+    return fp >= 55 || engagementScore(p) >= 0.45
+  })
+  const others = seededShuffle(
+    posts.filter(
+      (p) =>
+        p.post_type !== 'game_recap' &&
+        p.post_type !== 'upcoming' &&
+        p.post_type !== 'player_spotlight' &&
+        p.post_type !== 'draft'
+    ),
+    seed + 53
+  )
+  const spotlightCap = Math.min(
+    highSpotlight.length,
+    Math.max(1, Math.floor((recap.length + upcoming.length + draft.length + others.length) / 12))
+  )
+  const spotlightRare = highSpotlight.slice(0, spotlightCap)
+
+  const out: FeedPost[] = []
+  let iRecap = 0
+  let iUpcoming = 0
+  let iSpot = 0
+  let iDraft = 0
+  let iOther = 0
+  let cycle = 0
+
+  const pushNext = (list: FeedPost[], idx: number): number => {
+    if (idx < list.length) out.push(list[idx])
+    return idx + 1
+  }
+
+  while (
+    iRecap < recap.length ||
+    iUpcoming < upcoming.length ||
+    iSpot < spotlightRare.length ||
+    iDraft < draft.length ||
+    iOther < others.length
+  ) {
+    if (iRecap < recap.length) iRecap = pushNext(recap, iRecap)
+    if (iUpcoming < upcoming.length) iUpcoming = pushNext(upcoming, iUpcoming)
+    if (cycle % 4 === 1 && iDraft < draft.length) iDraft = pushNext(draft, iDraft)
+    if (cycle % 6 === 2 && iSpot < spotlightRare.length) iSpot = pushNext(spotlightRare, iSpot)
+    if (cycle % 4 === 2 && iOther < others.length) iOther = pushNext(others, iOther)
+
+    cycle += 1
+    if (cycle > posts.length * 2) break
+  }
+
+  // Append any leftovers preserving relative order.
+  const used = new Set(out.map((p) => p.id))
+  const tail = posts.filter((p) => !used.has(p.id))
+  return [...out, ...tail]
+}
+
 // ─── Filter ─────────────────────────────────────────────────
 
 function applyFilters(posts: FeedPost[], filters?: FeedFilters): FeedPost[] {
@@ -393,6 +499,8 @@ export function orderPostsByAlgorithm(
     viewedPostIds = new Set<string>(),
     useWeights = true,
     filters,
+    clickSource = 'home',
+    seed = Date.now(),
   } = options
 
   // 1. Apply user filters
@@ -408,13 +516,39 @@ export function orderPostsByAlgorithm(
   const unviewed = weighted.filter(w => !viewedPostIds.has(w.post.id))
   const viewed = weighted.filter(w => viewedPostIds.has(w.post.id))
 
-  // 4. Sort each group by weight desc
-  unviewed.sort((a, b) => b.weight - a.weight)
-  viewed.sort((a, b) => b.weight - a.weight)
+  const publishedKey = (p: FeedPost) => (p.published_at != null ? String(p.published_at) : '')
 
-  // 5. Diversify — round-robin post types within each group
-  const diversifiedUnviewed = diversify(unviewed.map(w => w.post))
-  const diversifiedViewed = diversify(viewed.map(w => w.post))
+  const byWeightThenPublished = (
+    a: (typeof weighted)[number],
+    b: (typeof weighted)[number],
+  ) => {
+    const dw = b.weight - a.weight
+    if (dw !== 0) return dw
+    return publishedKey(b.post).localeCompare(publishedKey(a.post))
+  }
 
-  return [...diversifiedUnviewed, ...diversifiedViewed]
+  // 4. Sort each group by weight desc, then newer published_at
+  unviewed.sort(byWeightThenPublished)
+  viewed.sort(byWeightThenPublished)
+
+  const weightById = new Map(weighted.map((w) => [w.post.id, w.weight]))
+
+  // 5. Diversify — round-robin post types within each group; re-apply weight + recency tie-break
+  const diversifiedUnviewed = diversify(unviewed.map((w) => w.post))
+  const diversifiedViewed = diversify(viewed.map((w) => w.post))
+
+  const tieBreak = (a: FeedPost, b: FeedPost) => {
+    const wa = weightById.get(a.id) ?? 0
+    const wb = weightById.get(b.id) ?? 0
+    if (wb !== wa) return wb - wa
+    return publishedKey(b).localeCompare(publishedKey(a))
+  }
+  diversifiedUnviewed.sort(tieBreak)
+  diversifiedViewed.sort(tieBreak)
+
+  const merged = [...diversifiedUnviewed, ...diversifiedViewed]
+  if (clickSource === 'home') {
+    return composeHomeFeed(merged, seed)
+  }
+  return merged
 }

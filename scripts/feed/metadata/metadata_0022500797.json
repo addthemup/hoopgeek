@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500797",
+  "gameMetadata": {
+    "date": "2026-02-19T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612761,
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "name": "Raptors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.422,
+        "ft_pct": 0.871,
+        "fg3_pct": 0.304,
+        "ast": 23,
+        "reb": 46,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 101,
+      "stats": {
+        "fg_pct": 0.419,
+        "ft_pct": 0.81,
+        "fg3_pct": 0.3,
+        "ast": 22,
+        "reb": 46,
+        "tov": 20
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500797",
+      "LAST_GAME_ID": "0022401099",
+      "LAST_GAME_DATE_EST": "2025-04-01T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612741,
+      "LAST_GAME_HOME_TEAM_CITY": "Chicago",
+      "LAST_GAME_HOME_TEAM_NAME": "Bulls",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 137,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612761,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Toronto",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Raptors",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "TOR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 118
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500797": {
+      "team_stats": {}
+    }
+  }
+}

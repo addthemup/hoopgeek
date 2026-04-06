@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500846",
+  "gameMetadata": {
+    "date": "2026-02-25T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612739,
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "name": "Cavaliers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 116,
+      "stats": {
+        "fg_pct": 0.483,
+        "ft_pct": 0.741,
+        "fg3_pct": 0.3,
+        "ast": 28,
+        "reb": 44,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612749,
+      "abbreviation": "MIL",
+      "city": "Milwaukee",
+      "name": "Bucks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 118,
+      "stats": {
+        "fg_pct": 0.545,
+        "ft_pct": 0.6,
+        "fg3_pct": 0.422,
+        "ast": 28,
+        "reb": 36,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500846",
+      "LAST_GAME_ID": "0022400922",
+      "LAST_GAME_DATE_EST": "2025-03-09T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612749,
+      "LAST_GAME_HOME_TEAM_CITY": "Milwaukee",
+      "LAST_GAME_HOME_TEAM_NAME": "Bucks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIL",
+      "LAST_GAME_HOME_TEAM_POINTS": 100,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612739,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Cleveland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CLE",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 112
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500846": {
+      "team_stats": {}
+    }
+  }
+}

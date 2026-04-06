@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500844",
+  "gameMetadata": {
+    "date": "2026-02-25T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612744,
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "name": "Warriors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 133,
+      "stats": {
+        "fg_pct": 0.533,
+        "ft_pct": 0.842,
+        "fg3_pct": 0.413,
+        "ast": 37,
+        "reb": 48,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612763,
+      "abbreviation": "MEM",
+      "city": "Memphis",
+      "name": "Grizzlies",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 112,
+      "stats": {
+        "fg_pct": 0.488,
+        "ft_pct": 0.722,
+        "fg3_pct": 0.415,
+        "ast": 30,
+        "reb": 34,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500844",
+      "LAST_GAME_ID": "0052400121",
+      "LAST_GAME_DATE_EST": "2025-04-15T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612763,
+      "LAST_GAME_HOME_TEAM_CITY": "Memphis",
+      "LAST_GAME_HOME_TEAM_NAME": "Grizzlies",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MEM",
+      "LAST_GAME_HOME_TEAM_POINTS": 116,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612744,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Golden State",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Warriors",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "GSW",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 121
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500844": {
+      "team_stats": {}
+    }
+  }
+}

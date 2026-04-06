@@ -186,7 +186,7 @@ async function fetchScoreboard(gameDate?: string, dayOffset: number = 0) {
     const params = new URLSearchParams({
       'DayOffset': dayOffset.toString(),
       'LeagueID': '00',
-      'gameDate': gameDate || new Date().toISOString().split('T')[0]
+      'GameDate': gameDate || new Date().toISOString().split('T')[0]
     })
 
     const response = await fetch(`${baseUrl}?${params}`, {

@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500891",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612740,
+      "abbreviation": "NOP",
+      "city": "New Orleans",
+      "name": "Pelicans",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 101,
+      "stats": {
+        "fg_pct": 0.422,
+        "ft_pct": 0.895,
+        "fg3_pct": 0.276,
+        "ast": 29,
+        "reb": 41,
+        "tov": 18
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612747,
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "name": "Lakers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.47,
+        "ft_pct": 0.808,
+        "fg3_pct": 0.297,
+        "ast": 29,
+        "reb": 48,
+        "tov": 21
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500891": {
+      "team_stats": {}
+    }
+  }
+}

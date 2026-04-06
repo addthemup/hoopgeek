@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500796",
+  "gameMetadata": {
+    "date": "2026-02-19T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.516,
+        "ft_pct": 0.85,
+        "fg3_pct": 0.433,
+        "ast": 30,
+        "reb": 44,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612752,
+      "abbreviation": "NYK",
+      "city": "New York",
+      "name": "Knicks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.471,
+        "ft_pct": 0.75,
+        "fg3_pct": 0.229,
+        "ast": 24,
+        "reb": 38,
+        "tov": 12
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500796",
+      "LAST_GAME_ID": "0042400126",
+      "LAST_GAME_DATE_EST": "2025-05-01T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612752,
+      "LAST_GAME_HOME_TEAM_CITY": "New York",
+      "LAST_GAME_HOME_TEAM_NAME": "Knicks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "NYK",
+      "LAST_GAME_HOME_TEAM_POINTS": 116,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612765,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Detroit",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Pistons",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DET",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500796": {
+      "team_stats": {}
+    }
+  }
+}

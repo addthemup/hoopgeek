@@ -84,6 +84,64 @@ export function getTodayEST(): string {
 }
 
 /**
+ * Parse YYYY-MM-DD into numeric parts.
+ */
+function parseYMD(ymd: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return { year, month, day };
+}
+
+/**
+ * Add calendar days to a YYYY-MM-DD string.
+ */
+export function addDaysToESTDate(ymd: string, days: number): string {
+  const parsed = parseYMD(ymd);
+  if (!parsed || !Number.isFinite(days) || days === 0) return ymd;
+  const dt = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Site day in ET with a configurable rollover hour.
+ * Example: rollover=3 means 12:00 AM - 2:59 AM ET still counts as previous day.
+ */
+export function getSiteDayEST(rolloverHour = 3): string {
+  const now = new Date();
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(now);
+  const year = Number(parts.find((p) => p.type === 'year')?.value ?? '0');
+  const month = Number(parts.find((p) => p.type === 'month')?.value ?? '0');
+  const day = Number(parts.find((p) => p.type === 'day')?.value ?? '0');
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? '0');
+  if (!year || !month || !day) return utcToESTDate(now);
+  const dateYMD = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  if (hour < rolloverHour) return addDaysToESTDate(dateYMD, -1);
+  return dateYMD;
+}
+
+/**
+ * Guard and normalize a candidate date string.
+ */
+export function normalizeESTDateString(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+/**
  * Format a UTC date string to EST/EDT time for display
  * 
  * @param utcDate - UTC date string (ISO format) or Date object

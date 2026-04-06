@@ -5,12 +5,14 @@ Import NBA Team Rosters from NBA API
 This script scrapes team rosters from the NBA API and stores them in the database.
 Should be run daily at 4 AM via cron job.
 
-Usage:
-    python scripts/setup/import_nba_team_rosters.py
+Uses nba_timeout_patch for longer timeouts; retries with backoff and delay between
+teams to reduce rate-limiting. If stats.nba.com repeatedly times out, your IP may
+be throttled—try a different network or VPN.
 """
 
 import os
 import sys
+import time
 import pandas as pd
 from datetime import datetime
 from supabase import create_client, Client
@@ -18,15 +20,31 @@ from nba_api.stats.endpoints import CommonTeamRoster
 from nba_api.stats.library.parameters import Season
 
 # Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(os.path.dirname(_script_dir))
+sys.path.insert(0, _project_root)
+
+# Longer NBA API timeout (same as boxscores/feed scripts) — apply before any nba_api calls
+try:
+    _feed_dir = os.path.join(os.path.dirname(_script_dir), "feed")
+    if _feed_dir not in sys.path:
+        sys.path.insert(0, _feed_dir)
+    import nba_timeout_patch  # noqa: F401
+except Exception:
+    pass
+
+# Delay between team requests to reduce rate-limiting (seconds). Env: NBA_ROSTER_DELAY_SEC
+DELAY_BETWEEN_TEAMS_SEC = float(os.environ.get("NBA_ROSTER_DELAY_SEC", "2.0"))
+# Retries per team on timeout/connection errors. Env: NBA_ROSTER_RETRIES
+ROSTER_RETRIES = int(os.environ.get("NBA_ROSTER_RETRIES", "3"))
+# Backoff between retries (seconds). Env: NBA_ROSTER_BACKOFF_SEC
+ROSTER_BACKOFF_SEC = float(os.environ.get("NBA_ROSTER_BACKOFF_SEC", "15.0"))
 
 # Load .env from project root (works when run from repo root or scripts/setup/)
 try:
     from dotenv import load_dotenv
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _root = os.path.dirname(os.path.dirname(_script_dir))  # project root when script is in scripts/setup/
-    load_dotenv(os.path.join(_root, '.env.local'))
-    load_dotenv(os.path.join(_root, '.env'))
+    load_dotenv(os.path.join(_project_root, '.env.local'))
+    load_dotenv(os.path.join(_project_root, '.env'))
     load_dotenv('.env.local')
     load_dotenv('.env')
 except ImportError:
@@ -87,16 +105,36 @@ def find_player_by_nba_id(nba_player_id):
         print(f"⚠️  Error finding player {nba_player_id}: {e}")
         return None
 
+def _fetch_roster_df(team_id, season):
+    """Fetch roster DataFrame from NBA API with retries and backoff. Raises on final failure."""
+    last_err = None
+    for attempt in range(1, ROSTER_RETRIES + 1):
+        try:
+            roster_data = CommonTeamRoster(team_id=team_id, season=season)
+            return roster_data.common_team_roster.get_data_frame()
+        except Exception as e:
+            last_err = e
+            is_retryable = (
+                "timeout" in str(e).lower()
+                or "timed out" in str(e).lower()
+                or "Connection" in str(type(e).__name__)
+                or "ConnectionPool" in str(e)
+            )
+            if attempt < ROSTER_RETRIES and is_retryable:
+                wait = ROSTER_BACKOFF_SEC * attempt
+                print(f"   ⏳ Attempt {attempt}/{ROSTER_RETRIES} failed ({e}); retrying in {wait:.0f}s...")
+                time.sleep(wait)
+            else:
+                raise last_err
+    raise last_err
+
+
 def import_team_roster(team_id, season):
     """Import roster for a single team"""
     try:
         print(f"📋 Fetching roster for team {team_id} (season {season})...")
         
-        # Fetch roster from NBA API
-        roster_data = CommonTeamRoster(team_id=team_id, season=season)
-        
-        # Get the roster DataFrame
-        roster_df = roster_data.common_team_roster.get_data_frame()
+        roster_df = _fetch_roster_df(team_id, season)
         
         if roster_df.empty:
             print(f"⚠️  No roster data for team {team_id}")
@@ -228,8 +266,10 @@ def main():
     total_imported = 0
     total_errors = 0
     
-    # Import roster for each team
-    for team in teams:
+    # Import roster for each team (delay between teams to reduce rate-limiting)
+    for i, team in enumerate(teams):
+        if i > 0 and DELAY_BETWEEN_TEAMS_SEC > 0:
+            time.sleep(DELAY_BETWEEN_TEAMS_SEC)
         team_id = team['team_id']
         team_abbr = team['team_abbreviation']
         

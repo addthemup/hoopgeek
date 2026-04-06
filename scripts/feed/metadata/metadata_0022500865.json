@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500865",
+  "gameMetadata": {
+    "date": "2026-02-28T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612761,
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "name": "Raptors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 134,
+      "stats": {
+        "fg_pct": 0.6,
+        "ft_pct": 0.852,
+        "fg3_pct": 0.409,
+        "ast": 31,
+        "reb": 35,
+        "tov": 9
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612764,
+      "abbreviation": "WAS",
+      "city": "Washington",
+      "name": "Wizards",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 125,
+      "stats": {
+        "fg_pct": 0.534,
+        "ft_pct": 0.714,
+        "fg3_pct": 0.471,
+        "ast": 23,
+        "reb": 35,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500865",
+      "LAST_GAME_ID": "0012500048",
+      "LAST_GAME_DATE_EST": "2025-10-12T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612764,
+      "LAST_GAME_HOME_TEAM_CITY": "Washington",
+      "LAST_GAME_HOME_TEAM_NAME": "Wizards",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "WAS",
+      "LAST_GAME_HOME_TEAM_POINTS": 112,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612761,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Toronto",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Raptors",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "TOR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500865": {
+      "team_stats": {}
+    }
+  }
+}

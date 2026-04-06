@@ -22,6 +22,7 @@ import {
 } from '@mui/joy';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../utils/supabase';
+import { CONTENT_MAX_WIDTH } from '../../constants/layout';
 import { format } from 'date-fns';
 import { EmojiEvents, Person, AttachMoney } from '@mui/icons-material';
 
@@ -327,7 +328,7 @@ export default function AdminPoolViewModal({ poolId, open, onClose }: AdminPoolV
       <ModalDialog 
         sx={{ 
           minWidth: { xs: '95vw', sm: '90vw', md: '80vw' }, 
-          maxWidth: 1200, 
+          maxWidth: CONTENT_MAX_WIDTH, 
           maxHeight: '90vh', 
           overflow: 'auto',
           bgcolor: '#fff',

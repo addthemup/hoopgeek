@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500814",
+  "gameMetadata": {
+    "date": "2026-02-21T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.486,
+        "ft_pct": 0.733,
+        "fg3_pct": 0.448,
+        "ast": 34,
+        "reb": 50,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.452,
+        "ft_pct": 0.708,
+        "fg3_pct": 0.425,
+        "ast": 29,
+        "reb": 44,
+        "tov": 23
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500814",
+      "LAST_GAME_ID": "0022400775",
+      "LAST_GAME_DATE_EST": "2025-02-12T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612741,
+      "LAST_GAME_HOME_TEAM_CITY": "Chicago",
+      "LAST_GAME_HOME_TEAM_NAME": "Bulls",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 110,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612765,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Detroit",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Pistons",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DET",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 128
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500814": {
+      "team_stats": {}
+    }
+  }
+}

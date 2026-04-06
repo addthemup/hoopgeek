@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500923",
+  "gameMetadata": {
+    "date": "2026-03-08T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.444,
+        "ft_pct": 0.792,
+        "fg3_pct": 0.297,
+        "ast": 26,
+        "reb": 39,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612748,
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "name": "Heat",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.462,
+        "ft_pct": 0.92,
+        "fg3_pct": 0.364,
+        "ast": 31,
+        "reb": 49,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500923": {
+      "team_stats": {}
+    }
+  }
+}

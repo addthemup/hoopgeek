@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500854",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612758,
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "name": "Kings",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 130,
+      "stats": {
+        "fg_pct": 0.505,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.308,
+        "ast": 29,
+        "reb": 46,
+        "tov": 4
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612742,
+      "abbreviation": "DAL",
+      "city": "Dallas",
+      "name": "Mavericks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.556,
+        "ft_pct": 0.618,
+        "fg3_pct": 0.435,
+        "ast": 23,
+        "reb": 42,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500854": {
+      "team_stats": {}
+    }
+  }
+}

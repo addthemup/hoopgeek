@@ -1,0 +1,13 @@
+{
+  "source_pdf_url": "https://ak-static.cms.nba.com/referee/injury/Injury-Report_2026-04-01_05_00PM.pdf",
+  "description": "Regression fixture for parser row-boundary handling around PHI@WAS page break.",
+  "expected_wizards_out": [
+    "Anthony Davis",
+    "Kyshawn George",
+    "Julian Reese",
+    "D'Angelo Russell",
+    "Alex Sarr",
+    "Cam Whitmore",
+    "Trae Young"
+  ]
+}

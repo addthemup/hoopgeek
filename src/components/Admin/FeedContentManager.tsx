@@ -3611,6 +3611,7 @@ export default function FeedContentManager({ initialView = 'table', onClose }: F
       })
     }
 
+    const spotlightPersonId = detected.postType !== 'fun_score' ? (detected.metadata?.personId ?? playerIds?.[0]) : null
     const postData = {
       created_by: user.id,
       post_type: detected.postType === 'fun_score' ? 'fun_score' : 'player_spotlight',
@@ -3625,6 +3626,9 @@ export default function FeedContentManager({ initialView = 'table', onClose }: F
       team_tricodes: teams,
       player_ids: playerIds,
       person_id: detected.postType === 'fun_score' ? null : (detected.metadata?.personId || null),
+      cover_image_url: spotlightPersonId
+        ? `https://cdn.nba.com/headshots/nba/latest/1040x760/${spotlightPersonId}.png`
+        : null,
       slides: slidesWithProps,
       metadata: {
         arena: gameData.gameMetadata?.arena,
@@ -4901,6 +4905,7 @@ export default function FeedContentManager({ initialView = 'table', onClose }: F
           })
         }
 
+        const spotlightPersonId = detected.postType !== 'fun_score' ? (detected.metadata?.personId ?? playerIds?.[0]) : null
         const postData = {
           created_by: user.id,
           post_type: detected.postType === 'fun_score' ? 'fun_score' : 'player_spotlight',
@@ -4915,6 +4920,9 @@ export default function FeedContentManager({ initialView = 'table', onClose }: F
           team_tricodes: teams,
           player_ids: playerIds,
           person_id: detected.postType === 'fun_score' ? null : (detected.metadata?.personId || null),
+          cover_image_url: spotlightPersonId
+            ? `https://cdn.nba.com/headshots/nba/latest/1040x760/${spotlightPersonId}.png`
+            : null,
           slides: slidesWithProps,
           metadata: {
             arena: uploadedGameData.gameMetadata?.arena,

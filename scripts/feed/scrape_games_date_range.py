@@ -5,9 +5,13 @@ Automatically scrapes all games from start_date to end_date with:
 - 5 minute break between games
 - 10 minute break between days
 - Saves each game to a separate JSON file in this script's folder (scripts/feed/).
-
-Use the separate script upload_feed_to_bucket.py to upload those files to Supabase Storage.
+- If VITE_SUPABASE_URL (or SUPABASE_URL) and SUPABASE_SERVICE_ROLE_KEY are set, also uploads
+  each file to the Supabase Storage bucket `game-data` at path {game_id}.json (bucket root)
+  (see feed_supabase_upload.py and src/utils/gameJsonLoader.ts).
 """
+
+# Use longer NBA API timeout (see nba_timeout_patch; default 180s) and retries
+import nba_timeout_patch  # noqa: F401, E402
 
 from nba_api.stats.endpoints.leaguegamefinder import LeagueGameFinder
 from nba_api.stats.library.parameters import PlayerOrTeamAbbreviation, SeasonTypeNullable
@@ -21,6 +25,26 @@ import time
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+
+from feed_error_utils import log_http_error, is_retryable_request_error
+from feed_supabase_upload import is_supabase_upload_configured, upload_feed_game_json
+from nba_direct_fallback import fetch_leaguegamefinder_direct, fetch_boxscore_traditional_direct
+
+# Retries and backoff for feed API calls (when nba_api times out). Env: FEED_API_RETRIES, FEED_API_BACKOFF_SEC
+FEED_API_RETRIES = int(os.environ.get("FEED_API_RETRIES", "3"))
+FEED_API_BACKOFF_SEC = float(os.environ.get("FEED_API_BACKOFF_SEC", "30.0"))
+FEED_DISCOVER_MAX_ATTEMPTS = int(os.environ.get("FEED_DISCOVER_MAX_ATTEMPTS", "3"))
+FEED_DISCOVER_RETRY_DELAY_SEC = int(os.environ.get("FEED_DISCOVER_RETRY_DELAY_SEC", "30"))
+NBA_DISCOVER_TIMEOUT = int(os.environ.get("NBA_DISCOVER_TIMEOUT", "45"))
+
+# ScoreboardV2 (team leaders): nba_api defaults timeout=30; nba_timeout_patch raises that to NBA_API_TIMEOUT (300s).
+# Pass timeout>30 so the patch does NOT apply — cap wait (default 45s).
+# Default: skip ScoreboardV2 (often slow/flaky). Opt-in: INCLUDE_SCOREBOARD_TEAM_LEADERS=1.
+# Legacy: SKIP_SCOREBOARD_TEAM_LEADERS=1 forces skip; if INCLUDE and SKIP are both set, SKIP wins.
+_env_skip_tl = os.environ.get("SKIP_SCOREBOARD_TEAM_LEADERS", "").lower() in ("1", "true", "yes")
+_env_include_tl = os.environ.get("INCLUDE_SCOREBOARD_TEAM_LEADERS", "").lower() in ("1", "true", "yes")
+SKIP_SCOREBOARD_TEAM_LEADERS = _env_skip_tl or (not _env_include_tl)
+NBA_SCOREBOARD_TIMEOUT = int(os.environ.get("NBA_SCOREBOARD_TIMEOUT", "45"))
 
 # Output directory: same folder as this script (scripts/feed/)
 FEED_DIR = Path(__file__).resolve().parent
@@ -55,52 +79,77 @@ def validate_date(date_string):
     return date_string
 
 
-def get_games_for_date(game_date):
+def get_games_for_date(game_date, max_attempts=None, delay_seconds=None):
     """
     Get all games for a specific date with team information.
-    Filters out G League games automatically.
+    Filters out G League games automatically. Retries on timeout/connection errors (lax: 5 min between retries).
     
     Args:
         game_date: Date string in format YYYY-MM-DD
+        max_attempts: Retries for transient errors (default 5)
+        delay_seconds: Seconds to wait between retries (default 300)
     
     Returns:
         DataFrame with game information (NBA games only)
     """
-    try:
-        print(f"Querying games for {game_date}...")
-        game_finder = LeagueGameFinder(
-            player_or_team_abbreviation=PlayerOrTeamAbbreviation.team,
-            season_nullable="2025-26",
-            season_type_nullable=SeasonTypeNullable.regular,
-            date_from_nullable=game_date,
-            date_to_nullable=game_date,
-            get_request=True
-        )
-        
-        df = game_finder.league_game_finder_results.get_data_frame()
-        
-        if df.empty:
-            print(f"\n⚠ WARNING: No games found for 2025-26 season on {game_date}")
-            return None
-        
-        # Filter out G League games
-        original_count = len(df['GAME_ID'].unique()) if not df.empty else 0
-        df = filter_nba_games(df)
-        filtered_count = len(df['GAME_ID'].unique()) if not df.empty else 0
-        
-        if original_count > filtered_count:
-            print(f"  ✓ Filtered out {original_count - filtered_count} G League/non-NBA game(s)")
-        
-        if df.empty:
-            print(f"\n⚠ WARNING: No NBA games found for 2025-26 season on {game_date} (after filtering)")
-            return None
-        
-        return df
-        
-    except Exception as e:
-        print(f"\n✗ FAIL: Error querying games")
-        print(f"Error details: {str(e)}")
-        raise
+    if max_attempts is None:
+        max_attempts = FEED_DISCOVER_MAX_ATTEMPTS
+    if delay_seconds is None:
+        delay_seconds = FEED_DISCOVER_RETRY_DELAY_SEC
+
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            if attempt > 1:
+                print(f"  Retry {attempt}/{max_attempts} for {game_date} (wait {delay_seconds}s)...")
+            else:
+                print(
+                    f"Querying games for {game_date} (timeout={NBA_DISCOVER_TIMEOUT}s, max_attempts={max_attempts})..."
+                )
+            game_finder = LeagueGameFinder(
+                player_or_team_abbreviation=PlayerOrTeamAbbreviation.team,
+                season_nullable="2025-26",
+                season_type_nullable=SeasonTypeNullable.regular,
+                date_from_nullable=game_date,
+                date_to_nullable=game_date,
+                timeout=NBA_DISCOVER_TIMEOUT,
+                get_request=True
+            )
+            df = game_finder.league_game_finder_results.get_data_frame()
+            if df.empty:
+                print(f"\n⚠ WARNING: No games found for 2025-26 season on {game_date}")
+                return None
+            original_count = len(df['GAME_ID'].unique()) if not df.empty else 0
+            df = filter_nba_games(df)
+            filtered_count = len(df['GAME_ID'].unique()) if not df.empty else 0
+            if original_count > filtered_count:
+                print(f"  ✓ Filtered out {original_count - filtered_count} G League/non-NBA game(s)")
+            if df.empty:
+                print(f"\n⚠ WARNING: No NBA games found for 2025-26 season on {game_date} (after filtering)")
+                return None
+            return df
+        except Exception as e:
+            last_error = e
+            log_http_error(f"discover games for {game_date} (LeagueGameFinder)", e)
+            if attempt < max_attempts and is_retryable_request_error(e):
+                time.sleep(delay_seconds)
+                continue
+            break
+    # Direct request fallback (same headers as standings/boxscores)
+    if last_error is not None:
+        print(f"  Trying direct request for {game_date}...")
+        try:
+            df_direct = fetch_leaguegamefinder_direct(game_date)
+            if df_direct is not None and not df_direct.empty:
+                original_count = len(df_direct["GAME_ID"].unique()) if "GAME_ID" in df_direct.columns else 0
+                df_direct = filter_nba_games(df_direct)
+                if not df_direct.empty:
+                    print(f"  ✓ Got {len(df_direct['GAME_ID'].unique())} games via direct request")
+                    return df_direct
+        except Exception as fallback_err:
+            log_http_error(f"direct leaguegamefinder for {game_date}", fallback_err)
+        raise last_error
+    return None
 
 
 def display_games(df):
@@ -692,99 +741,99 @@ def get_game_videos(game_id):
         return []
 
 
+def _call_nba_api_with_retries(callable_fn, label, game_id=None):
+    """Run an nba_api call with retries and backoff. Returns (result, True) or (None, False)."""
+    last_err = None
+    for attempt in range(1, FEED_API_RETRIES + 1):
+        try:
+            return callable_fn(), True
+        except Exception as e:
+            last_err = e
+            if is_retryable_request_error(e) and attempt < FEED_API_RETRIES:
+                wait = FEED_API_BACKOFF_SEC * attempt
+                print(f"    ⏳ {label} attempt {attempt}/{FEED_API_RETRIES} failed; retrying in {wait:.0f}s...")
+                time.sleep(wait)
+            else:
+                if game_id:
+                    log_http_error(f"{label} for game {game_id}", e)
+                else:
+                    log_http_error(label, e)
+                return None, False
+    return None, False
+
+
 def get_boxscore_traditional(game_id):
     """
     Get box score traditional data using BoxScoreTraditionalV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats, TeamStats, TeamStarterBenchStats lists
+    Uses retries then direct request fallback (same as import_daily_boxscores).
     """
-    try:
-        print("  Fetching box score traditional data...")
+    def _fetch():
         from nba_api.stats.endpoints.boxscoretraditionalv3 import BoxScoreTraditionalV3
-        
         box_score = BoxScoreTraditionalV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
+        time.sleep(1.0)
         box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': [],
-            'TeamStarterBenchStats': []
+            "PlayerStats": [],
+            "TeamStats": [],
+            "TeamStarterBenchStats": [],
         }
-        
         if box_score.player_stats:
             player_df = box_score.player_stats.get_data_frame()
             if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
+                box_score_data["PlayerStats"] = player_df.to_dict("records")
         if box_score.team_stats:
             team_df = box_score.team_stats.get_data_frame()
             if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
+                box_score_data["TeamStats"] = team_df.to_dict("records")
         if box_score.team_starter_bench_stats:
             starter_bench_df = box_score.team_starter_bench_stats.get_data_frame()
             if not starter_bench_df.empty:
-                box_score_data['TeamStarterBenchStats'] = starter_bench_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
+                box_score_data["TeamStarterBenchStats"] = starter_bench_df.to_dict("records")
         return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score traditional: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': [],
-            'TeamStarterBenchStats': []
-        }
+
+    print("  Fetching box score traditional data...")
+    result, ok = _call_nba_api_with_retries(
+        lambda: _fetch(),
+        "box score traditional",
+        game_id=game_id,
+    )
+    if ok and result:
+        print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+        return result
+    # Direct request fallback
+    print("    Trying direct request with browser headers...")
+    fallback = fetch_boxscore_traditional_direct(game_id)
+    if fallback and (fallback.get("PlayerStats") or fallback.get("TeamStats")):
+        print(f"    ✓ Found {len(fallback.get('PlayerStats', []))} players (direct request)")
+        return fallback
+    return {"PlayerStats": [], "TeamStats": [], "TeamStarterBenchStats": []}
 
 
 def get_boxscore_advanced(game_id):
-    """
-    Get box score advanced data using BoxScoreAdvancedV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
-    try:
-        print("  Fetching box score advanced data...")
+    """Get box score advanced data (with retries)."""
+    def _fetch():
         from nba_api.stats.endpoints.boxscoreadvancedv3 import BoxScoreAdvancedV3
-        
         box_score = BoxScoreAdvancedV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
         if box_score.player_stats:
             player_df = box_score.player_stats.get_data_frame()
             if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
+                box_score_data["PlayerStats"] = player_df.to_dict("records")
         if box_score.team_stats:
             team_df = box_score.team_stats.get_data_frame()
             if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
+                box_score_data["TeamStats"] = team_df.to_dict("records")
         return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score advanced: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+
+    try:
+        print("  Fetching box score advanced data...")
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score advanced", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_game_metadata(game_id, game_df_row):
@@ -855,398 +904,228 @@ def get_game_metadata(game_id, game_df_row):
 
 
 def get_boxscore_four_factors(game_id):
-    """
-    Get box score four factors data using BoxScoreFourFactorsV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score four factors data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscorefourfactorsv3 import BoxScoreFourFactorsV3
+        box_score = BoxScoreFourFactorsV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score four factors data...")
-        from nba_api.stats.endpoints.boxscorefourfactorsv3 import BoxScoreFourFactorsV3
-        
-        box_score = BoxScoreFourFactorsV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score four factors: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score four factors", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_boxscore_summary(game_id):
-    """
-    Get box score summary data using BoxScoreSummaryV2 endpoint.
-    This includes game info, line scores, officials, inactive players, etc.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with all summary data sets
-    """
+    """Get box score summary data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscoresummaryv2 import BoxScoreSummaryV2
+        box_score = BoxScoreSummaryV2(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {
+            "AvailableVideo": [], "GameInfo": [], "GameSummary": [], "InactivePlayers": [],
+            "LastMeeting": [], "LineScore": [], "Officials": [], "OtherStats": [], "SeasonSeries": [],
+        }
+        for attr, key in [
+            ("available_video", "AvailableVideo"), ("game_info", "GameInfo"),
+            ("game_summary", "GameSummary"), ("inactive_players", "InactivePlayers"),
+            ("last_meeting", "LastMeeting"), ("line_score", "LineScore"),
+            ("officials", "Officials"), ("other_stats", "OtherStats"),
+            ("season_series", "SeasonSeries"),
+        ]:
+            obj = getattr(box_score, attr, None)
+            if obj:
+                df = obj.get_data_frame()
+                if df is not None and not df.empty:
+                    box_score_data[key] = df.to_dict("records")
+        return box_score_data
+
     try:
         print("  Fetching box score summary data...")
-        from nba_api.stats.endpoints.boxscoresummaryv2 import BoxScoreSummaryV2
-        
-        box_score = BoxScoreSummaryV2(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'AvailableVideo': [],
-            'GameInfo': [],
-            'GameSummary': [],
-            'InactivePlayers': [],
-            'LastMeeting': [],
-            'LineScore': [],
-            'Officials': [],
-            'OtherStats': [],
-            'SeasonSeries': []
-        }
-        
-        if box_score.available_video:
-            df = box_score.available_video.get_data_frame()
-            if not df.empty:
-                box_score_data['AvailableVideo'] = df.to_dict('records')
-        
-        if box_score.game_info:
-            df = box_score.game_info.get_data_frame()
-            if not df.empty:
-                box_score_data['GameInfo'] = df.to_dict('records')
-        
-        if box_score.game_summary:
-            df = box_score.game_summary.get_data_frame()
-            if not df.empty:
-                box_score_data['GameSummary'] = df.to_dict('records')
-        
-        if box_score.inactive_players:
-            df = box_score.inactive_players.get_data_frame()
-            if not df.empty:
-                box_score_data['InactivePlayers'] = df.to_dict('records')
-        
-        if box_score.last_meeting:
-            df = box_score.last_meeting.get_data_frame()
-            if not df.empty:
-                box_score_data['LastMeeting'] = df.to_dict('records')
-        
-        if box_score.line_score:
-            df = box_score.line_score.get_data_frame()
-            if not df.empty:
-                box_score_data['LineScore'] = df.to_dict('records')
-        
-        if box_score.officials:
-            df = box_score.officials.get_data_frame()
-            if not df.empty:
-                box_score_data['Officials'] = df.to_dict('records')
-        
-        if box_score.other_stats:
-            df = box_score.other_stats.get_data_frame()
-            if not df.empty:
-                box_score_data['OtherStats'] = df.to_dict('records')
-        
-        if box_score.season_series:
-            df = box_score.season_series.get_data_frame()
-            if not df.empty:
-                box_score_data['SeasonSeries'] = df.to_dict('records')
-        
-        print(f"    ✓ Found summary data: {len(box_score_data['LineScore'])} line scores, "
-              f"{len(box_score_data['Officials'])} officials, "
-              f"{len(box_score_data['InactivePlayers'])} inactive players")
-        return box_score_data
-        
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score summary", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found summary data: {len(result.get('LineScore', []))} line scores, "
+                  f"{len(result.get('Officials', []))} officials, "
+                  f"{len(result.get('InactivePlayers', []))} inactive players")
+            return result
     except Exception as e:
-        print(f"    ⚠ Error fetching box score summary: {e}")
-        return {
-            'AvailableVideo': [],
-            'GameInfo': [],
-            'GameSummary': [],
-            'InactivePlayers': [],
-            'LastMeeting': [],
-            'LineScore': [],
-            'Officials': [],
-            'OtherStats': [],
-            'SeasonSeries': []
-        }
+        log_http_error(f"box score summary for game {game_id}", e)
+    return {
+        "AvailableVideo": [], "GameInfo": [], "GameSummary": [], "InactivePlayers": [],
+        "LastMeeting": [], "LineScore": [], "Officials": [], "OtherStats": [], "SeasonSeries": [],
+    }
 
 
 def get_boxscore_scoring(game_id):
-    """
-    Get box score scoring data using BoxScoreScoringV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score scoring data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscorescoringv3 import BoxScoreScoringV3
+        box_score = BoxScoreScoringV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score scoring data...")
-        from nba_api.stats.endpoints.boxscorescoringv3 import BoxScoreScoringV3
-        
-        box_score = BoxScoreScoringV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score scoring: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score scoring", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_boxscore_usage(game_id):
-    """
-    Get box score usage data using BoxScoreUsageV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score usage data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscoreusagev3 import BoxScoreUsageV3
+        box_score = BoxScoreUsageV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score usage data...")
-        from nba_api.stats.endpoints.boxscoreusagev3 import BoxScoreUsageV3
-        
-        box_score = BoxScoreUsageV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score usage: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score usage", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_boxscore_player_track(game_id):
-    """
-    Get box score player track data using BoxScorePlayerTrackV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score player track data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscoreplayertrackv3 import BoxScorePlayerTrackV3
+        box_score = BoxScorePlayerTrackV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score player track data...")
-        from nba_api.stats.endpoints.boxscoreplayertrackv3 import BoxScorePlayerTrackV3
-        
-        box_score = BoxScorePlayerTrackV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score player track: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score player track", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_boxscore_misc(game_id):
-    """
-    Get box score misc data using BoxScoreMiscV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score misc data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscoremiscv3 import BoxScoreMiscV3
+        box_score = BoxScoreMiscV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score misc data...")
-        from nba_api.stats.endpoints.boxscoremiscv3 import BoxScoreMiscV3
-        
-        box_score = BoxScoreMiscV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score misc: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score misc", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def get_boxscore_matchups(game_id):
-    """
-    Get box score matchups data using BoxScoreMatchupsV3 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats list (matchup data)
-    """
+    """Get box score matchups data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscorematchupsv3 import BoxScoreMatchupsV3
+        box_score = BoxScoreMatchupsV3(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score matchups data...")
-        from nba_api.stats.endpoints.boxscorematchupsv3 import BoxScoreMatchupsV3
-        
-        box_score = BoxScoreMatchupsV3(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} matchup records")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score matchups: {e}")
-        return {
-            'PlayerStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score matchups", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} matchup records")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": []}
 
 
 def get_boxscore_hustle(game_id):
-    """
-    Get box score hustle data using BoxScoreHustleV2 endpoint.
-    
-    Args:
-        game_id: Game ID string
-    
-    Returns:
-        Dictionary with PlayerStats and TeamStats lists
-    """
+    """Get box score hustle data (with retries)."""
+    def _fetch():
+        from nba_api.stats.endpoints.boxscorehustlev2 import BoxScoreHustleV2
+        box_score = BoxScoreHustleV2(game_id=game_id, get_request=True)
+        time.sleep(1.0)
+        box_score_data = {"PlayerStats": [], "TeamStats": []}
+        if box_score.player_stats:
+            df = box_score.player_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["PlayerStats"] = df.to_dict("records")
+        if box_score.team_stats:
+            df = box_score.team_stats.get_data_frame()
+            if not df.empty:
+                box_score_data["TeamStats"] = df.to_dict("records")
+        return box_score_data
     try:
         print("  Fetching box score hustle data...")
-        from nba_api.stats.endpoints.boxscorehustlev2 import BoxScoreHustleV2
-        
-        box_score = BoxScoreHustleV2(game_id=game_id, get_request=True)
-        time.sleep(1.0)  # Rate limiting
-        
-        box_score_data = {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
-        
-        if box_score.player_stats:
-            player_df = box_score.player_stats.get_data_frame()
-            if not player_df.empty:
-                box_score_data['PlayerStats'] = player_df.to_dict('records')
-        
-        if box_score.team_stats:
-            team_df = box_score.team_stats.get_data_frame()
-            if not team_df.empty:
-                box_score_data['TeamStats'] = team_df.to_dict('records')
-        
-        print(f"    ✓ Found {len(box_score_data['PlayerStats'])} players, "
-              f"{len(box_score_data['TeamStats'])} teams")
-        return box_score_data
-        
-    except Exception as e:
-        print(f"    ⚠ Error fetching box score hustle: {e}")
-        return {
-            'PlayerStats': [],
-            'TeamStats': []
-        }
+        result, ok = _call_nba_api_with_retries(lambda: _fetch(), "box score hustle", game_id=game_id)
+        if ok and result:
+            print(f"    ✓ Found {len(result['PlayerStats'])} players, {len(result['TeamStats'])} teams")
+            return result
+    except Exception:
+        pass
+    return {"PlayerStats": [], "TeamStats": []}
 
 
 def aggregate_player_stats(box_score_traditional, box_score_advanced, box_score_four_factors, box_score_hustle, box_score_misc, box_score_player_track, box_score_scoring, box_score_usage):
@@ -2540,11 +2419,13 @@ def get_complete_game_data(game_id, game_df):
                     if info.get('GAME_STATUS_TEXT'):
                         game_data['gameMetadata']['status'] = info.get('GAME_STATUS_TEXT')
         
-        # Get team leaders from ScoreboardV2
+        # Get team leaders from ScoreboardV2 (optional; API can be very slow — see NBA_SCOREBOARD_TIMEOUT / INCLUDE_SCOREBOARD_TEAM_LEADERS)
         try:
-            print("  Fetching team leaders from scoreboard...", flush=True)
-            from nba_api.stats.endpoints.scoreboardv2 import ScoreboardV2
-            
+            if SKIP_SCOREBOARD_TEAM_LEADERS:
+                print("  Skipping team leaders (default; set INCLUDE_SCOREBOARD_TEAM_LEADERS=1 to fetch)", flush=True)
+            else:
+                print(f"  Fetching team leaders from scoreboard (timeout {NBA_SCOREBOARD_TIMEOUT}s)...", flush=True)
+
             # Extract game date from game_row (most reliable source)
             game_date_str = None
             if game_row is not None:
@@ -2553,7 +2434,8 @@ def get_complete_game_data(game_id, game_df):
             if not game_date_str:
                 game_date_str = game_data['gameMetadata'].get('date', '')
             
-            if game_date_str:
+            if game_date_str and not SKIP_SCOREBOARD_TEAM_LEADERS:
+                from nba_api.stats.endpoints.scoreboardv2 import ScoreboardV2
                 # Convert from YYYY-MM-DD format to YYYYMMDD format for ScoreboardV2
                 if 'T' in game_date_str:
                     game_date = game_date_str.split('T')[0].replace('-', '')
@@ -2561,7 +2443,12 @@ def get_complete_game_data(game_id, game_df):
                     game_date = game_date_str.replace('-', '')
                 
                 try:
-                    scoreboard = ScoreboardV2(game_date=game_date, get_request=True)
+                    # timeout must be > 30 or nba_timeout_patch replaces it with NBA_API_TIMEOUT (300s)
+                    scoreboard = ScoreboardV2(
+                        game_date=game_date,
+                        get_request=True,
+                        timeout=max(31, NBA_SCOREBOARD_TIMEOUT),
+                    )
                     time.sleep(1.0)  # Rate limiting
                     
                     if scoreboard.team_leaders:
@@ -2585,10 +2472,10 @@ def get_complete_game_data(game_id, game_df):
                     else:
                         print(f"    ⚠ ScoreboardV2 returned no team_leaders data", flush=True)
                 except (json.JSONDecodeError, ValueError, Exception) as api_error:
-                    print(f"    ⚠ Error fetching team leaders from API (date may not have data): {type(api_error).__name__}", flush=True)
+                    log_http_error(f"team leaders for game {game_id} (ScoreboardV2)", api_error, include_raw=False)
                     # Continue without team leaders - this is not critical
         except Exception as e:
-            print(f"    ⚠ Error fetching team leaders: {type(e).__name__}: {str(e)[:100]}", flush=True)
+            log_http_error(f"team leaders for game {game_id}", e, include_raw=False)
             # Continue without team leaders
         
         # Get videos and play-by-play
@@ -2646,8 +2533,7 @@ def get_complete_game_data(game_id, game_df):
         return game_data
         
     except Exception as e:
-        print(f"\n✗ FAIL: Error building complete game data")
-        print(f"Error details: {str(e)}")
+        log_http_error(f"build complete game data for game {game_id}", e)
         import traceback
         traceback.print_exc()
         return None
@@ -2719,7 +2605,7 @@ def get_shot_chart_data(game_id, player_ids_by_team):
         return shot_chart_data
         
     except Exception as e:
-        print(f"    ⚠ Error fetching shot chart data: {e}")
+        log_http_error(f"shot chart data for game {game_id}", e)
         return {}
 
 
@@ -2889,6 +2775,23 @@ def is_valid_game_data(game_data):
     return True, "ok"
 
 
+def maybe_upload_feed_json_to_supabase(game_id, game_data):
+    """Upload to game-data/{game_id}.json when credentials are configured; log errors only."""
+    if not is_supabase_upload_configured():
+        return
+    try:
+        upload_feed_game_json(game_id, game_data)
+        print(f"  ✓ Uploaded to Supabase Storage: game-data/{game_id}.json")
+    except ImportError as e:
+        log_http_error(
+            f"Supabase upload for game {game_id} (pip install supabase?)",
+            e,
+            include_raw=False,
+        )
+    except Exception as e:
+        log_http_error(f"Supabase upload for game {game_id}", e, include_raw=False)
+
+
 def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
     """
     Main function: Get all games for a date range and scrape them automatically.
@@ -2916,6 +2819,12 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
         print(f"Total days to process: {total_days}")
         print(f"Max retries per failed game: {max_retries}")
         print(f"Output directory: {FEED_DIR}")
+        if is_supabase_upload_configured():
+            print("Supabase Storage upload: enabled (bucket game-data → <game_id>.json at root)")
+        else:
+            print(
+                "Supabase Storage upload: skipped (set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)"
+            )
         print(f"{'='*80}\n")
         
         # Track statistics
@@ -3015,6 +2924,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
                                 with open(output_file, 'w') as f:
                                     json.dump(game_data, f, indent=2)
                                 print(f"\n✓ Complete game data saved to {output_file}")
+                                maybe_upload_feed_json_to_supabase(game_id, game_data)
                                 
                                 if game_success:
                                     successful_games += 1
@@ -3040,8 +2950,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
                         print(f"\n⚠ Interrupted by user")
                         raise
                     except Exception as e:
-                        print(f"\n✗ FAIL: Error processing game {game_id}")
-                        print(f"Error details: {str(e)}")
+                        log_http_error(f"full game scrape for game {game_id} ({matchup})", e)
                         failed_games += 1
                         failed_games_list.append(game_info)
                         import traceback
@@ -3058,8 +2967,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
                     time.sleep(600)  # 10 minutes = 600 seconds
                 
             except Exception as e:
-                print(f"\n✗ FAIL: Error processing date {date_str}")
-                print(f"Error details: {str(e)}")
+                log_http_error(f"scrape date {date_str} (day in date range)", e)
                 import traceback
                 traceback.print_exc()
             
@@ -3119,6 +3027,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
                             with open(output_file, 'w') as f:
                                 json.dump(game_data, f, indent=2)
                             print(f"  ✓ Complete game data saved to {output_file}")
+                            maybe_upload_feed_json_to_supabase(game_id, game_data)
                             
                             if videos_count == 0:
                                 print(f"  ⚠️  No videos but data is valid — saved. Will retry for videos.")
@@ -3132,7 +3041,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
                         still_failed.append(game_info)
                 
                 except Exception as e:
-                    print(f"  ✗ Error on retry: {e}")
+                    log_http_error(f"retry full game scrape for game {game_id}", e)
                     still_failed.append(game_info)
                 
                 # Wait between retries
@@ -3165,9 +3074,7 @@ def scrape_nba_game_ids_date_range(start_date, end_date, max_retries=3):
         print(f"Error details: {str(e)}")
         sys.exit(1)
     except Exception as e:
-        print(f"\n✗ FAIL: Error occurred while scraping games")
-        print(f"Error details: {str(e)}")
-        print(f"Error type: {type(e).__name__}")
+        log_http_error("scrape_games_date_range (main loop)", e)
         import traceback
         traceback.print_exc()
         sys.exit(1)

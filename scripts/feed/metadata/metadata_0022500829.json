@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500829",
+  "gameMetadata": {
+    "date": "2026-02-23T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612758,
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "name": "Kings",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 123,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.76,
+        "fg3_pct": 0.345,
+        "ast": 30,
+        "reb": 45,
+        "tov": 15
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612763,
+      "abbreviation": "MEM",
+      "city": "Memphis",
+      "name": "Grizzlies",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 114,
+      "stats": {
+        "fg_pct": 0.483,
+        "ft_pct": 0.9,
+        "fg3_pct": 0.353,
+        "ast": 33,
+        "reb": 37,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500829",
+      "LAST_GAME_ID": "0022400992",
+      "LAST_GAME_DATE_EST": "2025-03-17T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612763,
+      "LAST_GAME_HOME_TEAM_CITY": "Memphis",
+      "LAST_GAME_HOME_TEAM_NAME": "Grizzlies",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MEM",
+      "LAST_GAME_HOME_TEAM_POINTS": 122,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612758,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Sacramento",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Kings",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 132
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500829": {
+      "team_stats": {}
+    }
+  }
+}

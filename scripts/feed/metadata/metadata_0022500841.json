@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500841",
+  "gameMetadata": {
+    "date": "2026-02-24T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612750,
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "name": "Timberwolves",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 124,
+      "stats": {
+        "fg_pct": 0.534,
+        "ft_pct": 0.684,
+        "fg3_pct": 0.486,
+        "ast": 26,
+        "reb": 41,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.472,
+        "ft_pct": 0.767,
+        "fg3_pct": 0.4,
+        "ast": 27,
+        "reb": 44,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500841",
+      "LAST_GAME_ID": "0022400747",
+      "LAST_GAME_DATE_EST": "2025-02-08T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612757,
+      "LAST_GAME_HOME_TEAM_CITY": "Portland",
+      "LAST_GAME_HOME_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "POR",
+      "LAST_GAME_HOME_TEAM_POINTS": 98,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612750,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Minnesota",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MIN",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 114
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500841": {
+      "team_stats": {}
+    }
+  }
+}

@@ -417,6 +417,46 @@ export const getTeamPrimaryColor = (teamIdentifier: string): string => {
   return getTeamColors(teamIdentifier).primary;
 };
 
+/** Palette slot for feed thumbnails when primary is too close to the on-image team logo (player_spotlight cards only). */
+export type TeamColorSlot = 'primary' | 'secondary' | 'tertiary' | 'quaternary' | 'quinary';
+
+/**
+ * Teams where the feed card gradient should not use primary behind the player/lockup (see FeedThumbnails player_spotlight).
+ * Key: tricode or full name as stored on posts.
+ */
+const PLAYER_SPOTLIGHT_FEED_THUMB_COLOR_SLOT: Partial<Record<string, TeamColorSlot>> = {
+  UTA: 'secondary',
+  'Utah Jazz': 'secondary',
+  TOR: 'secondary',
+  'Toronto Raptors': 'secondary',
+  CHI: 'secondary',
+  'Chicago Bulls': 'secondary',
+  HOU: 'secondary',
+  'Houston Rockets': 'secondary',
+};
+
+/**
+ * Background gradient color for player spotlight feed thumbnails (single team or one side of a split).
+ */
+export const getTeamColorForPlayerSpotlightFeedThumbnail = (teamIdentifier: string): string => {
+  const colors = getTeamColors(teamIdentifier);
+  const slot = PLAYER_SPOTLIGHT_FEED_THUMB_COLOR_SLOT[teamIdentifier] ?? 'primary';
+  const picked = colors[slot];
+  return picked ?? colors.primary;
+};
+
+/**
+ * Other brand color for score text on player spotlight thumbs (thumb background uses {@link getTeamColorForPlayerSpotlightFeedThumbnail}).
+ */
+export const getTeamAlternateColorForPlayerSpotlightFeedThumbnail = (teamIdentifier: string): string => {
+  const colors = getTeamColors(teamIdentifier);
+  const slot = PLAYER_SPOTLIGHT_FEED_THUMB_COLOR_SLOT[teamIdentifier] ?? 'primary';
+  if (slot !== 'primary') {
+    return colors.primary;
+  }
+  return colors.secondary ?? colors.primary;
+};
+
 /**
  * Get secondary color for a team
  */

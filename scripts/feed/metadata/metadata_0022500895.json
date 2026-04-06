@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500895",
+  "gameMetadata": {
+    "date": "2026-03-04T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612762,
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "name": "Jazz",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 102,
+      "stats": {
+        "fg_pct": 0.409,
+        "ft_pct": 0.947,
+        "fg3_pct": 0.308,
+        "ast": 22,
+        "reb": 42,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 106,
+      "stats": {
+        "fg_pct": 0.455,
+        "ft_pct": 0.81,
+        "fg3_pct": 0.257,
+        "ast": 24,
+        "reb": 43,
+        "tov": 14
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500895",
+      "LAST_GAME_ID": "0022400924",
+      "LAST_GAME_DATE_EST": "2025-03-09T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612755,
+      "LAST_GAME_HOME_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_HOME_TEAM_NAME": "76ers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "PHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 126,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612762,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Utah",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Jazz",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "UTA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 122
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500895": {
+      "team_stats": {}
+    }
+  }
+}

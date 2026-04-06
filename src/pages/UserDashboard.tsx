@@ -320,7 +320,7 @@ export default function UserDashboard() {
                         <Button
                           variant="plain"
                           size="sm"
-                          onClick={() => navigate('/today')}
+                          onClick={() => navigate('/feed')}
                         >
                           View All ({favoriteTeams.length})
                         </Button>
@@ -373,7 +373,7 @@ export default function UserDashboard() {
                         <Button
                           variant="plain"
                           size="sm"
-                          onClick={() => navigate('/today')}
+                          onClick={() => navigate('/feed')}
                         >
                           View All ({favoritePlayers.length})
                         </Button>

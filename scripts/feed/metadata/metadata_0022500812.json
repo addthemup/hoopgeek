@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500812",
+  "gameMetadata": {
+    "date": "2026-02-21T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 111,
+      "stats": {
+        "fg_pct": 0.383,
+        "ft_pct": 0.818,
+        "fg3_pct": 0.261,
+        "ast": 19,
+        "reb": 47,
+        "tov": 10
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612740,
+      "abbreviation": "NOP",
+      "city": "New Orleans",
+      "name": "Pelicans",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.494,
+        "ft_pct": 0.763,
+        "fg3_pct": 0.5,
+        "ast": 25,
+        "reb": 49,
+        "tov": 14
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500812",
+      "LAST_GAME_ID": "0022401041",
+      "LAST_GAME_DATE_EST": "2025-03-24T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612740,
+      "LAST_GAME_HOME_TEAM_CITY": "New Orleans",
+      "LAST_GAME_HOME_TEAM_NAME": "Pelicans",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "NOP",
+      "LAST_GAME_HOME_TEAM_POINTS": 112,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612755,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_VISITOR_TEAM_NAME": "76ers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHI",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 99
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500812": {
+      "team_stats": {}
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500850",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612764,
+      "abbreviation": "WAS",
+      "city": "Washington",
+      "name": "Wizards",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 96,
+      "stats": {
+        "fg_pct": 0.383,
+        "ft_pct": 0.938,
+        "fg3_pct": 0.273,
+        "ast": 17,
+        "reb": 44,
+        "tov": 14
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.462,
+        "ft_pct": 0.784,
+        "fg3_pct": 0.333,
+        "ast": 30,
+        "reb": 56,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500850",
+      "LAST_GAME_ID": "0022400744",
+      "LAST_GAME_DATE_EST": "2025-02-08T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612737,
+      "LAST_GAME_HOME_TEAM_CITY": "Atlanta",
+      "LAST_GAME_HOME_TEAM_NAME": "Hawks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "ATL",
+      "LAST_GAME_HOME_TEAM_POINTS": 125,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612764,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Washington",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Wizards",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "WAS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 111
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500850": {
+      "team_stats": {}
+    }
+  }
+}

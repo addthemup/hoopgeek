@@ -124,19 +124,23 @@ def fetch_nba_odds() -> Optional[Dict]:
                 'rawData': game,
             }
             
-            # Extract spread data
+            # Extract spread data (API may return spread as string, e.g. "-3.5" or "−3.5")
             if spread_market and spread_market.get('books'):
                 first_book = spread_market['books'][0]
                 for outcome in first_book.get('outcomes', []):
-                    spread = outcome.get('spread')
-                    if spread is not None:
+                    raw_spread = outcome.get('spread')
+                    if raw_spread is not None:
+                        try:
+                            spread_val = float(str(raw_spread).strip().replace('\u2212', '-'))
+                        except (ValueError, TypeError):
+                            break
                         if outcome.get('type') == 'home':
-                            odds_data['homeSpread'] = float(spread)
-                            odds_data['awaySpread'] = float(-spread)  # Opposite of home spread
+                            odds_data['homeSpread'] = spread_val
+                            odds_data['awaySpread'] = -spread_val  # Opposite of home spread
                         elif outcome.get('type') == 'away':
-                            odds_data['awaySpread'] = float(spread)
-                            odds_data['homeSpread'] = float(-spread)  # Opposite of away spread
-                        odds_data['spread'] = float(spread) if outcome.get('type') == 'home' else float(-spread)
+                            odds_data['awaySpread'] = spread_val
+                            odds_data['homeSpread'] = -spread_val  # Opposite of away spread
+                        odds_data['spread'] = spread_val if outcome.get('type') == 'home' else -spread_val
                         break
             
             # Extract moneyline data

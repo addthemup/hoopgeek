@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500805",
+  "gameMetadata": {
+    "date": "2026-02-20T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612748,
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "name": "Heat",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 128,
+      "stats": {
+        "fg_pct": 0.52,
+        "ft_pct": 0.786,
+        "fg3_pct": 0.371,
+        "ast": 31,
+        "reb": 58,
+        "tov": 8
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 97,
+      "stats": {
+        "fg_pct": 0.379,
+        "ft_pct": 0.6,
+        "fg3_pct": 0.421,
+        "ast": 26,
+        "reb": 46,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500805",
+      "LAST_GAME_ID": "0012500019",
+      "LAST_GAME_DATE_EST": "2025-10-13T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612737,
+      "LAST_GAME_HOME_TEAM_CITY": "Atlanta",
+      "LAST_GAME_HOME_TEAM_NAME": "Hawks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "ATL",
+      "LAST_GAME_HOME_TEAM_POINTS": 119,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612748,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Miami",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Heat",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MIA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 118
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500805": {
+      "team_stats": {}
+    }
+  }
+}

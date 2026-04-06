@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500882",
+  "gameMetadata": {
+    "date": "2026-03-02T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612746,
+      "abbreviation": "LAC",
+      "city": "LA",
+      "name": "Clippers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612744,
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "name": "Warriors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500882",
+      "LAST_GAME_ID": "0012500069",
+      "LAST_GAME_DATE_EST": "2025-10-17T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612744,
+      "LAST_GAME_HOME_TEAM_CITY": "Golden State",
+      "LAST_GAME_HOME_TEAM_NAME": "Warriors",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "GSW",
+      "LAST_GAME_HOME_TEAM_POINTS": 103,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612746,
+      "LAST_GAME_VISITOR_TEAM_CITY": "LA",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Clippers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "LAC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 106
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500882": {
+      "team_stats": {}
+    }
+  }
+}

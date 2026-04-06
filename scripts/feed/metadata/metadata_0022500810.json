@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500810",
+  "gameMetadata": {
+    "date": "2026-02-20T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612743,
+      "abbreviation": "DEN",
+      "city": "Denver",
+      "name": "Nuggets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 157,
+      "stats": {
+        "fg_pct": 0.573,
+        "ft_pct": 0.813,
+        "fg3_pct": 0.512,
+        "ast": 41,
+        "reb": 60,
+        "tov": 15
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 103,
+      "stats": {
+        "fg_pct": 0.407,
+        "ft_pct": 0.621,
+        "fg3_pct": 0.319,
+        "ast": 25,
+        "reb": 36,
+        "tov": 18
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500810",
+      "LAST_GAME_ID": "0022401022",
+      "LAST_GAME_DATE_EST": "2025-03-21T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612757,
+      "LAST_GAME_HOME_TEAM_CITY": "Portland",
+      "LAST_GAME_HOME_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "POR",
+      "LAST_GAME_HOME_TEAM_POINTS": 128,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612743,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Denver",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Nuggets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DEN",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 109
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500810": {
+      "team_stats": {}
+    }
+  }
+}

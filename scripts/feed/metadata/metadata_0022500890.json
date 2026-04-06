@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500890",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "awayTeam": {
+      "team_id": null,
+      "abbreviation": null,
+      "city": null,
+      "name": null,
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": null,
+      "stats": {
+        "fg_pct": null,
+        "ft_pct": null,
+        "fg3_pct": null,
+        "ast": null,
+        "reb": null,
+        "tov": null
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500890",
+      "LAST_GAME_ID": "0022401170",
+      "LAST_GAME_DATE_EST": "2025-04-10T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612750,
+      "LAST_GAME_HOME_TEAM_CITY": "Minnesota",
+      "LAST_GAME_HOME_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIN",
+      "LAST_GAME_HOME_TEAM_POINTS": 141,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612763,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Memphis",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Grizzlies",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MEM",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 125
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500890": {
+      "team_stats": {}
+    }
+  }
+}

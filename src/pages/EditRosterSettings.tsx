@@ -24,6 +24,7 @@ import { Add, Remove, ArrowBack, Save } from '@mui/icons-material';
 import { useLeague } from '../hooks/useLeagues';
 import { useLineupSettings } from '../hooks/useLineupSettings';
 import { supabase } from '../utils/supabase';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
 
 interface RosterSettings {
   roster_positions: Record<string, number>;
@@ -298,7 +299,7 @@ export default function EditRosterSettings() {
   }
 
   return (
-    <Box sx={{ p: 3, maxWidth: '1200px', mx: 'auto' }}>
+    <Box sx={{ p: 3, maxWidth: CONTENT_MAX_WIDTH, mx: 'auto' }}>
       {/* Header */}
       <Box sx={{ mb: 4 }}>
         <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>

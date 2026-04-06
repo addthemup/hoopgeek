@@ -6,8 +6,14 @@ interface PlayerJerseyProps {
   jerseyNumber?: number | string;
   nbaTeam: string; // Team abbreviation (e.g., "LAL", "BOS")
   position?: string;
-  size?: 'small' | 'medium' | 'large';
+  size?: 'xs' | 'small' | 'medium' | 'large';
   textColor?: string; // Optional text color override for player name
+  /** Show player name below jersey (default true). Set false in lineup modules to show name in card instead. */
+  showName?: boolean;
+  /** Show position in circle badge on jersey (default true). Set false to show position in card instead. */
+  showPosition?: boolean;
+  /** Show team abbreviation below jersey (default true). Set false in lineup header to hide colored team text under jersey. */
+  showTeam?: boolean;
 }
 
 export default function PlayerJersey({ 
@@ -16,12 +22,16 @@ export default function PlayerJersey({
   nbaTeam, 
   position,
   size = 'medium',
-  textColor = '#000'
+  textColor = '#000',
+  showName = true,
+  showPosition = true,
+  showTeam = true,
 }: PlayerJerseyProps) {
   const teamColors = getTeamColors(nbaTeam);
   
-  // Size mappings
+  // Size mappings (xs for 5-per-row lineup header)
   const sizes = {
+    xs: { jersey: 36, number: '0.9rem', name: '0.55rem', position: '0.5rem', svg: 44 },
     small: { jersey: 50, number: '1.2rem', name: '0.65rem', position: '0.55rem', svg: 60 },
     medium: { jersey: 70, number: '1.8rem', name: '0.75rem', position: '0.6rem', svg: 80 },
     large: { jersey: 90, number: '2.2rem', name: '0.85rem', position: '0.65rem', svg: 100 }
@@ -142,8 +152,8 @@ export default function PlayerJersey({
           {jerseyNumber || '??'}
         </Typography>
         
-        {/* Position Badge (if provided) */}
-        {position && (
+        {/* Position Badge (if provided and showPosition) */}
+        {position && showPosition && (
           <Box
             sx={{
               position: 'absolute',
@@ -167,37 +177,41 @@ export default function PlayerJersey({
         )}
       </Box>
 
-      {/* Player Name */}
-      <Typography
-        level="body-xs"
-        sx={{
-          fontWeight: 'bold',
-          textAlign: 'center',
-          fontSize: dimensions.name,
-          color: textColor,
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-          maxWidth: dimensions.jersey + 20,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {lastName}
-      </Typography>
-      
-      {/* Team Abbreviation */}
-      <Typography
-        level="body-xs"
-        sx={{
-          fontSize: dimensions.position,
-          color: teamColors.primary,
-          fontWeight: 'bold',
-          textAlign: 'center',
-        }}
-      >
-        {nbaTeam}
-      </Typography>
+      {/* Player Name (optional) */}
+      {showName && (
+        <Typography
+          level="body-xs"
+          sx={{
+            fontWeight: 'bold',
+            textAlign: 'center',
+            fontSize: dimensions.name,
+            color: textColor,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            maxWidth: dimensions.jersey + 20,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {lastName}
+        </Typography>
+      )}
+
+      {/* Team Abbreviation (optional) */}
+      {showTeam && (
+        <Typography
+          level="body-xs"
+          sx={{
+            fontSize: dimensions.position,
+            color: teamColors.primary,
+            fontWeight: 'bold',
+            textAlign: 'center',
+          }}
+        >
+          {nbaTeam}
+        </Typography>
+      )}
     </Box>
   );
 }

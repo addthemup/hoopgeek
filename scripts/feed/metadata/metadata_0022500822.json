@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500822",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612766,
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "name": "Hornets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 129,
+      "stats": {
+        "fg_pct": 0.494,
+        "ft_pct": 0.72,
+        "fg3_pct": 0.543,
+        "ast": 27,
+        "reb": 53,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612764,
+      "abbreviation": "WAS",
+      "city": "Washington",
+      "name": "Wizards",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 112,
+      "stats": {
+        "fg_pct": 0.488,
+        "ft_pct": 0.706,
+        "fg3_pct": 0.429,
+        "ast": 24,
+        "reb": 37,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500822",
+      "LAST_GAME_ID": "0022400860",
+      "LAST_GAME_DATE_EST": "2025-03-01T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612764,
+      "LAST_GAME_HOME_TEAM_CITY": "Washington",
+      "LAST_GAME_HOME_TEAM_NAME": "Wizards",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "WAS",
+      "LAST_GAME_HOME_TEAM_POINTS": 113,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612766,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Charlotte",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hornets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CHA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 100
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500822": {
+      "team_stats": {}
+    }
+  }
+}

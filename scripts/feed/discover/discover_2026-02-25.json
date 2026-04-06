@@ -1,0 +1,35 @@
+{
+  "date": "2026-02-25",
+  "games": [
+    {
+      "game_id": "0022500843",
+      "matchup": "SAS @ TOR",
+      "date": "2026-02-25"
+    },
+    {
+      "game_id": "0022500847",
+      "matchup": "BOS @ DEN",
+      "date": "2026-02-25"
+    },
+    {
+      "game_id": "0022500846",
+      "matchup": "MIL vs. CLE",
+      "date": "2026-02-25"
+    },
+    {
+      "game_id": "0022500844",
+      "matchup": "GSW @ MEM",
+      "date": "2026-02-25"
+    },
+    {
+      "game_id": "0022500845",
+      "matchup": "HOU vs. SAC",
+      "date": "2026-02-25"
+    },
+    {
+      "game_id": "0022500842",
+      "matchup": "DET vs. OKC",
+      "date": "2026-02-25"
+    }
+  ]
+}

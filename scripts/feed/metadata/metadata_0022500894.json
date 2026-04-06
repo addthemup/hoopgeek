@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500894",
+  "gameMetadata": {
+    "date": "2026-03-04T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612766,
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "name": "Hornets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 118,
+      "stats": {
+        "fg_pct": 0.461,
+        "ft_pct": 0.81,
+        "fg3_pct": 0.388,
+        "ast": 26,
+        "reb": 43,
+        "tov": 4
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612738,
+      "abbreviation": "BOS",
+      "city": "Boston",
+      "name": "Celtics",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 89,
+      "stats": {
+        "fg_pct": 0.38,
+        "ft_pct": 0.95,
+        "fg3_pct": 0.278,
+        "ast": 18,
+        "reb": 45,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500894",
+      "LAST_GAME_ID": "0022401187",
+      "LAST_GAME_DATE_EST": "2025-04-13T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612738,
+      "LAST_GAME_HOME_TEAM_CITY": "Boston",
+      "LAST_GAME_HOME_TEAM_NAME": "Celtics",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BOS",
+      "LAST_GAME_HOME_TEAM_POINTS": 93,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612766,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Charlotte",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hornets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CHA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 86
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500894": {
+      "team_stats": {}
+    }
+  }
+}

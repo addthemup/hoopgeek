@@ -59,10 +59,17 @@ export default {
 
 async function updateLiveStats(env) {
   const startTime = Date.now();
-  
-  const scoreboard = await fetchNBAScoreboard();
-  const games = scoreboard?.scoreboard?.games || [];
-  
+
+  let scoreboard;
+  try {
+    scoreboard = await fetchNBAScoreboard();
+  } catch (e) {
+    console.error('❌ Failed to fetch NBA scoreboard:', e.message);
+    throw e;
+  }
+  // Support both { scoreboard: { games } } and { games } response shapes
+  const games = scoreboard?.scoreboard?.games ?? scoreboard?.games ?? [];
+
   console.log(`📊 Found ${games.length} games today`);
   
   // ONLY process LIVE games (status = 2), skip final games
@@ -96,20 +103,22 @@ async function updateLiveStats(env) {
 // ============================================================================
 
 async function fetchNBAScoreboard() {
-  const response = await fetch(
-    'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json',
-    { headers: { 'User-Agent': 'Mozilla/5.0' } }
-  );
-  if (!response.ok) throw new Error(`Scoreboard API returned ${response.status}`);
+  const url = 'https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json';
+  const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Scoreboard API ${response.status}: ${text.slice(0, 200)}`);
+  }
   return await response.json();
 }
 
 async function fetchBoxScore(gameId) {
-  const response = await fetch(
-    `https://cdn.nba.com/static/json/liveData/boxscore/boxscore_${gameId}.json`,
-    { headers: { 'User-Agent': 'Mozilla/5.0' } }
-  );
-  if (!response.ok) throw new Error(`Box score API returned ${response.status}`);
+  const url = `https://cdn.nba.com/static/json/liveData/boxscore/boxscore_${gameId}.json`;
+  const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Box score ${gameId} API ${response.status}: ${text.slice(0, 200)}`);
+  }
   return await response.json();
 }
 
@@ -136,10 +145,14 @@ async function processGame(game, env) {
     let playersUpdated = 0;
     for (const player of allPlayers) {
       const stats = player.statistics || {};
-      
+      const personId = player.personId ?? player.person_id ?? player.id;
+      if (!personId) {
+        console.warn(`⚠️  Skipping player with no id in game ${gameId}:`, player);
+        continue;
+      }
       // Skip players who haven't played
       if (!stats.minutes || stats.minutes === 'PT00M00.00S') continue;
-      
+
       const convertedStats = {
         pts: stats.points || 0,
         reb: stats.reboundsTotal || 0,
@@ -163,12 +176,15 @@ async function processGame(game, env) {
         plus_minus: stats.plusMinusPoints || 0,
       };
       
+      const playerName = player.firstName != null && player.familyName != null
+        ? `${player.firstName} ${player.familyName}`
+        : (player.name ?? player.playerName ?? `Player ${personId}`);
       const success = await upsertPlayerStats(env, {
         game_id: gameId,
-        nba_player_id: player.personId,
-        player_name: `${player.firstName} ${player.familyName}`,
-        team_tricode: player.teamTricode,
-        team_id: player.teamId,
+        nba_player_id: personId,
+        player_name: playerName,
+        team_tricode: player.teamTricode ?? player.team_tricode ?? null,
+        team_id: player.teamId ?? player.team_id ?? null,
         stats: convertedStats,
         raw_stats: stats,
       });
@@ -211,8 +227,8 @@ async function upsertPlayerStats(env, data) {
     });
     
     if (!response.ok) {
-      const error = await response.text();
-      console.error(`❌ Supabase upsert failed (${response.status}) for ${data.player_name}:`, error);
+      const errorBody = await response.text();
+      console.error(`❌ Supabase upsert failed (${response.status}) for ${data.player_name}:`, errorBody);
       return false;
     }
     return true;

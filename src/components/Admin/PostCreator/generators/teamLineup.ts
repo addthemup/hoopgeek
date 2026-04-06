@@ -1,15 +1,19 @@
 /**
  * Team of the Night / Team of the Week section generator.
  *
- * Produces: hero → headline → lineup_card → player_highlight per player
+ * Produces: hero → headline → team_of_night_module | team_of_week_module → player_highlight per player
+ * Module section uses same display component as the live feed modules.
  */
 
-import { sortHighlightClipsChronological } from '../../../../utils/sortHighlightClips'
 import type {
   HeroContent,
   HeadlineContent,
   PlayerHighlightContent,
   LineupPlayer,
+  TeamOfNightModuleContent,
+  TeamOfNightPlayerEntry,
+  TeamOfWeekModuleContent,
+  TeamOfWeekPlayerEntry,
 } from '../../../../types/feed'
 import type { SectionDraft, GeneratorContext, ResolvedPlayer } from '../types'
 import { nextSectionId, resetSectionIdCounter, formatSalary } from '../utils'
@@ -41,7 +45,6 @@ export async function generateTeamLineupSections(
     player_id: null, team_tricode: null,
   })
 
-  // Lineup card
   const toLineupPlayer = (p: ResolvedPlayer): LineupPlayer => {
     const clips = p.nba_player_id
       ? getPlayerHighlightClips(p.nba_player_id, matchedGameData, clipsPerPlayer).map(c => ({
@@ -64,19 +67,75 @@ export async function generateTeamLineupSections(
     }
   }
 
-  const starters = resolvedPlayers.filter(p => p.role === 'Starter').map(toLineupPlayer)
-  const bench = resolvedPlayers.filter(p => p.role === 'Bench').map(toLineupPlayer)
-
-  sections.push({
-    id: nextSectionId(), section_type: 'lineup_card', title: badgeText,
-    content: {
-      starters, bench,
-      total_salary: draft.metadata.total_salary,
-      total_fantasy_points: draft.metadata.total_fantasy_points || draft.metadata.total_avg_fantasy_points,
-      salary_cap: draft.metadata.salary_cap,
-    },
-    player_id: null, team_tricode: null,
-  })
+  if (mode === 'totn') {
+    const starters = resolvedPlayers.filter((p) => p.role === 'Starter')
+    const bench = resolvedPlayers.filter((p) => p.role === 'Bench')
+    const totnPlayers: TeamOfNightPlayerEntry[] = [
+      ...starters.map((p, idx) => ({
+        player_id: p.id,
+        nba_player_id: p.nba_player_id ?? 0,
+        player_name: p.name,
+        team: p.team_abbreviation ?? '',
+        player_position: p.position ?? '',
+        jersey_number: String(p.jersey_number ?? ''),
+        salary: p.salary,
+        fantasy_points: p.fantasy_points,
+        games_played: 1,
+        lineup_order: idx + 1,
+        lineup_unit: 'starters' as const,
+        unit_position: idx + 1,
+        weighted_points: p.fantasy_points * 1.0,
+      })),
+      ...bench.map((p, idx) => ({
+        player_id: p.id,
+        nba_player_id: p.nba_player_id ?? 0,
+        player_name: p.name,
+        team: p.team_abbreviation ?? '',
+        player_position: p.position ?? '',
+        jersey_number: String(p.jersey_number ?? ''),
+        salary: p.salary,
+        fantasy_points: p.fantasy_points,
+        games_played: 1,
+        lineup_order: starters.length + idx + 1,
+        lineup_unit: 'bench' as const,
+        unit_position: idx + 1,
+        weighted_points: p.fantasy_points * (idx < 5 ? 0.75 : 0.5),
+      })),
+    ]
+    sections.push({
+      id: nextSectionId(),
+      section_type: 'team_of_night_module',
+      title: '',
+      content: { players: totnPlayers, date: draft.subtitle || '' } satisfies TeamOfNightModuleContent,
+      player_id: null,
+      team_tricode: null,
+    })
+  } else {
+    const totwPlayers: TeamOfWeekPlayerEntry[] = resolvedPlayers.map((p) => ({
+      player_id: p.id,
+      nba_player_id: p.nba_player_id ?? 0,
+      player_name: p.name,
+      team: p.team_abbreviation ?? '',
+      player_position: p.position ?? '',
+      jersey_number: String(p.jersey_number ?? ''),
+      salary: p.salary,
+      avg_fantasy_points: p.fantasy_points,
+      games_played: 1,
+    }))
+    sections.push({
+      id: nextSectionId(),
+      section_type: 'team_of_week_module',
+      title: '',
+      content: {
+        players: totwPlayers,
+        week_name: draft.metadata?.week_name,
+        start_date: draft.metadata?.start_date,
+        end_date: draft.metadata?.end_date,
+      } satisfies TeamOfWeekModuleContent,
+      player_id: null,
+      team_tricode: null,
+    })
+  }
 
   // Per-player highlight sections
   for (const player of resolvedPlayers) {

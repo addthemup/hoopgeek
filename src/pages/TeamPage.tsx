@@ -6,9 +6,9 @@ import {
   Card,
   CardContent,
   Stack,
-  Grid,
   Avatar,
   LinearProgress,
+  CircularProgress,
   Alert,
   Table,
 } from '@mui/joy'
@@ -24,6 +24,11 @@ import { useTeamEstimatedMetrics } from '../hooks/useTeamEstimatedMetrics'
 import { useTeamPlayerDashboard } from '../hooks/useTeamPlayerDashboard'
 import { useMediaQuery } from '@mui/material'
 import TeamFourFactors from '../components/TeamFourFactors'
+import TeamPageLayout from '../components/Feed/TeamPageLayout'
+import type { TeamDrawerModule } from '../components/Feed/TeamPageLayout'
+import { FeedCard } from './Highlights'
+import type { FeedPost } from '../types/feed'
+import { CONTENT_MAX_WIDTH } from '../constants/layout'
 
 interface TeamData {
   id: string
@@ -442,8 +447,33 @@ export default function TeamPage() {
     '2025-26',
   )
 
+  // Fetch feed posts relevant to this team (by team_tricodes)
+  const teamAbbreviation = teamData?.abbreviation
+  const { data: teamFeedPosts, isLoading: feedPostsLoading } = useQuery<FeedPost[]>({
+    queryKey: ['team-feed-posts', teamAbbreviation],
+    queryFn: async () => {
+      if (!teamAbbreviation) return []
+
+      const { data, error: feedErr } = await supabase
+        .from('feed_posts')
+        .select('*')
+        .eq('status', 'published')
+        .contains('team_tricodes', [teamAbbreviation])
+        .order('published_at', { ascending: false })
+        .limit(50)
+
+      if (feedErr) {
+        console.error('Error fetching team feed posts:', feedErr)
+        return []
+      }
+
+      return (data ?? []) as FeedPost[]
+    },
+    enabled: !!teamAbbreviation,
+    staleTime: 1000 * 60 * 2,
+  })
+
   // Detect mobile for proper spacing - hooks must be called before any conditional returns
-  const isMobile = useMediaQuery('(max-width: 900px)')
   const isLandscape = useMediaQuery('(orientation: landscape)')
   const isMobileHeight = useMediaQuery('(max-height: 600px)')
   const isLandscapeMobile = isLandscape && isMobileHeight
@@ -463,327 +493,400 @@ export default function TeamPage() {
 
   if (isLoading) {
     return (
-      <Box sx={{ bgcolor: 'background.body', minHeight: '100vh', py: 4 }}>
-        <Box sx={{ maxWidth: '1200px', mx: 'auto', px: 2 }}>
-          <LinearProgress sx={{ mb: 2 }} />
-          <Typography>Loading team data...</Typography>
+      <TeamPageLayout drawerModules={[]}>
+        <Box sx={{ bgcolor: '#ffffff', minHeight: '100vh', py: 4 }}>
+          <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', px: 2, width: '100%', boxSizing: 'border-box' }}>
+            <LinearProgress sx={{ mb: 2 }} />
+            <Typography>Loading team data...</Typography>
+          </Box>
         </Box>
-      </Box>
+      </TeamPageLayout>
     )
   }
 
   if (error || !teamData) {
     return (
-      <Box sx={{ bgcolor: 'background.body', minHeight: '100vh', py: 4 }}>
-        <Box sx={{ maxWidth: '1200px', mx: 'auto', px: 2 }}>
-          <Alert color="danger" sx={{ mb: 2 }}>
-            {error instanceof Error ? error.message : 'Team not found'}
-          </Alert>
-          <IconButton onClick={() => navigate(-1)}>
-            <ArrowBack />
-          </IconButton>
+      <TeamPageLayout drawerModules={[]}>
+        <Box sx={{ bgcolor: '#ffffff', minHeight: '100vh', py: 4 }}>
+          <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', px: 2, width: '100%', boxSizing: 'border-box' }}>
+            <Alert color="danger" sx={{ mb: 2 }}>
+              {error instanceof Error ? error.message : 'Team not found'}
+            </Alert>
+            <IconButton onClick={() => navigate(-1)}>
+              <ArrowBack />
+            </IconButton>
+          </Box>
         </Box>
-      </Box>
+      </TeamPageLayout>
     )
   }
 
-  return (
+  // ─── Drawer modules ─────────────────────────────────────────
+  const playerDashboardDrawer = (
+    <>
+      {playerDashboardLoading && (
+        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading player stats...</Typography>
+      )}
+      {playerDashboardError && (
+        <Typography level="body-sm" sx={{ color: 'danger.500' }}>
+          {playerDashboardError instanceof Error ? playerDashboardError.message : 'Failed to load player dashboard.'}
+        </Typography>
+      )}
+      {!playerDashboardLoading && !playerDashboardError && playerDashboard && (
+        <TeamPlayerDashboardContent raw={playerDashboard.raw} />
+      )}
+    </>
+  )
+
+  const reboundingDrawer = (
+    <>
+      {reboundLoading && (
+        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading rebounding stats...</Typography>
+      )}
+      {reboundError && (
+        <Typography level="body-sm" sx={{ color: 'danger.500' }}>
+          {reboundError instanceof Error ? reboundError.message : 'Failed to load rebounding stats.'}
+        </Typography>
+      )}
+      {!reboundLoading && !reboundError && reboundDashboard && (
+        <ReboundingContent raw={reboundDashboard.raw} />
+      )}
+    </>
+  )
+
+  const shotDashboardDrawer = (
+    <>
+      {dashPtShotsLoading && (
+        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading shot splits...</Typography>
+      )}
+      {dashPtShotsError && (
+        <Typography level="body-sm" sx={{ color: 'danger.500' }}>
+          {dashPtShotsError instanceof Error ? dashPtShotsError.message : 'Failed to load shot dashboard.'}
+        </Typography>
+      )}
+      {!dashPtShotsLoading && !dashPtShotsError && dashPtShots && (
+        <TeamDashPtShotsContent raw={dashPtShots.raw} />
+      )}
+    </>
+  )
+
+  const gameLogsDrawer = (
+    <>
+      {gameLogsLoading && (
+        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading game logs...</Typography>
+      )}
+      {gameLogsError && (
+        <Typography level="body-sm" sx={{ color: 'danger.500' }}>
+          {gameLogsError instanceof Error ? gameLogsError.message : 'Failed to load game logs.'}
+        </Typography>
+      )}
+      {!gameLogsLoading && !gameLogsError && gameLogs && (
+        <TeamGameLogsContent raw={gameLogs.raw} />
+      )}
+    </>
+  )
+
+  const fourFactorsDrawer = (
+    <TeamFourFactors teamId={teamData.team_id} />
+  )
+
+  const drawerModules: TeamDrawerModule[] = [
+    { name: 'player_dashboard', content: playerDashboardDrawer },
+    { name: 'rebounding', content: reboundingDrawer },
+    { name: 'shot_dashboard', content: shotDashboardDrawer },
+    { name: 'game_logs', content: gameLogsDrawer },
+    { name: 'four_factors', content: fourFactorsDrawer },
+  ]
+
+  const drawerHeaderContent = (
     <Box
-      className="team-page-root"
       sx={{
-        bgcolor: 'background.body',
-        minHeight: '100%',
-        overflowX: 'hidden',
-        overflowY: 'visible',
+        p: 1.25,
+        borderRadius: 'md',
+        bgcolor: '#111318',
+        border: '1px solid #2A2D33',
+        color: '#FFFFFF',
       }}
     >
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Avatar
+          sx={{
+            width: 44,
+            height: 44,
+            bgcolor: '#1C2027',
+            color: '#FFFFFF',
+            border: '2px solid #3B3F47',
+            fontSize: '0.9rem',
+            fontWeight: 700,
+            flexShrink: 0,
+          }}
+        >
+          {teamData.abbreviation}
+        </Avatar>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography level="title-md" sx={{ fontWeight: 700, color: '#FFFFFF' }}>
+            {teamData.city} {teamData.nickname}
+          </Typography>
+          <Typography level="body-sm" sx={{ color: '#B9BEC9' }}>
+            {teamData.abbreviation}
+          </Typography>
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1.25, mt: 1.1, flexWrap: 'wrap' }}>
+        <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+          <Box component="span" sx={{ fontWeight: 700, color: '#FFC72C' }}>Founded</Box> {teamData.year_founded}
+        </Typography>
+        <Typography level="body-sm" sx={{ color: '#E8EAF0' }}>
+          <Box component="span" sx={{ fontWeight: 700, color: '#8BC1FF' }}>Coach</Box> {teamData.head_coach}
+        </Typography>
+      </Box>
+    </Box>
+  )
+
+  return (
+    <TeamPageLayout drawerModules={drawerModules} drawerHeaderContent={drawerHeaderContent}>
       <Box
-        className="team-page-content"
+        className="team-page-root"
         sx={{
-          maxWidth: '1200px',
-          mx: 'auto',
-          px: 2,
-          pt: isLandscapeMobile
-            ? '60px'
-            : { xs: '59px', md: 'calc((100vh - 40px) / 16 + 20px)' },
-          pb: 4,
+          bgcolor: '#ffffff',
+          minHeight: '100%',
           overflowX: 'hidden',
           overflowY: 'visible',
         }}
       >
-        {/* Header: title row + info bar */}
         <Box
-          className="team-page-header"
+          className="team-page-content"
           sx={{
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            pb: 2,
-            mb: 3,
-            flexShrink: 0,
+            maxWidth: CONTENT_MAX_WIDTH,
+            mx: 'auto',
+            px: 2,
+            pt: isLandscapeMobile
+              ? 0
+              : { xs: 0, md: 0 },
+            pb: 4,
+            width: '100%',
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
+            overflowY: 'visible',
           }}
         >
-          <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 2, gap: 1.5 }}>
-            <IconButton
-              onClick={() => navigate(-1)}
-              sx={{ '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.1)' } }}
-            >
-              <ArrowBack />
-            </IconButton>
-            <Avatar
-              sx={{
-                width: 64,
-                height: 64,
-                bgcolor: 'primary.500',
-                fontSize: '1.5rem',
-                fontWeight: 600,
-              }}
-            >
-              {teamData.abbreviation}
-            </Avatar>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography level="h2" sx={{ fontWeight: 700 }}>
-                {teamData.city} {teamData.nickname}
-              </Typography>
-              <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+          {/* Header: title row + info bar */}
+          <Box
+            className="team-page-header"
+            sx={{
+              position: 'sticky',
+              top: 0,
+              zIndex: 5,
+              bgcolor: '#ffffff',
+              borderBottom: '1px solid',
+              borderColor: 'divider',
+              pt: 1,
+              pb: 2,
+              mb: 3,
+              flexShrink: 0,
+            }}
+          >
+            <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" sx={{ mb: 2, gap: 1.5 }}>
+              <IconButton
+                onClick={() => navigate(-1)}
+                sx={{ '&:hover': { bgcolor: 'rgba(255, 215, 0, 0.1)' } }}
+              >
+                <ArrowBack />
+              </IconButton>
+              <Avatar
+                sx={{
+                  width: 64,
+                  height: 64,
+                  bgcolor: 'primary.500',
+                  fontSize: '1.5rem',
+                  fontWeight: 600,
+                }}
+              >
                 {teamData.abbreviation}
-              </Typography>
-            </Box>
-            {/* Estimated metrics (2025-26) – to the right of team name */}
-            <Box
-              sx={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                gap: { xs: 1, sm: 1.5 },
-                typography: 'body-sm',
-                color: 'text.secondary',
-                py: 0.5,
-                px: 1,
-                borderRadius: 'sm',
-                bgcolor: 'background.level1',
-                border: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              {estimatedMetricsLoading && (
-                <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading…</Typography>
-              )}
-              {estimatedMetricsError && (
-                <Typography level="body-sm" sx={{ color: 'danger.500' }}>
-                  {estimatedMetricsError instanceof Error ? estimatedMetricsError.message : 'Failed to load'}
+              </Avatar>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography level="h2" sx={{ fontWeight: 700 }}>
+                  {teamData.city} {teamData.nickname}
                 </Typography>
-              )}
-              {!estimatedMetricsLoading && !estimatedMetricsError && estimatedMetrics && (() => {
-                const r = getEstimatedMetricsRow(estimatedMetrics.raw, teamData.team_id)
-                if (!r) return (
-                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>No metrics</Typography>
-                )
-                const num = (v: unknown): number | null => (v == null ? null : typeof v === 'number' ? v : parseFloat(String(v)))
-                const fmt = (v: unknown) => {
-                  const n = num(v)
-                  return n != null && Number.isFinite(n) ? n.toFixed(1) : (v != null ? String(v) : '—')
-                }
-                const fmtInt = (v: unknown) => {
-                  const n = num(v)
-                  return n != null && Number.isFinite(n) ? String(Math.round(n)) : (v != null ? String(v) : '—')
-                }
-                const pct = (v: unknown) => {
-                  const n = num(v)
-                  if (n == null || !Number.isFinite(n)) return v != null ? String(v) : '—'
-                  const p = n > 1 ? n : n * 100
-                  return `${p.toFixed(1)}%`
-                }
-                return (
-                  <>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Record</Box> {fmtInt(r.W)}–{fmtInt(r.L)} ({pct(r.W_PCT)})</span>
-                    <span sx={{ opacity: 0.6 }}>·</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>GP</Box> {fmtInt(r.GP)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Min</Box> {fmt(r.MIN)}</span>
-                    <span sx={{ opacity: 0.6 }}>·</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Off Rtg</Box> {fmt(r.E_OFF_RATING)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Def Rtg</Box> {fmt(r.E_DEF_RATING)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Net Rtg</Box> {fmt(r.E_NET_RATING)}</span>
-                    <span sx={{ opacity: 0.6 }}>·</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Pace</Box> {fmt(r.E_PACE)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>AST%</Box> {pct(r.E_AST_RATIO)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>OREB%</Box> {pct(r.E_OREB_PCT)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>DREB%</Box> {pct(r.E_DREB_PCT)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>REB%</Box> {pct(r.E_REB_PCT)}</span>
-                    <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>TOV%</Box> {pct(r.E_TM_TOV_PCT)}</span>
-                  </>
-                )
-              })()}
-            </Box>
-            {user && (
+                <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+                  {teamData.abbreviation}
+                </Typography>
+              </Box>
+              {/* Estimated metrics (2025-26) */}
               <Box
                 sx={{
                   display: 'flex',
+                  flexWrap: 'wrap',
                   alignItems: 'center',
-                  gap: 0.5,
-                  px: 1,
+                  gap: { xs: 1, sm: 1.5 },
+                  typography: 'body-sm',
+                  color: 'text.secondary',
                   py: 0.5,
+                  px: 1,
                   borderRadius: 'sm',
+                  bgcolor: 'background.level1',
                   border: '1px solid',
                   borderColor: 'divider',
-                  bgcolor: isFavorite ? 'danger.50' : 'background.level1',
                 }}
               >
-                <IconButton
-                  variant={isFavorite ? 'solid' : 'outlined'}
-                  color={isFavorite ? 'danger' : 'neutral'}
-                  size="sm"
-                  sx={{ p: 0.5 }}
-                  onClick={handleFavoriteToggle}
-                  disabled={!user || toggleFavoriteMutation.isPending}
-                  loading={toggleFavoriteMutation.isPending}
+                {estimatedMetricsLoading && (
+                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>Loading…</Typography>
+                )}
+                {estimatedMetricsError && (
+                  <Typography level="body-sm" sx={{ color: 'danger.500' }}>
+                    {estimatedMetricsError instanceof Error ? estimatedMetricsError.message : 'Failed to load'}
+                  </Typography>
+                )}
+                {!estimatedMetricsLoading && !estimatedMetricsError && estimatedMetrics && (() => {
+                  const r = getEstimatedMetricsRow(estimatedMetrics.raw, teamData.team_id)
+                  if (!r) return (
+                    <Typography level="body-sm" sx={{ color: 'text.secondary' }}>No metrics</Typography>
+                  )
+                  const num = (v: unknown): number | null => (v == null ? null : typeof v === 'number' ? v : parseFloat(String(v)))
+                  const fmt = (v: unknown) => {
+                    const n = num(v)
+                    return n != null && Number.isFinite(n) ? n.toFixed(1) : (v != null ? String(v) : '—')
+                  }
+                  const fmtInt = (v: unknown) => {
+                    const n = num(v)
+                    return n != null && Number.isFinite(n) ? String(Math.round(n)) : (v != null ? String(v) : '—')
+                  }
+                  const pct = (v: unknown) => {
+                    const n = num(v)
+                    if (n == null || !Number.isFinite(n)) return v != null ? String(v) : '—'
+                    const p = n > 1 ? n : n * 100
+                    return `${p.toFixed(1)}%`
+                  }
+                  return (
+                    <>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Record</Box> {fmtInt(r.W)}–{fmtInt(r.L)} ({pct(r.W_PCT)})</span>
+                      <span sx={{ opacity: 0.6 }}>·</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>GP</Box> {fmtInt(r.GP)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Min</Box> {fmt(r.MIN)}</span>
+                      <span sx={{ opacity: 0.6 }}>·</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Off Rtg</Box> {fmt(r.E_OFF_RATING)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Def Rtg</Box> {fmt(r.E_DEF_RATING)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Net Rtg</Box> {fmt(r.E_NET_RATING)}</span>
+                      <span sx={{ opacity: 0.6 }}>·</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Pace</Box> {fmt(r.E_PACE)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>AST%</Box> {pct(r.E_AST_RATIO)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>OREB%</Box> {pct(r.E_OREB_PCT)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>DREB%</Box> {pct(r.E_DREB_PCT)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>REB%</Box> {pct(r.E_REB_PCT)}</span>
+                      <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>TOV%</Box> {pct(r.E_TM_TOV_PCT)}</span>
+                    </>
+                  )
+                })()}
+              </Box>
+              {user && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    px: 1,
+                    py: 0.5,
+                    borderRadius: 'sm',
+                    border: '1px solid',
+                    borderColor: 'divider',
+                    bgcolor: isFavorite ? 'danger.50' : 'background.level1',
+                  }}
                 >
-                  {isFavorite ? (
-                    <Favorite sx={{ fontSize: '1.1rem' }} />
-                  ) : (
-                    <FavoriteBorder sx={{ fontSize: '1.1rem' }} />
-                  )}
-                </IconButton>
+                  <IconButton
+                    variant={isFavorite ? 'solid' : 'outlined'}
+                    color={isFavorite ? 'danger' : 'neutral'}
+                    size="sm"
+                    sx={{ p: 0.5 }}
+                    onClick={handleFavoriteToggle}
+                    disabled={!user || toggleFavoriteMutation.isPending}
+                    loading={toggleFavoriteMutation.isPending}
+                  >
+                    {isFavorite ? (
+                      <Favorite sx={{ fontSize: '1.1rem' }} />
+                    ) : (
+                      <FavoriteBorder sx={{ fontSize: '1.1rem' }} />
+                    )}
+                  </IconButton>
+                </Box>
+              )}
+            </Stack>
+
+            {/* Info bar: team info (single nav strip) */}
+            <Stack
+              direction="row"
+              flexWrap="wrap"
+              gap={1.5}
+              alignItems="center"
+              sx={{
+                typography: 'body-sm',
+                color: 'text.secondary',
+              }}
+            >
+              <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Founded</Box> {teamData.year_founded}</span>
+              <span sx={{ opacity: 0.6 }}>·</span>
+              <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Arena</Box> {teamData.arena}{teamData.arena_capacity ? ` (${teamData.arena_capacity.toLocaleString()})` : ''}</span>
+              <span sx={{ opacity: 0.6 }}>·</span>
+              <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Owner</Box> {teamData.owner}</span>
+              {teamData.general_manager && (
+                <>
+                  <span sx={{ opacity: 0.6 }}>·</span>
+                  <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>GM</Box> {teamData.general_manager}</span>
+                </>
+              )}
+              <span sx={{ opacity: 0.6 }}>·</span>
+              <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Head Coach</Box> {teamData.head_coach}</span>
+              {teamData.d_league_affiliation && (
+                <>
+                  <span sx={{ opacity: 0.6 }}>·</span>
+                  <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>G League</Box> {teamData.d_league_affiliation}</span>
+                </>
+              )}
+            </Stack>
+          </Box>
+
+          {/* Team Posts Feed */}
+          <Box sx={{ mt: 2 }}>
+            {feedPostsLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                <CircularProgress size="lg" sx={{ '--CircularProgress-trackColor': '#222', '--CircularProgress-progressColor': '#FFC72C' }} />
               </Box>
             )}
-          </Stack>
 
-          {/* Info bar: team info (single nav strip) */}
-          <Stack
-            direction="row"
-            flexWrap="wrap"
-            gap={1.5}
-            alignItems="center"
-            sx={{
-              typography: 'body-sm',
-              color: 'text.secondary',
-            }}
-          >
-            <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Founded</Box> {teamData.year_founded}</span>
-            <span sx={{ opacity: 0.6 }}>·</span>
-            <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Arena</Box> {teamData.arena}{teamData.arena_capacity ? ` (${teamData.arena_capacity.toLocaleString()})` : ''}</span>
-            <span sx={{ opacity: 0.6 }}>·</span>
-            <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Owner</Box> {teamData.owner}</span>
-            {teamData.general_manager && (
-              <>
-                <span sx={{ opacity: 0.6 }}>·</span>
-                <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>GM</Box> {teamData.general_manager}</span>
-              </>
+            {!feedPostsLoading && (!teamFeedPosts || teamFeedPosts.length === 0) && (
+              <Box sx={{ textAlign: 'center', py: 8, px: 4 }}>
+                <Typography level="h3" sx={{ color: '#FFFFFF', fontFamily: '"Libre Baskerville", serif', mb: 1 }}>
+                  No stories yet
+                </Typography>
+                <Typography level="body-md" sx={{ color: '#888', maxWidth: 400, mx: 'auto' }}>
+                  Stories featuring the {teamData.city} {teamData.nickname} will appear here.
+                </Typography>
+              </Box>
             )}
-            <span sx={{ opacity: 0.6 }}>·</span>
-            <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>Head Coach</Box> {teamData.head_coach}</span>
-            {teamData.d_league_affiliation && (
-              <>
-                <span sx={{ opacity: 0.6 }}>·</span>
-                <span><Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>G League</Box> {teamData.d_league_affiliation}</span>
-              </>
+
+            {!feedPostsLoading && teamFeedPosts && teamFeedPosts.length > 0 && (
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: 'repeat(2, 1fr)',
+                    md: 'repeat(3, 1fr)',
+                  },
+                  gap: { xs: 2, md: 2.5 },
+                }}
+              >
+                {teamFeedPosts.map((post) => (
+                  <FeedCard
+                    key={post.id}
+                    post={post}
+                    onClick={() => navigate(`/feed/${post.slug}`)}
+                  />
+                ))}
+              </Box>
             )}
-          </Stack>
-        </Box>
-
-        {/* Main Content - data only */}
-        <Grid container spacing={3} sx={{ overflow: 'visible' }}>
-          {/* Player Dashboard (2025-26) - teamplayerdashboard - first so it's visible */}
-          <Grid xs={12} md={6}>
-            <Card sx={{ minHeight: 0, overflow: 'visible' }}>
-              <CardContent>
-                <Typography level="title-lg" sx={{ mb: 1.5, fontWeight: 600 }}>
-                  Player Dashboard (2025-26)
-                </Typography>
-                {playerDashboardLoading && (
-                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                    Loading player stats...
-                  </Typography>
-                )}
-                {playerDashboardError && (
-                  <Typography level="body-sm" sx={{ color: 'danger.500' }}>
-                    {playerDashboardError instanceof Error ? playerDashboardError.message : 'Failed to load player dashboard.'}
-                  </Typography>
-                )}
-                {!playerDashboardLoading && !playerDashboardError && playerDashboard && (
-                  <TeamPlayerDashboardContent raw={playerDashboard.raw} />
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Rebounding Dashboard (2025-26 season) */}
-          <Grid xs={12} md={6}>
-            <Card sx={{ minHeight: 0, overflow: 'visible' }}>
-              <CardContent>
-                <Typography level="title-lg" sx={{ mb: 1.5, fontWeight: 600 }}>
-                  Rebounding Profile (2025-26)
-                </Typography>
-                {reboundLoading && (
-                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                    Loading rebounding stats...
-                  </Typography>
-                )}
-                {reboundError && (
-                  <Typography level="body-sm" sx={{ color: 'danger.500' }}>
-                    {reboundError instanceof Error ? reboundError.message : 'Failed to load rebounding stats.'}
-                  </Typography>
-                )}
-                {!reboundLoading && !reboundError && reboundDashboard && (
-                  <ReboundingContent raw={reboundDashboard.raw} />
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Shot Dashboard (2025-26 season) - teamdashptshots */}
-          <Grid xs={12} md={6}>
-            <Card sx={{ minHeight: 0, overflow: 'visible' }}>
-              <CardContent>
-                <Typography level="title-lg" sx={{ mb: 1.5, fontWeight: 600 }}>
-                  Shot Dashboard (2025-26)
-                </Typography>
-                {dashPtShotsLoading && (
-                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                    Loading shot splits...
-                  </Typography>
-                )}
-                {dashPtShotsError && (
-                  <Typography level="body-sm" sx={{ color: 'danger.500' }}>
-                    {dashPtShotsError instanceof Error ? dashPtShotsError.message : 'Failed to load shot dashboard.'}
-                  </Typography>
-                )}
-                {!dashPtShotsLoading && !dashPtShotsError && dashPtShots && (
-                  <TeamDashPtShotsContent raw={dashPtShots.raw} />
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Game Logs (2025-26 season) */}
-          <Grid xs={12}>
-            <Card sx={{ minHeight: 0, overflow: 'visible' }}>
-              <CardContent>
-                <Typography level="title-lg" sx={{ mb: 1.5, fontWeight: 600 }}>
-                  Game Logs (2025-26)
-                </Typography>
-                {gameLogsLoading && (
-                  <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                    Loading game logs...
-                  </Typography>
-                )}
-                {gameLogsError && (
-                  <Typography level="body-sm" sx={{ color: 'danger.500' }}>
-                    {gameLogsError instanceof Error ? gameLogsError.message : 'Failed to load game logs.'}
-                  </Typography>
-                )}
-                {!gameLogsLoading && !gameLogsError && gameLogs && (
-                  <TeamGameLogsContent raw={gameLogs.raw} />
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-
-        {/* Four Factors Section */}
-        <Box sx={{ mt: 4 }}>
-          <TeamFourFactors teamId={teamData.team_id} />
+          </Box>
         </Box>
       </Box>
-    </Box>
+    </TeamPageLayout>
   )
 }

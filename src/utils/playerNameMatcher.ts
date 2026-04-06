@@ -42,6 +42,27 @@ export interface MatchOptions {
 // In-memory cache for matches (key: normalized name, value: PlayerMatch)
 const matchCache = new Map<string, PlayerMatch>()
 
+// Explicit aliases for sportsbook/feed naming variants that don't reliably
+// match nba_players naming conventions.
+const PLAYER_NAME_ALIASES: Record<string, string> = {
+  'alexandre sarr': 'alex sarr',
+  'a sarr': 'alex sarr',
+  't vukcevic': 'tristan vukcevic',
+  'airious bailey': 'ace bailey',
+  'arious bailey': 'ace bailey',
+  'e j harkless': 'elijah harkless',
+  'e.j. harkless': 'elijah harkless',
+  'deaaron fox': "de'aaron fox",
+  'de aaron fox': "de'aaron fox",
+  'deanthony melton': "de'anthony melton",
+  'de anthony melton': "de'anthony melton",
+}
+
+function resolveAliasName(name: string): string {
+  const normalized = normalizePlayerName(name)
+  return PLAYER_NAME_ALIASES[normalized] ?? name
+}
+
 /**
  * Normalize player name for matching
  * Handles:
@@ -200,8 +221,9 @@ export async function matchPlayerName(
 ): Promise<PlayerMatch | null> {
   if (!propPlayerName) return null
   
+  const aliasedName = resolveAliasName(propPlayerName)
   const useCache = options.useCache !== false
-  const cacheKey = `${normalizePlayerName(propPlayerName)}:${options.teamTricode || ''}`
+  const cacheKey = `${normalizePlayerName(aliasedName)}:${options.teamTricode || ''}`
   
   // Check cache
   if (useCache && matchCache.has(cacheKey)) {
@@ -209,14 +231,14 @@ export async function matchPlayerName(
   }
   
   // Find matches
-  const matches = await findPlayerMatches(supabase, propPlayerName, options)
+  const matches = await findPlayerMatches(supabase, aliasedName, options)
   
   if (matches.length === 0) {
     return null
   }
   
   // Select best match
-  const normalizedPropName = normalizePlayerName(propPlayerName)
+  const normalizedPropName = normalizePlayerName(aliasedName)
   
   // Prefer exact normalized match with team info
   let bestMatch = matches.find(m => 

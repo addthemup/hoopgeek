@@ -1,5 +1,5 @@
 /**
- * PostCreator — Multi-step form for creating feed posts (all 9 post types).
+ * PostCreator — Multi-step form for creating feed posts (all 12 post types).
  *
  * Step 0: Choose Post Type
  * Step 1: Data Source (contextual per post type)
@@ -80,15 +80,19 @@ import {
   SportsBasketball,
   Schedule,
   Article,
+  Home,
 } from '@mui/icons-material'
 import { supabase } from '../utils/supabase'
+import { isDateInEST } from '../utils/nbaDateUtils'
 import { useAuth } from '../hooks/useAuth'
 import { getHighlightClipsForPostType } from '../utils/feedHighlightClips'
+import { collectAllPlayerSpotlightPlaysFromGameData } from '../utils/playerSpotlightPlays'
 // sortHighlightClipsChronological, calculatePropResult, filterFullGameProps
 // moved to generators/ — no longer needed here
 import RichTextEditor from '../components/Admin/PostCreator/RichTextEditor'
 import PostLinkPicker from '../components/Admin/PostCreator/PostLinkPicker'
 import { getSectionGenerator } from '../components/Admin/PostCreator/generators'
+import { POST_TYPE_OPTIONS as POST_TYPE_OPTIONS_FROM_CONSTANTS } from '../components/Admin/PostCreator/constants'
 import type { LinkedPostRef, GeneratorContext, BoxScoreRow } from '../components/Admin/PostCreator/types'
 import type {
   PostType,
@@ -111,113 +115,10 @@ interface PostTypeOption {
   color: string
   tags: FeedTag[]
   theoretical?: boolean
-  dataSourceMode: 'totn' | 'totw' | 'pow' | 'pom' | 'game' | 'manual'
+  dataSourceMode: 'totn' | 'totw' | 'pow' | 'pom' | 'game' | 'matchup' | 'manual'
 }
 
-const POST_TYPE_OPTIONS: PostTypeOption[] = [
-  {
-    value: 'game_recap',
-    label: 'Game Recap',
-    description: 'Full story for a completed NBA game — score, highlights, advantages, play-by-play.',
-    icon: <SportsSoccer />,
-    color: '#FFC72C',
-    tags: ['recap', 'highlights'],
-    dataSourceMode: 'game',
-  },
-  {
-    value: 'player_spotlight',
-    label: 'Player Spotlight',
-    description: 'Standout performance from a single player with stats, highlights, and analysis.',
-    icon: <Person />,
-    color: '#60A5FA',
-    tags: ['highlights'],
-    dataSourceMode: 'game',
-  },
-  {
-    value: 'team_of_night',
-    label: 'Team of the Night',
-    description: 'Daily best-performing lineup with player highlights and data overlays.',
-    icon: <Groups />,
-    color: '#F59E0B',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'totn',
-  },
-  {
-    value: 'team_of_week',
-    label: 'Team of the Week',
-    description: 'Weekly best lineup — same model as TOTN but across 7 days.',
-    icon: <CalendarMonth />,
-    color: '#A78BFA',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'totw',
-  },
-  {
-    value: 'player_of_week',
-    label: 'Player of the Week',
-    description: 'Weekly MVP spotlight with cumulative stats and key moments.',
-    icon: <Star />,
-    color: '#34D399',
-    tags: ['awards', 'highlights'],
-    dataSourceMode: 'pow',
-  },
-  {
-    value: 'player_of_month',
-    label: 'Player of the Month',
-    description: 'Monthly MVP spotlight with in-depth analysis.',
-    icon: <EmojiEvents />,
-    color: '#F472B6',
-    tags: ['awards', 'analysis'],
-    dataSourceMode: 'pom',
-  },
-  {
-    value: 'prop_prediction',
-    label: 'Prop Prediction',
-    description: 'Pre-game prop predictions with confidence levels and trends.',
-    icon: <Casino />,
-    color: '#FB923C',
-    tags: ['props'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'prop_results',
-    label: 'Prop Results',
-    description: 'Post-game results for prop predictions — overs, unders, pushes.',
-    icon: <TrendingUp />,
-    color: '#10B981',
-    tags: ['props'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'injury_report',
-    label: 'Injury Report',
-    description: 'Daily injury updates — who\'s out, questionable, or returning.',
-    icon: <LocalHospital />,
-    color: '#EF4444',
-    tags: ['injuries'],
-    theoretical: true,
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'upcoming',
-    label: 'Upcoming',
-    description: 'Preview or teaser for upcoming games, events, or content.',
-    icon: <Schedule />,
-    color: '#8B5CF6',
-    tags: ['recap'],
-    dataSourceMode: 'manual',
-  },
-  {
-    value: 'blog',
-    label: 'Blog',
-    description: 'Editorial or long-form article with rich text and media.',
-    icon: <Article />,
-    color: '#0EA5E9',
-    tags: ['analysis'],
-    dataSourceMode: 'manual',
-  },
-]
+const POST_TYPE_OPTIONS: PostTypeOption[] = POST_TYPE_OPTIONS_FROM_CONSTANTS
 
 const SECTION_TYPE_OPTIONS: { value: SectionType; label: string; icon: React.ReactNode; description: string }[] = [
   { value: 'hero', label: 'Hero Image', icon: <ImageIcon />, description: 'Full-width hero banner with optional badge' },
@@ -237,6 +138,11 @@ const SECTION_TYPE_OPTIONS: { value: SectionType; label: string; icon: React.Rea
   { value: 'game_log', label: 'Game Log', icon: <TableChart />, description: 'Player game log table with per-game stats and averages' },
   { value: 'post_link', label: 'Post Link', icon: <SportsBasketball />, description: 'Card linking to another HoopGeek post (related content, cross-reference)' },
   { value: 'tweet_embed', label: 'Tweet Embed', icon: <Article />, description: 'Embed an X (Twitter) post — paste a tweet URL as a source or reference' },
+  { value: 'injury_module', label: 'Injury Module', icon: <LocalHospital />, description: 'Frozen snapshot of Injuries module (status chips + progress bars)' },
+  { value: 'prop_module', label: 'Prop Module', icon: <Casino />, description: 'Frozen snapshot of Prop Predictions or Prop Results module' },
+  { value: 'team_of_night_module', label: 'Team of Night Module', icon: <Groups />, description: 'Frozen snapshot of Team of the Night lineup' },
+  { value: 'team_of_week_module', label: 'Team of Week Module', icon: <Groups />, description: 'Frozen snapshot of Team of the Week lineup' },
+  { value: 'tank_module', label: 'Tank Module', icon: <TrendingUp />, description: 'Frozen snapshot of Tank tab (standings + draft prospects)' },
 ]
 
 const TAG_OPTIONS: FeedTag[] = ['highlights', 'awards', 'props', 'injuries', 'recap', 'analysis']
@@ -357,10 +263,18 @@ function generateSlug(title: string, gameDate?: string): string {
   return `${base}${datePart}-${random}`
 }
 
-function generateSourceRef(postType: PostType, gameId?: string, gameDate?: string): string {
-  if (gameId) return `${postType}:${gameId}`
-  if (gameDate) return `${postType}:${gameDate}`
-  return `${postType}:${Date.now()}`
+function generateSourceRef(
+  postType: PostType,
+  gameId?: string,
+  gameDate?: string,
+  disambiguator?: string | number | null
+): string {
+  const base = gameId ? `${postType}:${gameId}` : gameDate ? `${postType}:${gameDate}` : `${postType}:${Date.now()}`
+  if (disambiguator != null && disambiguator !== '') {
+    const safe = String(disambiguator).toLowerCase().replace(/[^a-z0-9_-]/g, '_')
+    return `${base}:${safe}`
+  }
+  return base
 }
 
 function extractGameData(json: any): GameData | null {
@@ -453,6 +367,8 @@ function extractGameData(json: any): GameData | null {
     shotResult: p.shotResult || null,
     isFieldGoal: p.isFieldGoal || 0,
     pointsTotal: p.pointsTotal || 0,
+    eventNum: p.eventNum != null ? Number(p.eventNum) : null,
+    actionId: p.actionId != null ? Number(p.actionId) : null,
   }))
 
   const teamTricodes = [away.abbreviation, home.abbreviation].filter(Boolean)
@@ -473,46 +389,6 @@ function extractGameData(json: any): GameData | null {
   const finalScore = story.final_score || (away.points != null && home.points != null ? `${away.abbreviation} ${away.points} - ${home.abbreviation} ${home.points}` : '')
 
   return { gameId: json.gameId, gameDate: meta.date ? meta.date.split('T')[0] : null, teamTricodes, playerIds, matchup, finalScore, homeTeam: home, awayTeam: away, funScore: scoreData?.fun_score ?? null, scoreData, story, playerStats, playByPlay, raw: json }
-}
-
-/** Pick the best highlight clip(s) for a player from play-by-play data across all games. */
-function getPlayerHighlightClips(
-  playerId: number,
-  allGameData: GameData[],
-  maxClips = 3
-): PlayByPlayAction[] {
-  // Collect all plays for this player that have mp4 links
-  const allPlays: PlayByPlayAction[] = []
-  for (const gd of allGameData) {
-    for (const play of gd.playByPlay) {
-      if (play.personId === playerId && play.mp4) {
-        allPlays.push(play)
-      }
-    }
-  }
-  if (allPlays.length === 0) return []
-
-  // Score plays by excitement — dunks/3pts/blocks > 2pts > other
-  const scorePlay = (p: PlayByPlayAction): number => {
-    let score = 0
-    const action = (p.actionType || '').toLowerCase()
-    const sub = (p.subType || '').toLowerCase()
-    const desc = (p.description || '').toLowerCase()
-    if (action === 'block') score += 8
-    if (action === 'steal') score += 7
-    if (sub === 'dunk' || desc.includes('dunk')) score += 10
-    if (sub === 'alley oop' || desc.includes('alley oop')) score += 9
-    if (action === '3pt' || sub === '3pt' || desc.includes('3pt')) score += 6
-    if (p.shotResult === 'Made') score += 4
-    if (p.isFieldGoal) score += 2
-    // Prefer later periods (clutch)
-    if (p.period >= 4) score += 3
-    return score
-  }
-
-  return allPlays
-    .sort((a, b) => scorePlay(b) - scorePlay(a))
-    .slice(0, maxClips)
 }
 
 function formatSalary(n: number): string {
@@ -585,15 +461,28 @@ async function resolvePlayerFromAwardRow(row: any, _type: 'pow' | 'pom'): Promis
   }]
 }
 
-/** Fetch games for a given date from nba_games */
+/** Fetch games for a given EST date from nba_games (timestamps are UTC). */
 async function fetchGamesForDate(gameDate: string): Promise<NbaGame[]> {
+  const date = new Date(`${gameDate}T00:00:00Z`)
+  const startUTC = new Date(date.getTime() - 6 * 60 * 60 * 1000).toISOString()
+  const endUTC = new Date(date.getTime() + 30 * 60 * 60 * 1000).toISOString()
+
   const { data, error } = await supabase
     .from('nba_games')
     .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_status_text')
-    .eq('game_date', gameDate)
+    .gte('game_date', startUTC)
+    .lte('game_date', endUTC)
+    .not('home_team_tricode', 'is', null)
+    .not('away_team_tricode', 'is', null)
+    .order('game_date', { ascending: true })
     .order('game_id')
   if (error) { console.error('Failed to fetch games:', error); return [] }
-  return (data || []) as NbaGame[]
+
+  return ((data || []) as NbaGame[]).filter(
+    g => isDateInEST(g.game_date, gameDate) &&
+      g.home_team_tricode && g.away_team_tricode &&
+      g.home_team_tricode !== g.away_team_tricode
+  )
 }
 
 /** Fetch games for a date range from nba_games, optionally only for given team tricodes */
@@ -614,13 +503,87 @@ async function fetchGamesForDateRange(weekStart: string, weekEnd: string, teamTr
   return (data || []) as NbaGame[]
 }
 
-/** Try to load a game JSON from local dev server. Returns null for missing or empty files. */
+/** Normalize play-by-play API response (videos array) to PlayByPlayAction[]. */
+function normalizePlayByPlayFromApi(plays: any[]): PlayByPlayAction[] {
+  if (!Array.isArray(plays)) return []
+  return plays.map((p: any) => ({
+    personId: p.personId != null ? Number(p.personId) : null,
+    playerName: p.playerName || p.playerNameI || null,
+    teamTricode: p.teamTricode || null,
+    actionType: p.actionType || '',
+    subType: p.subType ?? null,
+    description: p.description || '',
+    mp4: p.mp4 || null,
+    period: p.period || 0,
+    clock: p.clock || '',
+    shotResult: p.shotResult ?? null,
+    isFieldGoal: p.isFieldGoal ?? 0,
+    pointsTotal: p.pointsTotal ?? 0,
+  }))
+}
+
+/** Try to load a game JSON from local dev server (`/api/local-feed/{gameId}.json`). Uses monolithic `scripts/feed/{gameId}.json` when present; falls back to `play_by_play/` only if root is missing or has no MP4 URLs. */
 async function loadLocalGameJson(gameId: string): Promise<GameData | null> {
   try {
     const res = await fetch(`/api/local-feed/${gameId}.json`)
-    if (!res.ok) return null
-    const json = await res.json()
-    return extractGameData(json) // returns null for empty/unplayed games
+    if (res.ok) {
+      const json = await res.json()
+      const data = extractGameData(json)
+      const hasMp4 = data?.playByPlay?.some((p: any) => p.mp4)
+      if (data && hasMp4) return data
+      // Root exists but no MP4s — try play-by-play endpoint and merge
+      const pbpRes = await fetch(`/api/local-feed/play-by-play/${gameId}.json`)
+      if (pbpRes.ok) {
+        const pbpJson = await pbpRes.json()
+        const allPlays = pbpJson.playByPlay?.allPlays ?? pbpJson.playByPlay ?? []
+        const playByPlay = normalizePlayByPlayFromApi(Array.isArray(allPlays) ? allPlays : [])
+        if (playByPlay.length > 0 && playByPlay.some((p: any) => p.mp4)) {
+          if (data) return { ...data, playByPlay }
+          const teamTricodes = [...new Set(playByPlay.map((p: any) => p.teamTricode).filter(Boolean))]
+          return {
+            gameId,
+            gameDate: pbpJson.date ? pbpJson.date.split('T')[0] : null,
+            teamTricodes,
+            playerIds: [...new Set(playByPlay.map((p: any) => p.personId).filter(Boolean))] as number[],
+            matchup: pbpJson.matchup || '',
+            finalScore: '',
+            homeTeam: { abbreviation: teamTricodes[0] },
+            awayTeam: { abbreviation: teamTricodes[1] || teamTricodes[0] },
+            funScore: null,
+            scoreData: {},
+            story: {},
+            playerStats: [],
+            playByPlay,
+            raw: {},
+          }
+        }
+      }
+      return data
+    }
+    // 404 or other — try legacy play_by_play/ file only (no root JSON)
+    const pbpRes = await fetch(`/api/local-feed/play-by-play/${gameId}.json`)
+    if (!pbpRes.ok) return null
+    const pbpJson = await pbpRes.json()
+    const allPlays = pbpJson.playByPlay?.allPlays ?? pbpJson.playByPlay ?? []
+    const playByPlay = normalizePlayByPlayFromApi(Array.isArray(allPlays) ? allPlays : [])
+    if (playByPlay.length === 0 || !playByPlay.some((p: any) => p.mp4)) return null
+    const teamTricodes = [...new Set(playByPlay.map((p: any) => p.teamTricode).filter(Boolean))]
+    return {
+      gameId: pbpJson.gameId || gameId,
+      gameDate: pbpJson.date ? pbpJson.date.split('T')[0] : null,
+      teamTricodes,
+      playerIds: [...new Set(playByPlay.map((p: any) => p.personId).filter(Boolean))] as number[],
+      matchup: pbpJson.matchup || '',
+      finalScore: '',
+      homeTeam: { abbreviation: teamTricodes[0] },
+      awayTeam: { abbreviation: teamTricodes[1] || teamTricodes[0] },
+      funScore: null,
+      scoreData: {},
+      story: {},
+      playerStats: [],
+      playByPlay,
+      raw: {},
+    }
   } catch {
     return null
   }
@@ -758,6 +721,8 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
   const [selectedDate, setSelectedDate] = useState('')
   const [gamesForDate, setGamesForDate] = useState<NbaGame[]>([])
   const [loadingGames, setLoadingGames] = useState(false)
+  // Feed status per game (has JSON file, has MP4 URLs) from /api/local-feed/by-date
+  const [feedGamesForDate, setFeedGamesForDate] = useState<Array<{ gameId: string; hasMp4: boolean }>>([])
 
   // Matched game JSONs (loaded from local dev server for the selected date)
   const [matchedGameData, setMatchedGameData] = useState<GameData[]>([])
@@ -766,6 +731,16 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
   // Player Spotlight: single player + highlight count (only when post_type is player_spotlight)
   const [spotlightPlayerId, setSpotlightPlayerId] = useState<number | null>(null)
   const [spotlightHighlightCount, setSpotlightHighlightCount] = useState(5)
+  // Macro: generate player spotlight for all players in the game at once
+  const [spotlightAllPlayers, setSpotlightAllPlayers] = useState(false)
+  const [macroDrafts, setMacroDrafts] = useState<PostDraft[]>([])
+  const [macroGenerating, setMacroGenerating] = useState(false)
+  // Macro: generate prop results for all games on the selected date
+  const [propResultsAllGames, setPropResultsAllGames] = useState(false)
+  // Macro: generate injury report for all games on the selected date
+  const [injuryReportAllGames, setInjuryReportAllGames] = useState(false)
+  // Macro: generate prop prediction for all games on the selected date
+  const [propPredictionAllGames, setPropPredictionAllGames] = useState(false)
 
   // Game Recap: number of highlight clips to include (algorithm picks best plays; admin chooses count)
   const [recapHighlightCount, setRecapHighlightCount] = useState(8)
@@ -789,8 +764,50 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
   const [addSectionOpen, setAddSectionOpen] = useState(false)
   const [editingSectionIdx, setEditingSectionIdx] = useState<number | null>(null)
 
+  // Draft post type: auto-fill Step 2 once when entering (title, subtitle, description, slug from current Tank snapshot)
+  const draftStep2AutoFilledRef = useRef(false)
+
   const currentTypeOption = POST_TYPE_OPTIONS.find(o => o.value === draft.post_type)!
   const dataSourceMode = currentTypeOption.dataSourceMode
+
+  // ─── Auto-fill Step 2 for Draft post type (current Tank snapshot) ─
+  useEffect(() => {
+    if (activeStep !== 2 || draft.post_type !== 'draft' || draftStep2AutoFilledRef.current) return
+    draftStep2AutoFilledRef.current = true
+    const snapshotDate = new Date().toISOString().slice(0, 10)
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = d.getMonth() + 1
+    const season = month >= 10 ? `${year}-${String(year + 1).slice(-2)}` : `${year - 1}-${String(year).slice(-2)}`
+    const title = `Draft Aggregate - ${snapshotDate}`
+    const subtitle = `${season} · Snapshot as of ${snapshotDate}`
+    const descriptionBase = `Current tank standings (worst-first) and draft prospect rankings as of ${snapshotDate}. Frozen snapshot from the Standings Tank module.`
+    const slug = generateSlug(title, snapshotDate)
+
+    // Set base fields immediately so form isn't empty
+    setDraft(prev => ({
+      ...prev,
+      title,
+      subtitle,
+      description: descriptionBase,
+      slug,
+      game_date: snapshotDate,
+    }))
+
+    // Optionally enrich description with standings count (non-blocking)
+    supabase
+      .from('nba_standings')
+      .select('team_id', { count: 'exact', head: true })
+      .eq('season', season)
+      .then(({ count }) => {
+        const teamCount = typeof count === 'number' ? count : 0
+        if (teamCount > 0) {
+          const desc = `Lottery order (top 14 of ${teamCount} teams) and draft prospect rankings as of ${snapshotDate}. Frozen snapshot from the Standings Tank module.`
+          setDraft(prev => ({ ...prev, description: desc }))
+        }
+      })
+      .catch(() => {})
+  }, [activeStep, draft.post_type])
 
   // ─── Fetch TOTN rows ──────────────────────────────────────
 
@@ -914,39 +931,40 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
         },
       }))
 
-      // ── Load game files by scanning local JSONs for this date ──
-      // Uses the /api/local-feed/by-date/:date endpoint (Vite plugin)
-      // which filters out empty/unplayed shells automatically.
+      // ── Load game files for this date ──
+      // 1) By-date scan (Vite plugin) lists games that have local JSONs with hasStats/hasMp4.
+      // 2) Always also fetch nba_games for this date and merge, so we try loading every game
+      //    that night (highlights only appear when local play-by-play JSONs exist).
       setLoadingGameData(true)
-      let gameIds: string[] = []
+      let gameIdsByDate: string[] = []
       try {
         const dateRes = await fetch(`/api/local-feed/by-date/${dateStr}`)
         if (dateRes.ok) {
           const dateData = await dateRes.json()
-          gameIds = (dateData.games || [])
-            .filter((g: any) => g.hasStats)
+          gameIdsByDate = (dateData.games || [])
+            .filter((g: any) => g.hasStats || g.hasMp4)
             .map((g: any) => g.gameId)
         }
-      } catch { /* fall through to nba_games */ }
+      } catch { /* ignore */ }
 
-      // Fallback: if Vite plugin date scan found nothing, query nba_games
-      if (gameIds.length === 0) {
-        const games = await fetchGamesForDate(dateStr)
-        setGamesForDate(games)
-        gameIds = games.map(g => g.game_id)
-      }
+      const gamesFromDb = await fetchGamesForDate(dateStr)
+      setGamesForDate(gamesFromDb)
+      const gameIdsFromDb = gamesFromDb.map(g => g.game_id)
+      const gameIds = [...new Set([...gameIdsByDate, ...gameIdsFromDb])]
 
-      // Load all game JSONs in parallel
+      // Load game JSONs via /api/local-feed/ (monolithic scripts/feed/{gameId}.json; legacy play_by_play/ when needed)
       const gameDataResults = await Promise.all(
         gameIds.map(id => loadLocalGameJson(id))
       )
       const loaded = gameDataResults.filter(Boolean) as GameData[]
 
-      // Filter to only games that contain TOTN players
+      // Include games where any TOTN player appears in playByPlay (mp4 clips) or in playerStats
       const nbaIdSet = new Set(nbaPlayerIds)
-      const relevantGames = loaded.filter(gd =>
-        gd.playerStats.some((ps: any) => nbaIdSet.has(Number(ps.personId)))
-      )
+      const relevantGames = loaded.filter(gd => {
+        const hasInStats = gd.playerStats?.some((ps: any) => nbaIdSet.has(Number(ps.personId)))
+        const hasInPbp = (gd.playByPlay || []).some((p: any) => p.personId != null && nbaIdSet.has(Number(p.personId)))
+        return hasInStats || hasInPbp
+      })
       setMatchedGameData(relevantGames)
 
       // Per-game: is it in /feed/? does it have mp4 in playByPlay?
@@ -972,10 +990,29 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
         setTotnBoxscores([])
       }
 
+      // Per-player: games and total MP4 plays from play_by_play for the night
+      for (const p of players) {
+        const pid = p.nba_player_id
+        if (pid == null) {
+          console.log(`[TOTN] ${p.name} (${p.team_abbreviation ?? '?'}): 0 plays (no nba_player_id)`)
+          continue
+        }
+        const gamesWithPlayer = relevantGames.filter(gd =>
+          (gd.playerStats?.some((ps: any) => Number(ps.personId) === pid)) ||
+          (gd.playByPlay || []).some((pl: any) => pl.personId === pid)
+        )
+        const totalClips = relevantGames.reduce((n, gd) => n + (gd.playByPlay || []).filter((pl: any) => pl.personId === pid && pl.mp4).length, 0)
+        console.log(`[TOTN] ${p.name} (${p.team_abbreviation ?? '?'}): ${totalClips} MP4 plays in ${gamesWithPlayer.length} games`)
+      }
+
+      const totalPlays = relevantGames.reduce((n, gd) => n + (gd.playByPlay?.length || 0), 0)
+      const noHighlights = relevantGames.length === 0
       setSnackbar({
         open: true,
-        message: `TOTN ${dateStr}: ${players.length} players, ${relevantGames.length} games with player data (${loaded.length} total files)`,
-        color: 'success',
+        message: noHighlights
+          ? `TOTN ${dateStr}: ${players.length} players loaded, but no game play-by-play data found for that night. Run the play-by-play scraper for ${dateStr} so highlight slideshows can be added.`
+          : `TOTN ${dateStr}: ${players.length} players, ${relevantGames.length} games with play-by-play (${totalPlays} total plays) — highlight slideshows will be included.`,
+        color: noHighlights ? 'warning' : 'success',
       })
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message, color: 'danger' })
@@ -1029,33 +1066,37 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
       const gameIds = weekGames.map(g => g.game_id)
       console.log(`[TOTW] Week ${row.week_start} → ${row.week_end}: ${weekGames.length} games in nba_games for teams ${teamTricodes.join(', ')}`)
 
-      // Load game JSONs from /feed/ (local-feed API)
+      // Load game JSONs via /api/local-feed/ (monolithic scripts/feed/{gameId}.json; legacy play_by_play/ when needed)
       const gameDataResults = await Promise.all(gameIds.map(id => loadLocalGameJson(id)))
       const loaded = gameDataResults.filter(Boolean) as GameData[]
 
-      // Filter to games that contain at least one TOTW player (for matchedGameData)
+      // Include games where any TOTW player appears in playByPlay (mp4 clips) or in playerStats
       const nbaIdSet = new Set(nbaPlayerIds)
-      const relevantGames = loaded.filter(gd =>
-        gd.playerStats?.some((ps: any) => nbaIdSet.has(Number(ps.personId)))
-      )
+      const relevantGames = loaded.filter(gd => {
+        const hasInStats = gd.playerStats?.some((ps: any) => nbaIdSet.has(Number(ps.personId)))
+        const hasInPbp = (gd.playByPlay || []).some((p: any) => p.personId != null && nbaIdSet.has(Number(p.personId)))
+        return hasInStats || hasInPbp
+      })
       setMatchedGameData(relevantGames)
 
-      // Per-player: how many loaded games have this player's stats
+      // Per-player: games and total MP4 plays from play_by_play for the week
       for (const p of players) {
         const pid = p.nba_player_id
         if (pid == null) {
-          console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): 0 games retrieved (no nba_player_id)`)
+          console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): 0 plays (no nba_player_id)`)
           continue
         }
-        const count = loaded.filter(gd =>
-          gd.playerStats?.some((ps: any) => Number(ps.personId) === pid)
-        ).length
-        console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): ${count} games retrieved`)
+        const gamesWithPlayer = relevantGames.filter(gd =>
+          (gd.playerStats?.some((ps: any) => Number(ps.personId) === pid)) ||
+          (gd.playByPlay || []).some((pl: any) => pl.personId === pid)
+        )
+        const totalClips = relevantGames.reduce((n, gd) => n + (gd.playByPlay || []).filter((pl: any) => pl.personId === pid && pl.mp4).length, 0)
+        console.log(`[TOTW] ${p.name} (${p.team_abbreviation ?? '?'}): ${totalClips} MP4 plays in ${gamesWithPlayer.length} games`)
       }
 
       setSnackbar({
         open: true,
-        message: `TOTW Week ${row.week_number}: ${players.length} players, ${relevantGames.length} games with player data (${loaded.length} in /feed/)`,
+        message: `TOTW Week ${row.week_number}: ${players.length} players, ${relevantGames.length} games with play-by-play (${relevantGames.reduce((n, gd) => n + (gd.playByPlay?.length || 0), 0)} total plays)`,
         color: 'success',
       })
     } catch (err: any) {
@@ -1113,12 +1154,19 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             setDraft(prev => ({ ...prev, description: prev.description || desc }))
           }
 
-          const uniqueGameIds = [...new Set(log.map(g => g.game_id))]
-          const gameData = await loadGameDataByIds(uniqueGameIds, p.nba_player_id)
-          setMatchedGameData(gameData)
+          // Same process as TOTW: find games in period from nba_games, load via local-feed (monolithic JSON), filter by player
+          const weekGames = await fetchGamesForDateRange(weekStart, weekEnd, teamTricodes)
+          const gameIds = weekGames.map(g => g.game_id)
+          const gameDataResults = await Promise.all(gameIds.map(id => loadLocalGameJson(id)))
+          const loaded = gameDataResults.filter(Boolean) as GameData[]
+          const relevantGames = loaded.filter(gd =>
+            (gd.playerStats?.some((ps: any) => Number(ps.personId) === p.nba_player_id)) ||
+            (gd.playByPlay || []).some((pl: any) => pl.personId === p.nba_player_id)
+          )
+          setMatchedGameData(relevantGames)
 
-          const clipCount = gameData.reduce((n, gd) => n + gd.playByPlay.filter(pl => pl.personId === p.nba_player_id && pl.mp4).length, 0)
-          setSnackbar({ open: true, message: log.length > 0 ? `Found ${log.length} game${log.length !== 1 ? 's' : ''}, ${clipCount} highlight clips for ${p.name}` : `No box scores found for ${p.name} that week`, color: log.length > 0 ? 'success' : 'warning' })
+          const clipCount = relevantGames.reduce((n, gd) => n + (gd.playByPlay || []).filter((pl: any) => pl.personId === p.nba_player_id && pl.mp4).length, 0)
+          setSnackbar({ open: true, message: log.length > 0 ? `Found ${log.length} game${log.length !== 1 ? 's' : ''}, ${relevantGames.length} with play-by-play, ${clipCount} highlight clips for ${p.name}` : (relevantGames.length > 0 ? `${relevantGames.length} games with play-by-play, ${clipCount} clips` : `No games found for ${p.name} that week`), color: relevantGames.length > 0 ? 'success' : 'warning' })
         } catch (err: any) {
           console.error('Failed to fetch award game log:', err)
         } finally {
@@ -1182,12 +1230,19 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             setDraft(prev => ({ ...prev, description: prev.description || desc }))
           }
 
-          const uniqueGameIds = [...new Set(log.map(g => g.game_id))]
-          const gameData = await loadGameDataByIds(uniqueGameIds, p.nba_player_id)
-          setMatchedGameData(gameData)
+          // Same process as TOTW: find games in period from nba_games, load via local-feed (monolithic JSON), filter by player
+          const monthGames = await fetchGamesForDateRange(monthStart, monthEnd, teamTricodes)
+          const gameIds = monthGames.map(g => g.game_id)
+          const gameDataResults = await Promise.all(gameIds.map(id => loadLocalGameJson(id)))
+          const loaded = gameDataResults.filter(Boolean) as GameData[]
+          const relevantGames = loaded.filter(gd =>
+            (gd.playerStats?.some((ps: any) => Number(ps.personId) === p.nba_player_id)) ||
+            (gd.playByPlay || []).some((pl: any) => pl.personId === p.nba_player_id)
+          )
+          setMatchedGameData(relevantGames)
 
-          const clipCount = gameData.reduce((n, gd) => n + gd.playByPlay.filter(pl => pl.personId === p.nba_player_id && pl.mp4).length, 0)
-          setSnackbar({ open: true, message: log.length > 0 ? `Found ${log.length} game${log.length !== 1 ? 's' : ''}, ${clipCount} highlight clips for ${p.name}` : `No box scores found for ${p.name} that month`, color: log.length > 0 ? 'success' : 'warning' })
+          const clipCount = relevantGames.reduce((n, gd) => n + (gd.playByPlay || []).filter((pl: any) => pl.personId === p.nba_player_id && pl.mp4).length, 0)
+          setSnackbar({ open: true, message: log.length > 0 ? `Found ${log.length} game${log.length !== 1 ? 's' : ''}, ${relevantGames.length} with play-by-play, ${clipCount} highlight clips for ${p.name}` : (relevantGames.length > 0 ? `${relevantGames.length} games with play-by-play, ${clipCount} clips` : `No games found for ${p.name} that month`), color: relevantGames.length > 0 ? 'success' : 'warning' })
         } catch (err: any) {
           console.error('Failed to fetch award game log:', err)
         } finally {
@@ -1206,10 +1261,23 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
 
   const onDateSelected = useCallback(async (date: string) => {
     setSelectedDate(date)
+    setMacroDrafts([])
     setLoadingGames(true)
+    setFeedGamesForDate([])
     try {
       const games = await fetchGamesForDate(date)
       setGamesForDate(games)
+      // Fetch which games have JSON files and MP4 URLs (by-date API)
+      try {
+        const dateRes = await fetch(`/api/local-feed/by-date/${date}`)
+        if (dateRes.ok) {
+          const dateData = await dateRes.json()
+          setFeedGamesForDate((dateData.games || []).map((g: any) => ({
+            gameId: g.gameId,
+            hasMp4: !!g.hasMp4,
+          })))
+        }
+      } catch { /* non-blocking */ }
     } catch (err: any) {
       setSnackbar({ open: true, message: err.message, color: 'danger' })
     } finally {
@@ -1217,10 +1285,69 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
     }
   }, [])
 
+  // Injury report (matchup): default date picker to today (browser local) and load today's games when entering step 1
+  useEffect(() => {
+    if (activeStep !== 1 || dataSourceMode !== 'matchup' || draft.post_type !== 'injury_report' || selectedDate !== '') return
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    onDateSelected(today)
+  }, [activeStep, dataSourceMode, draft.post_type, selectedDate, onDateSelected])
+
+  // Prop results (matchup): default date picker to yesterday (browser local) and load yesterday's games when entering step 1
+  useEffect(() => {
+    if (activeStep !== 1 || dataSourceMode !== 'matchup' || draft.post_type !== 'prop_results' || selectedDate !== '') return
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const yesterday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    onDateSelected(yesterday)
+  }, [activeStep, dataSourceMode, draft.post_type, selectedDate, onDateSelected])
+
+  // Prop prediction (matchup): default date picker to today and load today's games when entering step 1 (same as drawer)
+  useEffect(() => {
+    if (activeStep !== 1 || dataSourceMode !== 'matchup' || draft.post_type !== 'prop_prediction' || selectedDate !== '') return
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    onDateSelected(today)
+  }, [activeStep, dataSourceMode, draft.post_type, selectedDate, onDateSelected])
+
   const selectGame = useCallback(async (game: NbaGame) => {
     setSpotlightPlayerId(null)
+    setMacroDrafts([])
     setLoadingGameData(true)
     try {
+      // Matchup mode (upcoming, injury_report, prop_prediction, prop_results):
+      // populate from the nba_games row directly — no JSON needed.
+      if (dataSourceMode === 'matchup') {
+        const teams = [game.away_team_tricode, game.home_team_tricode].filter(Boolean)
+        const matchup = `${game.away_team_tricode} @ ${game.home_team_tricode}`
+        const cleanDate = game.game_date?.includes('T') ? game.game_date.split('T')[0] : game.game_date
+        setDraft(prev => {
+          const isInjuryReport = prev.post_type === 'injury_report'
+          const isPropResults = prev.post_type === 'prop_results'
+          const title = prev.title || (isInjuryReport ? `Injury Report — ${matchup} — ${cleanDate}` : isPropResults ? `Prop Results — ${matchup} — ${cleanDate}` : matchup)
+          const slug = prev.slug || generateSlug(isInjuryReport ? `Injury Report — ${matchup} — ${cleanDate}` : isPropResults ? `Prop Results — ${matchup} — ${cleanDate}` : matchup, cleanDate)
+          const description = isInjuryReport
+            ? (prev.description || `Daily injury updates for ${cleanDate} — who's out, questionable, or returning for ${matchup}.`)
+            : isPropResults
+              ? (prev.description || `Post-game prop results for ${matchup} on ${cleanDate} — overs, unders, pushes.`)
+              : prev.description
+          return {
+            ...prev,
+            game_id: game.game_id,
+            game_date: cleanDate,
+            team_tricodes: teams,
+            title,
+            subtitle: prev.subtitle || '',
+            description,
+            slug,
+          }
+        })
+        setSnackbar({ open: true, message: `Matchup set: ${matchup}`, color: 'success' })
+        setLoadingGameData(false)
+        return
+      }
+
+      // Game mode (game_recap, player_spotlight): try to load local JSON for highlights
       const data = await loadLocalGameJson(game.game_id)
       if (data) {
         setMatchedGameData([data])
@@ -1246,7 +1373,6 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
         }))
         setSnackbar({ open: true, message: `Loaded game: ${data.matchup}`, color: 'success' })
       } else {
-        // No local JSON — still populate from nba_games row
         setDraft(prev => ({
           ...prev,
           game_id: game.game_id,
@@ -1263,7 +1389,7 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
     } finally {
       setLoadingGameData(false)
     }
-  }, [])
+  }, [dataSourceMode])
 
   // ─── File upload fallback ──────────────────────────────────
 
@@ -1364,7 +1490,7 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
   }, [draft.post_type, matchedGameData])
 
   const spotlightClipCount = spotlightPlayerId != null
-    ? Math.min(20, getPlayerHighlightClips(spotlightPlayerId, matchedGameData, 999).length)
+    ? collectAllPlayerSpotlightPlaysFromGameData(spotlightPlayerId, matchedGameData).length
     : 0
 
   // Game Recap: max available clips from this game (score + story algorithm)
@@ -1378,6 +1504,18 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
       playByPlay: data.playByPlay || [],
     }, { maxClips: 999 }).length
   }, [draft.post_type, matchedGameData])
+
+  // Per-player total MP4 plays (for TOTW/TOTN section list: "N in slideshow / M total")
+  const playerHighlightCounts = useMemo(() => {
+    const out: Record<number, number> = {}
+    if ((draft.post_type !== 'team_of_week' && draft.post_type !== 'team_of_night') || matchedGameData.length === 0) return out
+    for (const p of resolvedPlayers) {
+      if (p.nba_player_id != null) {
+        out[p.nba_player_id] = collectAllPlayerSpotlightPlaysFromGameData(p.nba_player_id, matchedGameData).length
+      }
+    }
+    return out
+  }, [draft.post_type, resolvedPlayers, matchedGameData])
 
   // ─── Auto-generate sections (delegated to generator registry) ─
 
@@ -1395,28 +1533,269 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
       totnPlayerClipCount,
       totwPlayerClipCount,
       awardHighlightCount,
+      targetDate: draft.game_date || undefined,
+      targetTeams: draft.team_tricodes.length > 0 ? draft.team_tricodes : undefined,
+      targetGameId: draft.game_id || undefined,
     }
 
-    const sections = await generator(ctx)
+    try {
+      const sections = await generator(ctx)
 
-    if (sections.length === 0) {
-      setSnackbar({ open: true, message: 'No data loaded to generate sections from', color: 'warning' })
-      return
-    }
+      if (sections.length === 0) {
+        setSnackbar({ open: true, message: 'No data loaded to generate sections from', color: 'warning' })
+        return
+      }
 
-    // Player spotlight: also update person_id + player_ids on the draft
-    if (draft.post_type === 'player_spotlight' && spotlightPlayerId != null) {
-      setDraft(prev => ({
-        ...prev,
-        person_id: String(spotlightPlayerId),
-        player_ids: [spotlightPlayerId],
-        sections: [...prev.sections, ...sections],
-      }))
-    } else {
-      setDraft(prev => ({ ...prev, sections: [...prev.sections, ...sections] }))
+      if (draft.post_type === 'player_spotlight' && spotlightPlayerId != null) {
+        const headline = sections.find((s) => s.section_type === 'headline')
+        const headlineContent = headline?.content as { text?: string; subtitle?: string } | undefined
+        const generatedSubtitle = headlineContent?.subtitle?.trim() || null
+        const generatedTitle = headlineContent?.text?.trim()
+        setDraft(prev => ({
+          ...prev,
+          person_id: String(spotlightPlayerId),
+          player_ids: [spotlightPlayerId],
+          sections: [...prev.sections, ...sections],
+          ...(generatedSubtitle != null && { subtitle: generatedSubtitle }),
+          ...(generatedTitle != null && prev.title === '' && { title: generatedTitle }),
+        }))
+      } else {
+        setDraft(prev => ({ ...prev, sections: [...prev.sections, ...sections] }))
+      }
+      const isTotnTotw = draft.post_type === 'team_of_night' || draft.post_type === 'team_of_week'
+      const noHighlights = isTotnTotw && matchedGameData.length === 0
+      setSnackbar({
+        open: true,
+        message: noHighlights
+          ? `Auto-generated ${sections.length} sections. No highlight slideshows (no game play-by-play data was loaded for this date — re-select the row after running the play-by-play scraper to add clips).`
+          : `Auto-generated ${sections.length} sections`,
+        color: noHighlights ? 'warning' : 'success',
+      })
+    } catch (err: any) {
+      console.error('[AutoGen] Generator error:', err)
+      setSnackbar({ open: true, message: `Auto-generate failed: ${err.message}`, color: 'danger' })
     }
-    setSnackbar({ open: true, message: `Auto-generated ${sections.length} sections`, color: 'success' })
   }, [draft, resolvedPlayers, matchedGameData, awardGameLog, spotlightPlayerId, spotlightHighlightCount, recapHighlightCount, recapPlayerClipCount, totnPlayerClipCount, totwPlayerClipCount, awardHighlightCount])
+
+  // ─── Macro: generate player spotlight for all players in game ─
+
+  const generateAllPlayerSpotlights = useCallback(async (): Promise<PostDraft[]> => {
+    if (matchedGameData.length === 0 || draft.post_type !== 'player_spotlight') return []
+    const data = matchedGameData[0]
+    const gameId = data.gameId
+    const gameDate = data.gameDate || draft.game_date || ''
+    const matchup = data.matchup || ''
+    const finalScore = data.finalScore || ''
+    const teamTricodes = data.teamTricodes || []
+    const option = POST_TYPE_OPTIONS.find(o => o.value === 'player_spotlight')!
+    const players = availableSpotlightPlayers
+    if (players.length === 0) return []
+    const generator = getSectionGenerator('player_spotlight')
+    const out: PostDraft[] = []
+    for (const { personId, name: playerName } of players) {
+      const playerStat = data.playerStats?.find((ps: any) => Number(ps.personId) === personId)
+      const pts = playerStat?.pts ?? playerStat?.points
+      const reb = playerStat?.reb
+      const ast = playerStat?.ast
+      const stl = playerStat?.stl
+      const blk = playerStat?.blk
+      const min = playerStat?.min
+      const parts: string[] = []
+      if (pts != null && pts !== '') parts.push(`${pts} PTS`)
+      if (reb != null && reb !== '') parts.push(`${reb} REB`)
+      if (ast != null && ast !== '') parts.push(`${ast} AST`)
+      if (stl != null && stl !== '') parts.push(`${stl} STL`)
+      if (blk != null && blk !== '') parts.push(`${blk} BLK`)
+      if (min != null && min !== '') parts.push(`${min} MIN`)
+      const subtitle = parts.length > 0 ? parts.join(' · ') : ''
+      const title = `Player Spotlight — ${playerName}`
+      const description = [matchup, gameDate, finalScore].filter(Boolean).length > 0
+        ? `Standout performance from ${playerName} in ${matchup || 'this game'}${gameDate ? ` on ${gameDate}` : ''}.${finalScore ? ` ${finalScore}.` : ''}`
+        : `Standout performance from ${playerName} — stats, highlights, and analysis.`
+      const slug = generateSlug(title, gameDate || undefined)
+      const baseDraft: PostDraft = {
+        ...EMPTY_DRAFT,
+        post_type: 'player_spotlight',
+        tags: option.tags,
+        title,
+        subtitle,
+        description,
+        slug,
+        game_id: gameId,
+        game_date: gameDate,
+        team_tricodes: teamTricodes,
+        person_id: String(personId),
+        player_ids: [personId],
+        sections: [],
+      }
+      const ctx: GeneratorContext = {
+        draft: baseDraft,
+        resolvedPlayers: [],
+        matchedGameData,
+        awardGameLog: [],
+        spotlightPlayerId: personId,
+        spotlightHighlightCount: 5,
+        recapHighlightCount: 0,
+        recapPlayerClipCount: 0,
+        totnPlayerClipCount: 0,
+        totwPlayerClipCount: 0,
+        awardHighlightCount: 0,
+        targetDate: gameDate || undefined,
+        targetTeams: teamTricodes.length > 0 ? teamTricodes : undefined,
+        targetGameId: gameId,
+      }
+      try {
+        const sections = await generator(ctx)
+        const headline = sections.find((s) => s.section_type === 'headline')
+        const headlineContent = headline?.content as { text?: string; subtitle?: string } | undefined
+        const generatedSubtitle = headlineContent?.subtitle?.trim() || null
+        const generatedTitle = headlineContent?.text?.trim()
+        out.push({
+          ...baseDraft,
+          sections,
+          ...(generatedSubtitle != null && { subtitle: generatedSubtitle }),
+          ...(generatedTitle != null && generatedTitle !== title && { title: generatedTitle }),
+        })
+      } catch (err) {
+        console.warn(`[Macro] Skip player ${personId} (${playerName}):`, err)
+      }
+    }
+    return out
+  }, [matchedGameData, draft.post_type, draft.game_date, availableSpotlightPlayers])
+
+  // ─── Macro: generate prop results for all games on selected date ─
+
+  const generateAllPropResultsPosts = useCallback(async (): Promise<PostDraft[]> => {
+    if (draft.post_type !== 'prop_results' || !selectedDate || gamesForDate.length === 0) return []
+    const option = POST_TYPE_OPTIONS.find(o => o.value === 'prop_results')!
+    const targetDate = selectedDate.includes('T') ? selectedDate.split('T')[0] : selectedDate
+    const generator = getSectionGenerator('prop_results')
+    const out: PostDraft[] = []
+    for (const game of gamesForDate) {
+      const teams = [game.away_team_tricode, game.home_team_tricode].filter(Boolean)
+      const matchup = `${game.away_team_tricode} @ ${game.home_team_tricode}`
+      const title = `Prop Results — ${matchup} — ${targetDate}`
+      const description = `Post-game prop results for ${matchup} on ${targetDate} — overs, unders, pushes.`
+      const slug = generateSlug(title, targetDate)
+      const baseDraft: PostDraft = {
+        ...EMPTY_DRAFT,
+        post_type: 'prop_results',
+        tags: option.tags,
+        title,
+        subtitle: targetDate,
+        description,
+        slug,
+        game_id: game.game_id,
+        game_date: game.game_date || targetDate,
+        team_tricodes: teams,
+        sections: [],
+      }
+      const ctx: GeneratorContext = {
+        draft: baseDraft,
+        resolvedPlayers: [],
+        matchedGameData: [],
+        targetDate,
+        targetTeams: teams,
+        targetGameId: game.game_id,
+      }
+      try {
+        const sections = await generator(ctx)
+        out.push({ ...baseDraft, sections })
+      } catch (err) {
+        console.warn(`[Macro] Skip prop results for game ${game.game_id}:`, err)
+      }
+    }
+    return out
+  }, [draft.post_type, selectedDate, gamesForDate])
+
+  // ─── Macro: generate injury report for all games on selected date ─
+
+  const generateAllInjuryReportPosts = useCallback(async (): Promise<PostDraft[]> => {
+    if (draft.post_type !== 'injury_report' || !selectedDate || gamesForDate.length === 0) return []
+    const option = POST_TYPE_OPTIONS.find(o => o.value === 'injury_report')!
+    const targetDate = selectedDate.includes('T') ? selectedDate.split('T')[0] : selectedDate
+    const generator = getSectionGenerator('injury_report')
+    const out: PostDraft[] = []
+    for (const game of gamesForDate) {
+      const teams = [game.away_team_tricode, game.home_team_tricode].filter(Boolean)
+      const matchup = `${game.away_team_tricode} @ ${game.home_team_tricode}`
+      const title = `Injury Report — ${matchup} — ${targetDate}`
+      const description = `Daily injury updates for ${targetDate} — who's out, questionable, or returning for ${matchup}.`
+      const slug = generateSlug(title, targetDate)
+      const baseDraft: PostDraft = {
+        ...EMPTY_DRAFT,
+        post_type: 'injury_report',
+        tags: option.tags,
+        title,
+        subtitle: targetDate,
+        description,
+        slug,
+        game_id: game.game_id,
+        game_date: game.game_date || targetDate,
+        team_tricodes: teams,
+        sections: [],
+      }
+      const ctx: GeneratorContext = {
+        draft: baseDraft,
+        resolvedPlayers: [],
+        matchedGameData: [],
+        targetDate,
+        targetTeams: teams,
+      }
+      try {
+        const sections = await generator(ctx)
+        out.push({ ...baseDraft, sections })
+      } catch (err) {
+        console.warn(`[Macro] Skip injury report for game ${game.game_id}:`, err)
+      }
+    }
+    return out
+  }, [draft.post_type, selectedDate, gamesForDate])
+
+  // ─── Macro: generate prop prediction for all games on selected date ─
+
+  const generateAllPropPredictionPosts = useCallback(async (): Promise<PostDraft[]> => {
+    if (draft.post_type !== 'prop_prediction' || !selectedDate || gamesForDate.length === 0) return []
+    const option = POST_TYPE_OPTIONS.find(o => o.value === 'prop_prediction')!
+    const targetDate = selectedDate.includes('T') ? selectedDate.split('T')[0] : selectedDate
+    const generator = getSectionGenerator('prop_prediction')
+    const out: PostDraft[] = []
+    for (const game of gamesForDate) {
+      const teams = [game.away_team_tricode, game.home_team_tricode].filter(Boolean)
+      const matchup = `${game.away_team_tricode} @ ${game.home_team_tricode}`
+      const title = `Prop Predictions — ${matchup} — ${targetDate}`
+      const description = `Pre-game prop predictions for ${matchup} on ${targetDate} — overs, unders, confidence levels.`
+      const slug = generateSlug(title, targetDate)
+      const baseDraft: PostDraft = {
+        ...EMPTY_DRAFT,
+        post_type: 'prop_prediction',
+        tags: option.tags,
+        title,
+        subtitle: targetDate,
+        description,
+        slug,
+        game_id: game.game_id,
+        game_date: game.game_date || targetDate,
+        team_tricodes: teams,
+        sections: [],
+      }
+      const ctx: GeneratorContext = {
+        draft: baseDraft,
+        resolvedPlayers: [],
+        matchedGameData: [],
+        targetDate,
+        targetTeams: teams,
+        targetGameId: game.game_id,
+      }
+      try {
+        const sections = await generator(ctx)
+        out.push({ ...baseDraft, sections })
+      } catch (err) {
+        console.warn(`[Macro] Skip prop prediction for game ${game.game_id}:`, err)
+      }
+    }
+    return out
+  }, [draft.post_type, selectedDate, gamesForDate])
 
   // ─── Save to Supabase ──────────────────────────────────────
 
@@ -1424,18 +1803,54 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
     if (!user) { setSnackbar({ open: true, message: 'You must be logged in', color: 'danger' }); return }
     setSaving(true)
     try {
+      // Merge frozen module snapshots into metadata so feed posts render from metadata (same modules, frozen data)
+      const metadata = { ...draft.metadata }
+      const injurySection = draft.sections.find((s) => s.section_type === 'injury_module')
+      const propSection = draft.sections.find((s) => s.section_type === 'prop_module')
+      const tankSection = draft.sections.find((s) => s.section_type === 'tank_module')
+      const dfsSection = draft.sections.find((s) => s.section_type === 'dfs_module')
+      if (injurySection?.content && typeof injurySection.content === 'object') metadata.injury_snapshot = injurySection.content
+      if (propSection?.content && typeof propSection.content === 'object') metadata.prop_snapshot = propSection.content
+      if (tankSection?.content && typeof tankSection.content === 'object') metadata.tank_snapshot = tankSection.content
+      if (dfsSection?.content && typeof dfsSection.content === 'object') metadata.dfs_snapshot = dfsSection.content
+
+      const coverImageUrl =
+        draft.cover_image_url ||
+        (draft.post_type === 'player_spotlight' && (draft.person_id || draft.player_ids?.[0])
+          ? getNbaPlayerImageUrl(Number(draft.person_id || draft.player_ids?.[0]))
+          : null)
       const postRow = {
         post_type: draft.post_type, status,
         title: draft.title, subtitle: draft.subtitle || null, description: draft.description || null,
         slug: draft.slug || generateSlug(draft.title, draft.game_date || undefined),
-        cover_image_url: draft.cover_image_url || null, share_image_url: draft.share_image_url || null,
+        cover_image_url: coverImageUrl || null, share_image_url: draft.share_image_url || null,
         game_id: draft.game_id || null, game_date: draft.game_date || null,
         team_tricodes: draft.team_tricodes.length ? draft.team_tricodes : null,
         player_ids: draft.player_ids.length ? draft.player_ids : null,
         person_id: draft.person_id ? Number(draft.person_id) : null,
         tags: draft.tags.length ? draft.tags : [],
-        metadata: draft.metadata,
-        source_ref: generateSourceRef(draft.post_type, draft.game_id || undefined, draft.game_date || undefined),
+        metadata,
+        source_ref: (() => {
+          // Disambiguate so multiple posts per game/week don't collide (UNIQUE source_ref).
+          // For player_spotlight always include a suffix: person_id, or player_ids[0], or timestamp so we never 409.
+          let disambiguator: string | number | undefined
+          if (draft.post_type === 'player_spotlight') {
+            disambiguator =
+              draft.person_id ?? draft.player_ids?.[0] ?? `t-${Date.now()}`
+          } else if (draft.post_type === 'player_of_week' && draft.metadata?.pow_row?.conference) {
+            disambiguator = String(draft.metadata.pow_row.conference)
+          } else if (draft.post_type === 'player_of_month' && draft.metadata?.pom_row?.conference) {
+            disambiguator = String(draft.metadata.pom_row.conference)
+          } else if ((draft.post_type === 'player_of_week' || draft.post_type === 'player_of_month') && draft.person_id) {
+            disambiguator = String(draft.person_id)
+          }
+          return generateSourceRef(
+            draft.post_type,
+            draft.game_id || undefined,
+            draft.game_date || undefined,
+            disambiguator
+          )
+        })(),
         created_by: user.id, author_name: 'HoopGeek',
         published_at: status === 'published' ? new Date().toISOString() : null,
       }
@@ -1463,11 +1878,88 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
     } finally { setSaving(false) }
   }
 
+  const saveMacroPosts = async (status: PostStatus) => {
+    if (!user || macroDrafts.length === 0) return
+    setSaving(true)
+    try {
+      let firstSlug: string | null = null
+      for (const d of macroDrafts) {
+        const metadata = { ...d.metadata }
+        const injurySection = d.sections.find((s) => s.section_type === 'injury_module')
+        const propSection = d.sections.find((s) => s.section_type === 'prop_module')
+        const tankSection = d.sections.find((s) => s.section_type === 'tank_module')
+        const dfsSection = d.sections.find((s) => s.section_type === 'dfs_module')
+        if (injurySection?.content && typeof injurySection.content === 'object') metadata.injury_snapshot = injurySection.content
+        if (propSection?.content && typeof propSection.content === 'object') metadata.prop_snapshot = propSection.content
+        if (tankSection?.content && typeof tankSection.content === 'object') metadata.tank_snapshot = tankSection.content
+        if (dfsSection?.content && typeof dfsSection.content === 'object') metadata.dfs_snapshot = dfsSection.content
+        const coverImageUrl = d.cover_image_url || (d.person_id ? getNbaPlayerImageUrl(Number(d.person_id)) : null)
+        const postRow = {
+          post_type: d.post_type,
+          status,
+          title: d.title,
+          subtitle: d.subtitle || null,
+          description: d.description || null,
+          slug: d.slug || generateSlug(d.title, d.game_date || undefined),
+          cover_image_url: coverImageUrl || null,
+          share_image_url: d.share_image_url || null,
+          game_id: d.game_id || null,
+          game_date: d.game_date || null,
+          team_tricodes: d.team_tricodes.length ? d.team_tricodes : null,
+          player_ids: d.player_ids.length ? d.player_ids : null,
+          person_id: d.person_id ? Number(d.person_id) : null,
+          tags: d.tags.length ? d.tags : [],
+          metadata,
+          source_ref: generateSourceRef(d.post_type, d.game_id || undefined, d.game_date || undefined, d.person_id ?? d.player_ids?.[0]),
+          created_by: user.id,
+          author_name: 'HoopGeek',
+          published_at: status === 'published' ? new Date().toISOString() : null,
+        }
+        const { data: insertedPost, error: postError } = await supabase.from('feed_posts').insert([postRow]).select().single()
+        if (postError) throw postError
+        if (!insertedPost) throw new Error('No post returned')
+        if (firstSlug == null) firstSlug = insertedPost.slug
+        if (d.sections.length > 0) {
+          const sectionRows = d.sections.map((s, i) => ({
+            post_id: insertedPost.id,
+            section_order: i,
+            section_type: s.section_type,
+            title: s.title || null,
+            content: s.content || {},
+            player_id: s.player_id || null,
+            team_tricode: s.team_tricode || null,
+          }))
+          const { error: sectionsError } = await supabase.from('feed_post_sections').insert(sectionRows)
+          if (sectionsError) throw sectionsError
+        }
+      }
+      setSnackbar({ open: true, message: `${macroDrafts.length} post${macroDrafts.length !== 1 ? 's' : ''} ${status === 'published' ? 'published' : 'saved as draft'}!`, color: 'success' })
+      setTimeout(() => {
+        if (status === 'published' && firstSlug) navigate(`/feed/${firstSlug}`)
+        else navigate(draftSaveTarget)
+      }, 1500)
+    } catch (err: any) {
+      console.error('Error saving macro posts:', err)
+      setSnackbar({ open: true, message: `Error: ${err.message}`, color: 'danger' })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const canProceed = (step: number): boolean => {
     switch (step) {
       case 0: return true
       case 1:
-        if (draft.post_type === 'player_spotlight' && dataSourceMode === 'game') return matchedGameData.length > 0 && spotlightPlayerId != null
+        if (draft.post_type === 'player_spotlight' && dataSourceMode === 'game') {
+          if (spotlightAllPlayers) return matchedGameData.length > 0
+          return matchedGameData.length > 0 && spotlightPlayerId != null
+        }
+        if (dataSourceMode === 'matchup') {
+          if (draft.post_type === 'prop_results' && propResultsAllGames) return selectedDate.length > 0 && gamesForDate.length > 0
+          if (draft.post_type === 'injury_report' && injuryReportAllGames) return selectedDate.length > 0 && gamesForDate.length > 0
+          if (draft.post_type === 'prop_prediction' && propPredictionAllGames) return selectedDate.length > 0 && gamesForDate.length > 0
+          return draft.team_tricodes.length >= 2
+        }
         return true
       case 2: return draft.title.trim().length > 0 && draft.slug.trim().length > 0
       case 3: return true
@@ -1478,27 +1970,81 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
 
   const hasAutoGenData =
     dataSourceMode === 'manual'
-      ? true // manual types always get a scaffold (hero + headline + rich_text)
-      : (dataSourceMode === 'totn' || dataSourceMode === 'totw' || dataSourceMode === 'pow' || dataSourceMode === 'pom')
-        ? resolvedPlayers.length > 0
-        : draft.post_type === 'player_spotlight'
-          ? matchedGameData.length > 0 && spotlightPlayerId != null
-          : matchedGameData.length > 0
+      ? true
+      : dataSourceMode === 'matchup'
+        ? draft.team_tricodes.length >= 2 || draft.game_date.length > 0
+        : (dataSourceMode === 'totn' || dataSourceMode === 'totw' || dataSourceMode === 'pow' || dataSourceMode === 'pom')
+          ? resolvedPlayers.length > 0
+          : draft.post_type === 'player_spotlight'
+            ? matchedGameData.length > 0 && spotlightPlayerId != null
+            : matchedGameData.length > 0
 
   // ─── Render ────────────────────────────────────────────────
 
   return (
-    <Box sx={{ maxWidth: 900, mx: 'auto', px: { xs: 2, md: 3 }, pt: { xs: 'calc(49px + 24px)', md: 'calc((100vh - 40px) / 16 + 24px)' }, pb: 8, minHeight: '100vh' }}>
+    <Box sx={{
+      maxWidth: 900,
+      mx: 'auto',
+      px: { xs: 2, md: 3 },
+      pt: { xs: 'calc(49px + 24px)', md: 'calc((100vh - 40px) / 16 + 24px)' },
+      pb: 8,
+      minHeight: '100vh',
+      bgcolor: '#ffffff',
+      color: '#000',
+      // Force dark text on white everywhere (app is in dark mode globally)
+      '--joy-palette-text-primary': '#000',
+      '--joy-palette-text-secondary': '#333',
+      '--joy-palette-text-tertiary': '#666',
+      '--joy-palette-neutral-plainColor': '#000',
+      '--joy-palette-background-surface': '#ffffff',
+      '--joy-palette-background-level1': '#f5f5f5',
+      '--joy-palette-background-level2': '#eeeeee',
+      '--joy-palette-background-level3': '#e0e0e0',
+      '& .MuiStepButton-root': { color: '#000' },
+      '& .MuiStepIndicator-root': { color: '#000' },
+      '& .MuiStepper-root': { color: '#000' },
+      '& .MuiFormLabel-root': { color: '#000' },
+      '& .MuiFormHelperText-root': { color: '#666' },
+      '& .MuiInput-input': { color: '#000' },
+      '& .MuiSelect-select': { color: '#000' },
+      // All typography and text readable
+      '& .MuiTypography-root': { color: '#000' },
+      '& .MuiCard-root': { bgcolor: '#ffffff', color: '#000' },
+      '& .MuiCardContent-root': { bgcolor: 'transparent', color: '#000' },
+      '& .MuiSheet-root': { bgcolor: '#ffffff', color: '#000' },
+      '& table': { color: '#000' },
+      '& thead': { bgcolor: '#f5f5f5' },
+      '& th': { color: '#000', bgcolor: '#f5f5f5' },
+      '& td': { color: '#000', bgcolor: 'transparent' },
+      '& tbody tr': { bgcolor: 'transparent' },
+      '& tbody tr:hover': { bgcolor: '#f9f9f9' },
+      '& label': { color: '#000' },
+      '& input': { color: '#000', bgcolor: '#fff' },
+      '& textarea': { color: '#000', bgcolor: '#fff' },
+      '& .MuiSlider-thumb': { color: '#000' },
+      '& .MuiChip-label': { color: 'inherit' },
+      // Cards with variant=solid: keep accent bg but force text dark where needed
+      '& .MuiCard-root.MuiCard-variantSolid': { color: '#000' },
+      '& .MuiCard-root.MuiCard-variantSolid .MuiTypography-root': { color: '#000' },
+      '& .MuiFormControl-root': { color: '#000' },
+      '& .MuiInput-root': { bgcolor: '#fff', color: '#000' },
+      '& .MuiTextarea-root': { bgcolor: '#fff', color: '#000' },
+      '& .MuiSelect-root': { bgcolor: '#fff', color: '#000' },
+    }}>
       {/* Header */}
-      <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 3 }}>
-        <IconButton variant="plain" onClick={() => navigate(backTarget)}>
+      <Stack direction="row" alignItems="center" gap={2} sx={{ mb: 3, color: '#000' }}>
+        <IconButton variant="plain" onClick={() => navigate(backTarget)} sx={{ color: '#000' }}>
           <ArrowBack />
         </IconButton>
-        <Typography level="h3" sx={{ fontWeight: 700, fontFamily: 'serif' }}>Create Post</Typography>
+        <Typography level="h3" sx={{ fontWeight: 700, fontFamily: 'serif', color: '#000' }}>Create Post</Typography>
+        <Box sx={{ flex: 1 }} />
+        <IconButton variant="plain" onClick={() => navigate('/feed')} aria-label="Home" sx={{ color: '#000' }}>
+          <Home />
+        </IconButton>
       </Stack>
 
       {/* Stepper */}
-      <Stepper sx={{ mb: 4 }}>
+      <Stepper sx={{ mb: 4, color: '#000' }}>
         {STEPS.map((label, index) => (
           <Step key={label} indicator={
             <StepIndicator variant={activeStep === index ? 'solid' : index < activeStep ? 'solid' : 'outlined'} color={activeStep === index ? 'primary' : index < activeStep ? 'success' : 'neutral'}>
@@ -1516,9 +2062,11 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
           <StepPostType selected={draft.post_type} onSelect={(type) => {
             const option = POST_TYPE_OPTIONS.find(o => o.value === type)!
             setDraft(prev => ({ ...prev, post_type: type, tags: option.tags }))
+            draftStep2AutoFilledRef.current = false
             // Reset data source state when type changes
-            setSelectedRowId(null); setResolvedPlayers([]); setMatchedGameData([]); setGamesForDate([]); setTotnBoxscores([]); setTotnGamesFeedStatus([])
+            setSelectedRowId(null); setResolvedPlayers([]); setMatchedGameData([]); setGamesForDate([]); setFeedGamesForDate([]); setTotnBoxscores([]); setTotnGamesFeedStatus([])
             setSpotlightPlayerId(null); setSpotlightHighlightCount(5)
+            setSpotlightAllPlayers(false); setPropResultsAllGames(false); setInjuryReportAllGames(false); setPropPredictionAllGames(false); setMacroDrafts([])
           }} />
         )}
 
@@ -1532,6 +2080,7 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             onSelectTotnRow={selectTotnRow} onSelectTotwRow={selectTotwRow}
             onSelectPowRow={selectPowRow} onSelectPomRow={selectPomRow}
             selectedDate={selectedDate} gamesForDate={gamesForDate}
+            feedGamesForDate={feedGamesForDate}
             loadingGames={loadingGames} loadingGameData={loadingGameData}
             matchedGameData={matchedGameData}
             totnBoxscores={totnBoxscores}
@@ -1545,7 +2094,42 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             spotlightClipCount={spotlightClipCount}
             onSpotlightPlayerChange={(personId) => {
               setSpotlightPlayerId(personId)
-              setDraft(prev => ({ ...prev, person_id: personId ?? undefined }))
+              if (personId == null) {
+                setDraft(prev => ({ ...prev, person_id: undefined }))
+                return
+              }
+              const gameData = matchedGameData[0]
+              const playerStat = gameData?.playerStats?.find((ps: any) => Number(ps.personId) === personId)
+              const playerName = playerStat?.name || playerStat?.playerName || availableSpotlightPlayers.find(p => p.personId === personId)?.name || `Player ${personId}`
+              const pts = playerStat?.pts ?? playerStat?.points
+              const reb = playerStat?.reb
+              const ast = playerStat?.ast
+              const stl = playerStat?.stl
+              const blk = playerStat?.blk
+              const min = playerStat?.min
+              const parts: string[] = []
+              if (pts != null && pts !== '') parts.push(`${pts} PTS`)
+              if (reb != null && reb !== '') parts.push(`${reb} REB`)
+              if (ast != null && ast !== '') parts.push(`${ast} AST`)
+              if (stl != null && stl !== '') parts.push(`${stl} STL`)
+              if (blk != null && blk !== '') parts.push(`${blk} BLK`)
+              if (min != null && min !== '') parts.push(`${min} MIN`)
+              const subtitle = parts.length > 0 ? parts.join(' · ') : ''
+              const matchup = gameData?.matchup || ''
+              const gameDate = gameData?.gameDate || draft.game_date || ''
+              const finalScore = gameData?.finalScore || ''
+              const title = `Player Spotlight — ${playerName}`
+              const description = [matchup, gameDate, finalScore].filter(Boolean).length > 0
+                ? `Standout performance from ${playerName} in ${matchup || 'this game'}${gameDate ? ` on ${gameDate}` : ''}.${finalScore ? ` ${finalScore}.` : ''}`
+                : `Standout performance from ${playerName} — stats, highlights, and analysis.`
+              setDraft(prev => ({
+                ...prev,
+                person_id: String(personId),
+                title,
+                subtitle,
+                description,
+                slug: generateSlug(title, gameDate || undefined),
+              }))
             }}
             onSpotlightHighlightCountChange={setSpotlightHighlightCount}
             recapHighlightCount={recapHighlightCount}
@@ -1561,6 +2145,15 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             loadingAwardGames={loadingAwardGames}
             awardHighlightCount={awardHighlightCount}
             onAwardHighlightCountChange={setAwardHighlightCount}
+            spotlightAllPlayers={spotlightAllPlayers}
+            onSpotlightAllPlayersChange={(v) => { setSpotlightAllPlayers(v); if (!v) setMacroDrafts([]) }}
+            macroGenerating={macroGenerating}
+            propResultsAllGames={propResultsAllGames}
+            onPropResultsAllGamesChange={(v) => { setPropResultsAllGames(v); if (!v) setMacroDrafts([]) }}
+            injuryReportAllGames={injuryReportAllGames}
+            onInjuryReportAllGamesChange={(v) => { setInjuryReportAllGames(v); if (!v) setMacroDrafts([]) }}
+            propPredictionAllGames={propPredictionAllGames}
+            onPropPredictionAllGamesChange={(v) => { setPropPredictionAllGames(v); if (!v) setMacroDrafts([]) }}
           />
         )}
 
@@ -1575,22 +2168,113 @@ export default function PostCreator({ returnPath }: PostCreatorProps = {}) {
             addSectionOpen={addSectionOpen} onSetAddSectionOpen={setAddSectionOpen}
             editingSectionIdx={editingSectionIdx} onSetEditingSectionIdx={setEditingSectionIdx}
             onAutoGenerate={hasAutoGenData ? autoGenerateSections : undefined}
+            playerHighlightCounts={playerHighlightCounts}
+            lineupClipCount={draft.post_type === 'team_of_night' ? totnPlayerClipCount : draft.post_type === 'team_of_week' ? totwPlayerClipCount : undefined}
           />
         )}
 
-        {activeStep === 4 && <StepReview draft={draft} saving={saving} onSave={savePost} />}
+        {activeStep === 4 && (macroDrafts.length > 0 ? (
+          <StepReviewMacro drafts={macroDrafts} saving={saving} onSaveAll={saveMacroPosts} />
+        ) : (
+          <StepReview draft={draft} saving={saving} onSave={savePost} />
+        ))}
       </Box>
 
       {/* Navigation */}
       <Divider sx={{ my: 3 }} />
       <Stack direction="row" justifyContent="space-between">
-        <Button variant="outlined" color="neutral" startDecorator={<ArrowBack />} disabled={activeStep === 0} onClick={() => setActiveStep(prev => prev - 1)}>Back</Button>
+        <Button
+          variant="outlined"
+          color="neutral"
+          startDecorator={<ArrowBack />}
+          disabled={activeStep === 0}
+          onClick={() => {
+            if (activeStep === 4 && macroDrafts.length > 0) {
+              setMacroDrafts([])
+              setActiveStep(1)
+            } else {
+              setActiveStep(prev => prev - 1)
+            }
+          }}
+        >
+          Back
+        </Button>
         {activeStep < STEPS.length - 1 ? (
-          <Button variant="solid" endDecorator={<ArrowForward />} disabled={!canProceed(activeStep)} onClick={() => setActiveStep(prev => prev + 1)}>Next</Button>
+          <Button
+            variant="outlined"
+            color="neutral"
+            endDecorator={<ArrowForward />}
+            disabled={!canProceed(activeStep) || macroGenerating}
+            loading={macroGenerating}
+            onClick={async () => {
+              if (activeStep === 1 && draft.post_type === 'player_spotlight' && spotlightAllPlayers && matchedGameData.length > 0) {
+                setMacroGenerating(true)
+                try {
+                  const drafts = await generateAllPlayerSpotlights()
+                  setMacroDrafts(drafts)
+                  if (drafts.length > 0) setActiveStep(4)
+                  else setSnackbar({ open: true, message: 'No players with highlights in this game', color: 'warning' })
+                } catch (err: any) {
+                  setSnackbar({ open: true, message: `Generation failed: ${err.message}`, color: 'danger' })
+                } finally {
+                  setMacroGenerating(false)
+                }
+              } else if (activeStep === 1 && draft.post_type === 'prop_results' && propResultsAllGames && selectedDate && gamesForDate.length > 0) {
+                setMacroGenerating(true)
+                try {
+                  const drafts = await generateAllPropResultsPosts()
+                  setMacroDrafts(drafts)
+                  if (drafts.length > 0) setActiveStep(4)
+                  else setSnackbar({ open: true, message: 'No games or prop data for this date', color: 'warning' })
+                } catch (err: any) {
+                  setSnackbar({ open: true, message: `Generation failed: ${err.message}`, color: 'danger' })
+                } finally {
+                  setMacroGenerating(false)
+                }
+              } else if (activeStep === 1 && draft.post_type === 'injury_report' && injuryReportAllGames && selectedDate && gamesForDate.length > 0) {
+                setMacroGenerating(true)
+                try {
+                  const drafts = await generateAllInjuryReportPosts()
+                  setMacroDrafts(drafts)
+                  if (drafts.length > 0) setActiveStep(4)
+                  else setSnackbar({ open: true, message: 'No games for this date', color: 'warning' })
+                } catch (err: any) {
+                  setSnackbar({ open: true, message: `Generation failed: ${err.message}`, color: 'danger' })
+                } finally {
+                  setMacroGenerating(false)
+                }
+              } else if (activeStep === 1 && draft.post_type === 'prop_prediction' && propPredictionAllGames && selectedDate && gamesForDate.length > 0) {
+                setMacroGenerating(true)
+                try {
+                  const drafts = await generateAllPropPredictionPosts()
+                  setMacroDrafts(drafts)
+                  if (drafts.length > 0) setActiveStep(4)
+                  else setSnackbar({ open: true, message: 'No games or prop data for this date', color: 'warning' })
+                } catch (err: any) {
+                  setSnackbar({ open: true, message: `Generation failed: ${err.message}`, color: 'danger' })
+                } finally {
+                  setMacroGenerating(false)
+                }
+              } else {
+                setActiveStep(prev => prev + 1)
+              }
+            }}
+          >
+            {macroGenerating ? 'Generating…' : 'Next'}
+          </Button>
         ) : (
           <Stack direction="row" gap={1}>
-            <Button variant="outlined" color="neutral" startDecorator={<Save />} loading={saving} onClick={() => savePost('draft')}>Save Draft</Button>
-            <Button variant="solid" color="success" startDecorator={<Publish />} loading={saving} onClick={() => savePost('published')}>Publish</Button>
+            {macroDrafts.length > 0 ? (
+              <>
+                <Button variant="outlined" color="neutral" startDecorator={<Save />} loading={saving} onClick={() => saveMacroPosts('draft')}>Save all as draft</Button>
+                <Button variant="solid" color="success" startDecorator={<Publish />} loading={saving} onClick={() => saveMacroPosts('published')}>Publish all</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outlined" color="neutral" startDecorator={<Save />} loading={saving} onClick={() => savePost('draft')}>Save Draft</Button>
+                <Button variant="solid" color="success" startDecorator={<Publish />} loading={saving} onClick={() => savePost('published')}>Publish</Button>
+              </>
+            )}
           </Stack>
         )}
       </Stack>
@@ -1609,7 +2293,7 @@ function StepPostType({ selected, onSelect }: { selected: PostType; onSelect: (t
   return (
     <Box>
       <Typography level="h4" sx={{ mb: 1 }}>What type of post?</Typography>
-      <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>Choose the post type. This determines the data source and default sections.</Typography>
+      <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>Choose the post type. This determines the data source and default sections.</Typography>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', md: '1fr 1fr 1fr' }, gap: 2 }}>
         {POST_TYPE_OPTIONS.map(opt => (
           <Card key={opt.value} variant={selected === opt.value ? 'solid' : 'outlined'} color={selected === opt.value ? 'primary' : 'neutral'}
@@ -1621,7 +2305,7 @@ function StepPostType({ selected, onSelect }: { selected: PostType; onSelect: (t
                 <Box sx={{ width: 36, height: 36, borderRadius: '50%', bgcolor: opt.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', color: opt.color }}>{opt.icon}</Box>
                 <Typography level="title-md" sx={{ fontWeight: 600 }}>{opt.label}</Typography>
               </Stack>
-              <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>{opt.description}</Typography>
+              <Typography level="body-xs" sx={{ color: '#666' }}>{opt.description}</Typography>
             </CardContent>
           </Card>
         ))}
@@ -1728,7 +2412,7 @@ function AwardGamesPanel({
               ))}
             </tbody>
             <tfoot>
-              <tr style={{ background: 'var(--joy-palette-background-level1)' }}>
+              <tr style={{ background: '#f5f5f5' }}>
                 <td colSpan={2} style={{ padding: '4px 6px' }}>
                   <Typography level="body-xs" sx={{ fontWeight: 700 }}>Averages ({gp} GP)</Typography>
                 </td>
@@ -1760,7 +2444,8 @@ function StepDataSource({
   mode, totnRows, totwRows, powRows, pomRows, selectedRowId, resolvedPlayers,
   loadingRows, loadingPlayers,
   onSelectTotnRow, onSelectTotwRow, onSelectPowRow, onSelectPomRow,
-  selectedDate, gamesForDate, loadingGames, loadingGameData, matchedGameData,
+  selectedDate, gamesForDate, feedGamesForDate,
+  loadingGames, loadingGameData, matchedGameData,
   totnBoxscores, totnGamesFeedStatus,
   onDateSelected, onSelectGame, onFileUpload, draft,
   spotlightPlayerId, spotlightHighlightCount, availableSpotlightPlayers, spotlightClipCount,
@@ -1771,6 +2456,10 @@ function StepDataSource({
   totwPlayerClipCount, onTotwPlayerClipCountChange,
   awardGameLog, loadingAwardGames,
   awardHighlightCount, onAwardHighlightCountChange,
+  spotlightAllPlayers, onSpotlightAllPlayersChange, macroGenerating,
+  propResultsAllGames, onPropResultsAllGamesChange,
+  injuryReportAllGames, onInjuryReportAllGamesChange,
+  propPredictionAllGames, onPropPredictionAllGamesChange,
 }: {
   mode: string
   totnRows: any[]; totwRows: any[]; powRows: any[]; pomRows: any[]
@@ -1778,7 +2467,8 @@ function StepDataSource({
   loadingRows: boolean; loadingPlayers: boolean
   onSelectTotnRow: (row: any) => void; onSelectTotwRow: (row: any) => void
   onSelectPowRow: (row: any) => void; onSelectPomRow: (row: any) => void
-  selectedDate: string; gamesForDate: NbaGame[]; loadingGames: boolean; loadingGameData: boolean
+  selectedDate: string; gamesForDate: NbaGame[]; feedGamesForDate: Array<{ gameId: string; hasMp4: boolean }>
+  loadingGames: boolean; loadingGameData: boolean
   matchedGameData: GameData[]
   totnBoxscores: Array<{ game_id: string; nba_player_id: number; player_name?: string; pts?: number; reb?: number; ast?: number; stl?: number; blk?: number; min?: number | string }>
   totnGamesFeedStatus: Array<{ gameId: string; inFeed: boolean; hasMp4: boolean }>
@@ -1804,6 +2494,15 @@ function StepDataSource({
   loadingAwardGames: boolean
   awardHighlightCount: number
   onAwardHighlightCountChange: (count: number) => void
+  spotlightAllPlayers: boolean
+  onSpotlightAllPlayersChange: (v: boolean) => void
+  macroGenerating?: boolean
+  propResultsAllGames: boolean
+  onPropResultsAllGamesChange: (v: boolean) => void
+  injuryReportAllGames: boolean
+  onInjuryReportAllGamesChange: (v: boolean) => void
+  propPredictionAllGames: boolean
+  onPropPredictionAllGamesChange: (v: boolean) => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -1812,7 +2511,7 @@ function StepDataSource({
     return (
       <Box>
         <Typography level="h4" sx={{ mb: 1 }}>Select Team of the Night</Typography>
-        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
           Pick a TOTN row. The lineup will be resolved and matched game files loaded automatically.
         </Typography>
 
@@ -1841,7 +2540,7 @@ function StepDataSource({
                     return (
                       <tr key={row.id} onClick={() => onSelectTotnRow(row)}
                         style={{ cursor: 'pointer', background: isSelected ? '#e3f2fd' : undefined }}>
-                        <td>{isSelected ? <Check color="success" fontSize="small" /> : <SportsBasketball fontSize="small" sx={{ color: '#ccc' }} />}</td>
+                        <td>{isSelected ? <Check color="success" fontSize="small" /> : <SportsBasketball fontSize="small" sx={{ color: '#666' }} />}</td>
                         <td><Typography level="body-sm" sx={{ fontWeight: isSelected ? 700 : 400 }}>{row.game_date}</Typography></td>
                         <td style={{ textAlign: 'right' }}><Typography level="body-sm" sx={{ fontWeight: 600 }}>{Number(row.total_fantasy_points).toFixed(1)}</Typography></td>
                         <td style={{ textAlign: 'right' }}><Typography level="body-xs" sx={{ fontFamily: 'monospace' }}>{formatSalary(Number(row.total_salary))}</Typography></td>
@@ -1875,7 +2574,7 @@ function StepDataSource({
                           <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{p.name}</Typography>
                           <Chip size="sm" variant="soft">{p.team_abbreviation || '?'}</Chip>
                           {gameStat && (
-                            <Typography level="body-xs" sx={{ color: 'text.secondary', minWidth: 100, textAlign: 'right' }}>
+                            <Typography level="body-xs" sx={{ color: '#333', minWidth: 100, textAlign: 'right' }}>
                               {gameStat.pts ?? '—'}p {gameStat.reb ?? '—'}r {gameStat.ast ?? '—'}a
                             </Typography>
                           )}
@@ -1893,7 +2592,7 @@ function StepDataSource({
                     </Alert>
                   ) : (
                     <Alert color="warning" variant="soft" sx={{ mt: 2 }}>
-                      No game files with stats found for {draft.game_date}. Upload game JSONs or check that files are in <code>scripts/feed/</code>.
+                      No game play-by-play data found for {draft.game_date}. <strong>Highlight slideshows will not be added</strong> to this post. Scrape full game JSON for this date (e.g. <code>scripts/feed/scrape_games_date_range.py</code>) so <code>scripts/feed/&lt;game_id&gt;.json</code> includes MP4 clips in <code>playByPlay</code>, then re-select this TOTN row to load them.
                     </Alert>
                   )}
 
@@ -1976,7 +2675,7 @@ function StepDataSource({
     return (
       <Box>
         <Typography level="h4" sx={{ mb: 1 }}>Select Team of the Week</Typography>
-        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>Pick a TOTW row. Players will be resolved automatically.</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>Pick a TOTW row. Players will be resolved automatically.</Typography>
 
         {loadingRows ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
@@ -2027,7 +2726,7 @@ function StepDataSource({
                           <Typography level="body-sm" sx={{ fontWeight: 600, flex: 1 }}>{p.name}</Typography>
                           <Chip size="sm" variant="soft">{p.team_abbreviation || '?'}</Chip>
                           <Typography level="body-xs" sx={{ fontWeight: 600, minWidth: 55, textAlign: 'right' }}>{p.fantasy_points.toFixed(1)} FP</Typography>
-                          <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: 'text.tertiary', minWidth: 60, textAlign: 'right' }}>{formatSalary(p.salary)}</Typography>
+                          <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: '#666', minWidth: 60, textAlign: 'right' }}>{formatSalary(p.salary)}</Typography>
                         </Stack>
                       ))}
                     </Stack>
@@ -2065,7 +2764,7 @@ function StepDataSource({
     return (
       <Box>
         <Typography level="h4" sx={{ mb: 1 }}>Select a Game</Typography>
-        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>Pick a date to see games, then select one to load its data.</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>Pick a date to see games, then select one to load its data.</Typography>
 
         <Stack gap={3}>
           <FormControl>
@@ -2080,17 +2779,21 @@ function StepDataSource({
               <Typography level="title-sm">{gamesForDate.length} game{gamesForDate.length !== 1 ? 's' : ''} on {selectedDate}</Typography>
               {gamesForDate.map(game => {
                 const isSelected = matchedGameData.some(d => d.gameId === game.game_id)
+                const feedStatus = feedGamesForDate.find(f => f.gameId === game.game_id)
+                const hasJson = !!feedStatus
+                const hasMp4 = feedStatus?.hasMp4 ?? false
                 return (
                   <Card key={game.game_id} variant={isSelected ? 'solid' : 'outlined'} color={isSelected ? 'success' : 'neutral'}
                     sx={{ cursor: 'pointer', '&:hover': { borderColor: 'primary.400' }, transition: 'all 0.15s' }}
                     onClick={() => onSelectGame(game)}>
                     <CardContent sx={{ p: 1.5 }}>
                       <Stack direction="row" alignItems="center" gap={2}>
-                        {isSelected && <Check />}
+                        {hasJson && <Check color="success" fontSize="small" titleAccess="Has JSON file" />}
+                        {hasMp4 && <VideoLibrary fontSize="small" color="action" titleAccess="Has MP4 URLs" />}
                         <Typography level="title-md" sx={{ fontWeight: 700 }}>
                           {game.away_team_tricode} {game.away_team_score ?? ''} @ {game.home_team_tricode} {game.home_team_score ?? ''}
                         </Typography>
-                        <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: 'text.tertiary' }}>{game.game_id}</Typography>
+                        <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: '#666' }}>{game.game_id}</Typography>
                         {game.game_status_text && <Chip size="sm" variant="soft">{game.game_status_text}</Chip>}
                       </Stack>
                     </CardContent>
@@ -2099,7 +2802,7 @@ function StepDataSource({
               })}
             </Stack>
           ) : selectedDate ? (
-            <Typography level="body-sm" sx={{ color: 'text.tertiary', textAlign: 'center', py: 3 }}>No games found for {selectedDate}</Typography>
+            <Typography level="body-sm" sx={{ color: '#666', textAlign: 'center', py: 3 }}>No games found for {selectedDate}</Typography>
           ) : null}
 
           {/* Game Recap: main carousel + clips per player for top-5 player cards */}
@@ -2143,7 +2846,7 @@ function StepDataSource({
             </Card>
           )}
 
-          {/* Player Spotlight: player + highlight count (only when game selected) */}
+          {/* Player Spotlight: single vs all players + player picker (only when game selected) */}
           {draft.post_type === 'player_spotlight' && matchedGameData.length > 0 && (
             <Card variant="outlined">
               <CardContent>
@@ -2153,30 +2856,60 @@ function StepDataSource({
                 ) : (
                   <Stack gap={2}>
                     <FormControl>
-                      <FormLabel>Select player</FormLabel>
-                      <Select
-                        placeholder="Choose a player"
-                        value={spotlightPlayerId ?? ''}
-                        onChange={(_e, v) => onSpotlightPlayerChange(v == null ? null : (v as number))}
-                      >
-                        {availableSpotlightPlayers.map(({ personId, name }) => (
-                          <Option key={personId} value={personId}>{name}</Option>
-                        ))}
-                      </Select>
+                      <FormLabel>Create posts for</FormLabel>
+                      <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                        <Button
+                          variant={!spotlightAllPlayers ? 'solid' : 'outlined'}
+                          color="neutral"
+                          size="sm"
+                          onClick={() => onSpotlightAllPlayersChange(false)}
+                        >
+                          Single player
+                        </Button>
+                        <Button
+                          variant={spotlightAllPlayers ? 'solid' : 'outlined'}
+                          color="neutral"
+                          size="sm"
+                          onClick={() => onSpotlightAllPlayersChange(true)}
+                        >
+                          All players in game ({availableSpotlightPlayers.length})
+                        </Button>
+                      </Stack>
+                      <FormHelperText>
+                        {spotlightAllPlayers
+                          ? 'Click Next to generate one post per player with highlights; you\'ll review all posts before publishing.'
+                          : 'Choose one player to create a single spotlight post.'}
+                      </FormHelperText>
                     </FormControl>
-                    {spotlightPlayerId != null && spotlightClipCount > 0 && (
-                      <FormControl>
-                        <FormLabel>How many highlights? (1–{Math.min(20, spotlightClipCount)})</FormLabel>
-                        <Slider
-                          value={spotlightHighlightCount}
-                          min={1}
-                          max={Math.min(20, spotlightClipCount)}
-                          step={1}
-                          valueLabelDisplay="auto"
-                          onChange={(_e, value) => onSpotlightHighlightCountChange(Array.isArray(value) ? value[0] : value)}
-                        />
-                        <FormHelperText>{spotlightHighlightCount} clip{spotlightHighlightCount !== 1 ? 's' : ''}</FormHelperText>
-                      </FormControl>
+                    {!spotlightAllPlayers && (
+                      <>
+                        <FormControl>
+                          <FormLabel>Select player</FormLabel>
+                          <Select
+                            placeholder="Choose a player"
+                            value={spotlightPlayerId ?? ''}
+                            onChange={(_e, v) => onSpotlightPlayerChange(v == null ? null : (v as number))}
+                          >
+                            {availableSpotlightPlayers.map(({ personId, name }) => (
+                              <Option key={personId} value={personId}>{name}</Option>
+                            ))}
+                          </Select>
+                        </FormControl>
+                        {spotlightPlayerId != null && spotlightClipCount > 0 && (
+                          <FormControl>
+                            <FormLabel>How many highlights? (1–{Math.min(20, spotlightClipCount)})</FormLabel>
+                            <Slider
+                              value={spotlightHighlightCount}
+                              min={1}
+                              max={Math.min(20, spotlightClipCount)}
+                              step={1}
+                              valueLabelDisplay="auto"
+                              onChange={(_e, value) => onSpotlightHighlightCountChange(Array.isArray(value) ? value[0] : value)}
+                            />
+                            <FormHelperText>{spotlightHighlightCount} clip{spotlightHighlightCount !== 1 ? 's' : ''}</FormHelperText>
+                          </FormControl>
+                        )}
+                      </>
                     )}
                   </Stack>
                 )}
@@ -2203,7 +2936,7 @@ function StepDataSource({
     return (
       <Box>
         <Typography level="h4" sx={{ mb: 1 }}>Select Player of the Week</Typography>
-        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
           Pick an nba_pow row. The featured player will be resolved and post details filled automatically.
         </Typography>
 
@@ -2267,7 +3000,7 @@ function StepDataSource({
                 <Card variant="outlined" sx={{ mt: 0.5 }}>
                   <CardContent sx={{ gap: 1 }}>
                     <Typography level="title-sm">Highlight Clips — {totalClips} available</Typography>
-                    <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                    <Typography level="body-xs" sx={{ color: '#666' }}>
                       Slide to choose how many highlight clips to include in the post.
                     </Typography>
                     <Slider size="sm" min={0} max={Math.min(totalClips, 20)} value={awardHighlightCount}
@@ -2290,7 +3023,7 @@ function StepDataSource({
     return (
       <Box>
         <Typography level="h4" sx={{ mb: 1 }}>Select Player of the Month</Typography>
-        <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
           Pick an nba_pom row. The featured player will be resolved and post details filled automatically.
         </Typography>
 
@@ -2355,7 +3088,7 @@ function StepDataSource({
                 <Card variant="outlined" sx={{ mt: 0.5 }}>
                   <CardContent sx={{ gap: 1 }}>
                     <Typography level="title-sm">Highlight Clips — {totalClips} available</Typography>
-                    <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                    <Typography level="body-xs" sx={{ color: '#666' }}>
                       Slide to choose how many highlight clips to include in the post.
                     </Typography>
                     <Slider size="sm" min={0} max={Math.min(totalClips, 20)} value={awardHighlightCount}
@@ -2373,11 +3106,155 @@ function StepDataSource({
     )
   }
 
-  // ── Manual (props, injuries) ──
+  // ── Matchup (upcoming, injury_report, prop_prediction, prop_results) ──
+  if (mode === 'matchup') {
+    const isPropResults = draft.post_type === 'prop_results'
+    const isInjuryReport = draft.post_type === 'injury_report'
+    const isPropPrediction = draft.post_type === 'prop_prediction'
+    const hasMacroOption = (isPropResults || isInjuryReport || isPropPrediction) && selectedDate && gamesForDate.length > 0
+    const macroAllOn = (isPropResults && propResultsAllGames) || (isInjuryReport && injuryReportAllGames) || (isPropPrediction && propPredictionAllGames)
+    const macroLabel = isPropResults ? 'prop results' : isInjuryReport ? 'injury report' : 'prop predictions'
+    return (
+      <Box>
+        <Typography level="h4" sx={{ mb: 1 }}>Select a Matchup</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
+          {isPropResults
+            ? 'Pick a date. Create one prop results post per game, or choose a single game.'
+            : isInjuryReport
+              ? 'Pick a date. Create one injury report post per game, or choose a single game.'
+              : isPropPrediction
+                ? 'Pick a date. Create one prop predictions post per game, or choose a single game.'
+                : 'Pick a date and game. The generator will pull injuries, props, stats, and related posts for both teams.'}
+        </Typography>
+
+        <Stack gap={3}>
+          <FormControl>
+            <FormLabel>Game Date</FormLabel>
+            <Input type="date" value={selectedDate} onChange={(e) => onDateSelected(e.target.value)} />
+          </FormControl>
+
+          {hasMacroOption && (
+            <FormControl>
+              <FormLabel>Create posts for</FormLabel>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  variant={!(isPropResults ? propResultsAllGames : isInjuryReport ? injuryReportAllGames : propPredictionAllGames) ? 'solid' : 'outlined'}
+                  color="neutral"
+                  size="sm"
+                  onClick={() => {
+                    if (isPropResults) onPropResultsAllGamesChange(false)
+                    else if (isInjuryReport) onInjuryReportAllGamesChange(false)
+                    else onPropPredictionAllGamesChange(false)
+                  }}
+                >
+                  Single game
+                </Button>
+                <Button
+                  variant={(isPropResults ? propResultsAllGames : isInjuryReport ? injuryReportAllGames : propPredictionAllGames) ? 'solid' : 'outlined'}
+                  color="neutral"
+                  size="sm"
+                  onClick={() => {
+                    if (isPropResults) onPropResultsAllGamesChange(true)
+                    else if (isInjuryReport) onInjuryReportAllGamesChange(true)
+                    else onPropPredictionAllGamesChange(true)
+                  }}
+                >
+                  All games on this date ({gamesForDate.length})
+                </Button>
+              </Stack>
+              <FormHelperText>
+                {macroAllOn
+                  ? `Click Next to generate one ${macroLabel} post per game; you'll review all posts before publishing.`
+                  : 'Choose one game to create a single post.'}
+              </FormHelperText>
+            </FormControl>
+          )}
+
+          {loadingGames ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size="sm" /></Box>
+          ) : gamesForDate.length > 0 ? (
+            <Stack gap={1}>
+              <Typography level="title-sm">{gamesForDate.length} game{gamesForDate.length !== 1 ? 's' : ''} on {selectedDate}</Typography>
+              {!macroAllOn && gamesForDate.map(g => {
+                const isSelected = draft.game_id === g.game_id
+                const feedStatus = feedGamesForDate.find(f => f.gameId === g.game_id)
+                const hasJson = !!feedStatus
+                const hasMp4 = feedStatus?.hasMp4 ?? false
+                return (
+                  <Card
+                    key={g.game_id}
+                    variant={isSelected ? 'solid' : 'outlined'}
+                    color={isSelected ? 'primary' : 'neutral'}
+                    sx={{ cursor: 'pointer', p: 1.5 }}
+                    onClick={() => {
+                      onSelectGame(g)
+                    }}
+                  >
+                    <Stack direction="row" alignItems="center" gap={2}>
+                      {hasJson && <Check color="success" fontSize="small" titleAccess="Has JSON file" />}
+                      {hasMp4 && <VideoLibrary fontSize="small" color="action" titleAccess="Has MP4 URLs" />}
+                      {isSelected && <Check color="success" fontSize="small" />}
+                      <Typography level="body-sm" sx={{ fontWeight: isSelected ? 700 : 400 }}>
+                        {g.away_team_tricode} @ {g.home_team_tricode}
+                      </Typography>
+                      <Typography level="body-xs" sx={{ color: '#666' }}>
+                        {g.game_status_text || 'Scheduled'}
+                      </Typography>
+                    </Stack>
+                  </Card>
+                )
+              })}
+              {macroAllOn && (
+                <Typography level="body-sm" sx={{ color: '#666' }}>
+                  {gamesForDate.length} post{gamesForDate.length !== 1 ? 's' : ''} will be generated (one per game).
+                </Typography>
+              )}
+            </Stack>
+          ) : selectedDate ? (
+            <Alert color="warning" variant="soft">No games found for {selectedDate}.</Alert>
+          ) : null}
+
+          {!macroAllOn && draft.team_tricodes.length >= 2 && (
+            <Alert color="success" variant="soft">
+              <strong>Matchup set:</strong> {draft.team_tricodes.join(' vs ')} — {draft.game_date || selectedDate}
+            </Alert>
+          )}
+        </Stack>
+      </Box>
+    )
+  }
+
+  // ── DFS: snapshot from dfs backend (pools, entries, etc.) ──
+  if (draft.post_type === 'dfs') {
+    return (
+      <Box>
+        <Typography level="h4" sx={{ mb: 1 }}>DFS snapshot</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
+          This post will capture data from the DFS backend (dfs_pools, dfs_entries, dfs_group_pools, etc.). Continue to add a title, then in <strong>Sections</strong> click <strong>Auto-Generate</strong> to pull current pools and build the post. Full integration with all dfs_* tables will come later.
+        </Typography>
+        <Alert color="neutral" variant="soft">Click Next, fill in title (e.g. &quot;DFS Pools — 2026-02-26&quot;), then in Sections click Auto-Generate.</Alert>
+      </Box>
+    )
+  }
+
+  // ── Draft: capture current Tank tab state ──
+  if (draft.post_type === 'draft') {
+    return (
+      <Box>
+        <Typography level="h4" sx={{ mb: 1 }}>Capture Tank standings</Typography>
+        <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
+          This post will save the <strong>current state</strong> of the Tank tab from the Standings drawer (worst-first standings + draft prospect rankings). Continue to add a title and subtitle, then in <strong>Sections</strong> click <strong>Auto-Generate</strong> to snapshot the data. The published post will show the tank table only — no East/West/Overall tabs.
+        </Typography>
+        <Alert color="neutral" variant="soft">Click Next, fill in title (e.g. &quot;Tank Race — 2025-26&quot;), then in Sections click Auto-Generate to capture the current Tank state.</Alert>
+      </Box>
+    )
+  }
+
+  // ── Manual (blog, etc.) ──
   return (
     <Box>
       <Typography level="h4" sx={{ mb: 1 }}>Manual Entry</Typography>
-      <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>
+      <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
         This post type uses manual entry. Continue to the next step to fill in details and build sections.
       </Typography>
       <Alert color="neutral" variant="soft">No data source needed. Click Next to continue.</Alert>
@@ -2401,7 +3278,7 @@ function StepPostDetails({
   return (
     <Box>
       <Typography level="h4" sx={{ mb: 1 }}>Post Details</Typography>
-      <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>Configure the post metadata. Fields marked with * are required.</Typography>
+      <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>Configure the post metadata. Fields marked with * are required.</Typography>
 
       <Stack gap={2.5}>
         <FormControl required>
@@ -2426,7 +3303,7 @@ function StepPostDetails({
         <FormControl required>
           <FormLabel>Slug *</FormLabel>
           <Input placeholder="team-of-the-night-2026-02-08-a3f2" value={draft.slug} onChange={(e) => onUpdate({ slug: e.target.value })}
-            startDecorator={<Typography level="body-xs" sx={{ color: 'text.tertiary' }}>/feed/</Typography>} />
+            startDecorator={<Typography level="body-xs" sx={{ color: '#666' }}>/feed/</Typography>} />
           <FormHelperText>URL-safe identifier. Auto-generated from title.</FormHelperText>
         </FormControl>
 
@@ -2520,6 +3397,7 @@ function StepPostDetails({
 function StepSections({
   draft, onAddSection, onRemoveSection, onMoveSection, onUpdateSection,
   addSectionOpen, onSetAddSectionOpen, editingSectionIdx, onSetEditingSectionIdx, onAutoGenerate,
+  playerHighlightCounts = {}, lineupClipCount,
 }: {
   draft: PostDraft
   onAddSection: (type: SectionType) => void; onRemoveSection: (idx: number) => void
@@ -2527,6 +3405,10 @@ function StepSections({
   addSectionOpen: boolean; onSetAddSectionOpen: (open: boolean) => void
   editingSectionIdx: number | null; onSetEditingSectionIdx: (idx: number | null) => void
   onAutoGenerate?: () => void
+  /** For TOTW/TOTN: nba_player_id -> total MP4 plays found for the week */
+  playerHighlightCounts?: Record<number, number>
+  /** Max clips per player slideshow (from form); shown next to total for player_highlight sections */
+  lineupClipCount?: number
 }) {
   return (
     <Box>
@@ -2537,13 +3419,21 @@ function StepSections({
           <Button size="sm" variant="solid" startDecorator={<Add />} onClick={() => onSetAddSectionOpen(true)}>Add Section</Button>
         </Stack>
       </Stack>
-      <Typography level="body-sm" sx={{ mb: 3, color: 'text.tertiary' }}>Build the story by adding content sections.</Typography>
+      <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>Build the story by adding content sections.</Typography>
 
       {draft.sections.length === 0 ? (
         <Card variant="outlined" sx={{ py: 6, textAlign: 'center' }}>
-          <Typography level="body-lg" sx={{ color: 'text.tertiary', mb: 2 }}>No sections yet</Typography>
-          <Typography level="body-sm" sx={{ color: 'text.tertiary', mb: 3 }}>Add sections to build your story, or auto-generate from loaded data.</Typography>
-          <Button variant="soft" startDecorator={<Add />} onClick={() => onSetAddSectionOpen(true)}>Add First Section</Button>
+          <Typography level="body-lg" sx={{ color: '#666', mb: 2 }}>No sections yet</Typography>
+          <Typography level="body-sm" sx={{ color: '#666', mb: 3 }}>
+            {draft.post_type === 'draft'
+              ? 'Click Auto-Generate above to capture the current Tank standings and draft prospects from the Standings module. You can then add a title and publish.'
+              : 'Add sections to build your story, or auto-generate from loaded data.'}
+          </Typography>
+          {onAutoGenerate && draft.post_type === 'draft' ? (
+            <Button variant="soft" color="warning" onClick={onAutoGenerate}>Capture current Tank state</Button>
+          ) : (
+            <Button variant="soft" startDecorator={<Add />} onClick={() => onSetAddSectionOpen(true)}>Add First Section</Button>
+          )}
         </Card>
       ) : (
         <Stack gap={1.5}>
@@ -2553,9 +3443,15 @@ function StepSections({
               <Card key={section.id} variant="outlined" sx={{ border: editingSectionIdx === idx ? '2px solid' : '1px solid', borderColor: editingSectionIdx === idx ? 'primary.400' : 'divider' }}>
                 <CardContent sx={{ p: 1.5 }}>
                   <Stack direction="row" alignItems="center" gap={1}>
-                    <Typography level="body-xs" sx={{ color: 'text.tertiary', minWidth: 20, textAlign: 'center' }}>{idx + 1}</Typography>
+                    <Typography level="body-xs" sx={{ color: '#666', minWidth: 20, textAlign: 'center' }}>{idx + 1}</Typography>
                     <Chip size="sm" variant="soft" color="primary">{typeOpt?.label || section.section_type}</Chip>
                     {section.title && <Typography level="body-sm" sx={{ flex: 1 }} noWrap>{section.title}</Typography>}
+                    {section.section_type === 'player_highlight' && section.content?.player_id != null && Number(section.content.player_id) in playerHighlightCounts && (
+                      <Typography level="body-xs" sx={{ color: '#666', whiteSpace: 'nowrap' }}>
+                        {(section.content?.video_clips?.length ?? 0)} / {playerHighlightCounts[Number(section.content.player_id)]} plays
+                        {lineupClipCount != null && ` (max ${lineupClipCount})`}
+                      </Typography>
+                    )}
                     {section.team_tricode && <Chip size="sm" variant="outlined">{section.team_tricode}</Chip>}
                     <Box sx={{ flex: 1 }} />
                     <IconButton size="sm" variant="plain" disabled={idx === 0} onClick={() => onMoveSection(idx, 'up')}>▲</IconButton>
@@ -2588,7 +3484,7 @@ function StepSections({
                     <Box sx={{ color: 'primary.500' }}>{opt.icon}</Box>
                     <Typography level="title-sm">{opt.label}</Typography>
                   </Stack>
-                  <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>{opt.description}</Typography>
+                  <Typography level="body-xs" sx={{ color: '#666' }}>{opt.description}</Typography>
                 </CardContent>
               </Card>
             ))}
@@ -2808,6 +3704,7 @@ function PostLinkSectionEditor({ content, updateContent }: { content: any; updat
       slug: ref.slug,
       title: ref.title,
       subtitle: ref.subtitle || '',
+      preview_text: ref.subtitle || '',
       post_type: ref.post_type,
       cover_image_url: ref.cover_image_url || '',
       game_date: ref.game_date || '',
@@ -2833,11 +3730,11 @@ function PostLinkSectionEditor({ content, updateContent }: { content: any; updat
             <Stack direction="row" gap={1} alignItems="center" sx={{ mb: 1 }}>
               <Chip size="sm" variant="soft" color="warning">{(content.post_type || '').replace(/_/g, ' ')}</Chip>
               {content.team_tricodes?.map((t: string) => <Chip key={t} size="sm" variant="outlined">{t}</Chip>)}
-              {content.game_date && <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>{content.game_date}</Typography>}
+              {content.game_date && <Typography level="body-xs" sx={{ color: '#666' }}>{content.game_date}</Typography>}
             </Stack>
             <Typography level="body-sm" sx={{ fontWeight: 600 }}>{content.title}</Typography>
-            {content.subtitle && <Typography level="body-xs" sx={{ color: 'text.secondary' }}>{content.subtitle}</Typography>}
-            <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: 'text.tertiary', mt: 0.5 }}>/feed/{content.slug}</Typography>
+            {content.subtitle && <Typography level="body-xs" sx={{ color: '#333' }}>{content.subtitle}</Typography>}
+            <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: '#666', mt: 0.5 }}>/feed/{content.slug}</Typography>
           </CardContent>
         </Card>
       )}
@@ -2853,6 +3750,17 @@ function PostLinkSectionEditor({ content, updateContent }: { content: any; updat
         <FormHelperText>Shown above the linked post card as italicized text</FormHelperText>
       </FormControl>
 
+      <FormControl>
+        <FormLabel>Hover preview text (optional)</FormLabel>
+        <Input
+          size="sm"
+          placeholder="Extra line for desktop link preview; defaults to subtitle"
+          value={content.preview_text || ''}
+          onChange={(e) => updateContent({ preview_text: e.target.value })}
+        />
+        <FormHelperText>Used in feed story Glimpse hover card on desktop</FormHelperText>
+      </FormControl>
+
       <PostLinkPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
@@ -2864,8 +3772,41 @@ function PostLinkSectionEditor({ content, updateContent }: { content: any; updat
 
 
 // ==========================================================================
-// STEP 4 — Review & Publish
+// STEP 4 — Review & Publish (single post)
 // ==========================================================================
+
+// ==========================================================================
+// STEP 4 (Macro) — Review all generated player spotlight posts
+// ==========================================================================
+
+function StepReviewMacro({ drafts, saving, onSaveAll }: { drafts: PostDraft[]; saving: boolean; onSaveAll: (status: PostStatus) => void }) {
+  const postType = drafts[0]?.post_type ?? 'player_spotlight'
+  const typeOpt = POST_TYPE_OPTIONS.find(o => o.value === postType)
+  const macroLabel = postType === 'prop_results' ? 'prop results' : postType === 'injury_report' ? 'injury report' : postType === 'prop_prediction' ? 'prop predictions' : 'player spotlight'
+  return (
+    <Box>
+      <Typography level="h4" sx={{ mb: 1 }}>Review all {macroLabel} posts</Typography>
+      <Typography level="body-sm" sx={{ mb: 3, color: '#666' }}>
+        {drafts.length} post{drafts.length !== 1 ? 's' : ''} will be created. Use &quot;Save all as draft&quot; or &quot;Publish all&quot; below.
+      </Typography>
+      <Stack gap={1.5} sx={{ maxHeight: 420, overflow: 'auto' }}>
+        {drafts.map((d, i) => (
+          <Card key={d.person_id || i} variant="outlined" size="sm">
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Stack direction="row" alignItems="center" gap={1.5} flexWrap="wrap">
+                <Chip size="sm" sx={{ bgcolor: typeOpt?.color || '#FFC72C', color: '#000', fontWeight: 600 }}>{typeOpt?.label}</Chip>
+                <Typography level="title-sm" sx={{ fontWeight: 600 }}>{d.title || 'Untitled'}</Typography>
+                <Typography level="body-xs" sx={{ fontFamily: 'monospace', color: '#666' }}>/feed/{d.slug}</Typography>
+                <Chip size="sm" variant="soft">{d.sections.length} section{d.sections.length !== 1 ? 's' : ''}</Chip>
+              </Stack>
+              {d.subtitle && <Typography level="body-xs" sx={{ color: '#666', mt: 0.5 }}>{d.subtitle}</Typography>}
+            </CardContent>
+          </Card>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
 
 function StepReview({ draft, saving, onSave }: { draft: PostDraft; saving: boolean; onSave: (status: PostStatus) => void }) {
   const typeOpt = POST_TYPE_OPTIONS.find(o => o.value === draft.post_type)
@@ -2881,15 +3822,15 @@ function StepReview({ draft, saving, onSave }: { draft: PostDraft; saving: boole
             {draft.team_tricodes.map(t => <Chip key={t} size="sm" variant="outlined">{t}</Chip>)}
           </Stack>
           <Typography level="h4" sx={{ fontWeight: 700 }}>{draft.title || 'Untitled'}</Typography>
-          {draft.subtitle && <Typography level="body-md" sx={{ color: 'text.secondary' }}>{draft.subtitle}</Typography>}
-          {draft.description && <Typography level="body-sm" sx={{ color: 'text.tertiary', mt: 0.5 }}>{draft.description}</Typography>}
+          {draft.subtitle && <Typography level="body-md" sx={{ color: '#333' }}>{draft.subtitle}</Typography>}
+          {draft.description && <Typography level="body-sm" sx={{ color: '#666', mt: 0.5 }}>{draft.description}</Typography>}
         </CardContent>
       </Card>
 
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent>
           <Typography level="title-md" sx={{ mb: 2 }}>Post Details</Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 1, '& > *:nth-of-type(odd)': { fontWeight: 600, color: 'text.secondary', fontSize: '0.8rem' } }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 1, '& > *:nth-of-type(odd)': { fontWeight: 600, color: '#333', fontSize: '0.8rem' } }}>
             <Typography>Slug</Typography><Typography level="body-sm" sx={{ fontFamily: 'monospace' }}>/feed/{draft.slug}</Typography>
             <Typography>Post Type</Typography><Typography level="body-sm">{typeOpt?.label}</Typography>
             <Typography>Game ID</Typography><Typography level="body-sm" sx={{ fontFamily: 'monospace' }}>{draft.game_id || '—'}</Typography>
@@ -2912,7 +3853,7 @@ function StepReview({ draft, saving, onSave }: { draft: PostDraft; saving: boole
                 const sOpt = SECTION_TYPE_OPTIONS.find(o => o.value === s.section_type)
                 return (
                   <Stack key={s.id} direction="row" gap={1} alignItems="center">
-                    <Typography level="body-xs" sx={{ minWidth: 20, color: 'text.tertiary' }}>{i + 1}.</Typography>
+                    <Typography level="body-xs" sx={{ minWidth: 20, color: '#666' }}>{i + 1}.</Typography>
                     <Chip size="sm" variant="soft">{sOpt?.label || s.section_type}</Chip>
                     {s.title && <Typography level="body-xs" noWrap>{s.title}</Typography>}
                   </Stack>
@@ -2961,8 +3902,14 @@ function getDefaultSectionContent(type: SectionType): any {
     case 'pull_quote': return { text: '', icon: 'chart' }
     case 'gallery': return { images: [] }
     case 'box_score': return { home: { tricode: '', players: [] }, away: { tricode: '', players: [] } }
-    case 'post_link': return { post_id: '', slug: '', title: '', post_type: 'game_recap', context: '' }
+    case 'post_link': return { post_id: '', slug: '', title: '', post_type: 'game_recap', context: '', preview_text: '' }
     case 'tweet_embed': return { tweet_url: '', caption: '', fallback_text: '' }
+    case 'injury_module': return { injuries: [], teams: [], date: '' }
+    case 'prop_module': return { props: [], teams: [], date: '', mode: 'prediction' }
+    case 'team_of_night_module': return { players: [], date: '' }
+    case 'team_of_week_module': return { players: [], week_name: '', start_date: '', end_date: '' }
+    case 'tank_module': return { rows: [], season: '', snapshot_date: '' }
+    case 'dfs_module': return { snapshot_date: '', pools: [], message: '' }
     default: return {}
   }
 }

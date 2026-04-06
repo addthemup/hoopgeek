@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500934",
+  "gameMetadata": {
+    "date": "2026-03-09T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612744,
+      "abbreviation": "GSW",
+      "city": "Golden State",
+      "name": "Warriors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 116,
+      "stats": {
+        "fg_pct": 0.434,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.308,
+        "ast": 33,
+        "reb": 46,
+        "tov": 9
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612762,
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "name": "Jazz",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 119,
+      "stats": {
+        "fg_pct": 0.482,
+        "ft_pct": 0.931,
+        "fg3_pct": 0.353,
+        "ast": 29,
+        "reb": 50,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500934": {
+      "team_stats": {}
+    }
+  }
+}

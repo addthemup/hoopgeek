@@ -4,73 +4,30 @@
  */
 
 import { useSearchParams } from 'react-router-dom';
-import { Box, Alert, Typography, CircularProgress } from '@mui/joy';
+import { Box } from '@mui/joy';
 import AdminLayout from '../components/Feed/AdminLayout';
-import { useIsAdmin } from '../hooks/useIsAdmin';
-import AdminFeed from './AdminFeed';
-import AdminPlayer from './AdminPlayer';
-import PostCreator from './PostCreator';
-import AdminDFS from './AdminDFS';
-import AdminAnalytics from './AdminAnalytics';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
+import { AdminViewBody, type AdminView } from '../components/Admin/AdminViewBody';
 
-export type AdminView = 'ui' | 'player' | 'create-post' | 'dfs' | 'analytics';
+export type { AdminView };
 
 function AdminContent() {
   const [searchParams] = useSearchParams();
   const view = (searchParams.get('view') as AdminView) || 'create-post';
-  const { data: isAdmin, isLoading: isAdminLoading } = useIsAdmin();
 
-  if (isAdminLoading) {
-    return (
-      <Box
-        sx={{
-          maxWidth: 1200,
-          mx: 'auto',
-          px: { xs: 1.5, sm: 2, md: 3 },
-          pt: { xs: 2, md: 3 },
-          pb: 6,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          minHeight: 200,
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (!isAdmin) {
-    return (
-      <Box
-        sx={{
-          maxWidth: 1200,
-          mx: 'auto',
-          px: { xs: 1.5, sm: 2, md: 3 },
-          pt: { xs: 2, md: 3 },
-          pb: 6,
-        }}
-      >
-        <Alert color="danger">
-          <Typography>You do not have permission to access this page.</Typography>
-        </Alert>
-      </Box>
-    );
-  }
-
-  switch (view) {
-    case 'player':
-      return <AdminPlayer />;
-    case 'create-post':
-      return <PostCreator returnPath="/admin" />;
-    case 'dfs':
-      return <AdminDFS embedded />;
-    case 'analytics':
-      return <AdminAnalytics embedded />;
-    case 'ui':
-    default:
-      return <AdminFeed />;
-  }
+  return (
+    <Box
+      sx={{
+        maxWidth: CONTENT_MAX_WIDTH,
+        mx: 'auto',
+        px: { xs: 1.5, sm: 2, md: 3 },
+        pt: { xs: 2, md: 3 },
+        pb: 6,
+      }}
+    >
+      <AdminViewBody view={view} />
+    </Box>
+  );
 }
 
 export default function Admin() {

@@ -1,0 +1,91 @@
+{
+  "gameId": "0022501001",
+  "gameMetadata": {
+    "date": null,
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 127,
+      "stats": {
+        "fg_pct": 0.446,
+        "ft_pct": 0.808,
+        "fg3_pct": 0.348,
+        "ast": 32,
+        "reb": 52,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612754,
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "name": "Pacers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 119,
+      "stats": {
+        "fg_pct": 0.505,
+        "ft_pct": 0.882,
+        "fg3_pct": 0.444,
+        "ast": 32,
+        "reb": 39,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022501001",
+      "LAST_GAME_ID": "0022400716",
+      "LAST_GAME_DATE_EST": "2025-02-04T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612754,
+      "LAST_GAME_HOME_TEAM_CITY": "Indiana",
+      "LAST_GAME_HOME_TEAM_NAME": "Pacers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "IND",
+      "LAST_GAME_HOME_TEAM_POINTS": 89,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612757,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Portland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "POR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 112
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022501001": {
+      "team_stats": {}
+    }
+  }
+}

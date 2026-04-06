@@ -21,7 +21,7 @@ import {
   ModalDialog,
   ModalClose,
 } from '@mui/joy';
-import { ArrowBack, NavigateBefore, NavigateNext, CalendarToday, EmojiEvents, BarChart, TrendingUp, Analytics, ArrowUpward, ArrowDownward, Shield } from '@mui/icons-material';
+import { ArrowBack, NavigateBefore, NavigateNext, CalendarToday, EmojiEvents, BarChart, TrendingUp, Analytics, ArrowUpward, ArrowDownward, Shield, Add } from '@mui/icons-material';
 import dayjs, { Dayjs } from 'dayjs';
 import { supabase } from '../utils/supabase';
 import { getTeamColors, getTeamPrimaryColor, getTeamSecondaryColor } from '../utils/nbaTeamColors';
@@ -31,12 +31,26 @@ import { calculatePropResult } from '../utils/playerPropsCalculator';
 import { filterFullGameProps } from '../utils/playerPropsFilter';
 import { hexToRgba } from '../utils/colorUtils';
 import BoxScore from '../components/BoxScore';
-import { FeedPost } from '../utils/feedAlgorithm';
 import { matchPlayerNames } from '../utils/playerNameMatcher';
 import { loadGameJson, getScoreData, getFunScore, getLeadChanges, getDunkStats, getScoringMilestones, getTeamStats, getStoryData, getQuarterScores, type GameJsonData } from '../utils/gameJsonLoader';
 import PropPerformanceCell from '../components/PropPerformanceCell';
 import { useOpponentTeamPropsPerformance } from '../hooks/useOpponentTeamPropsPerformance';
 import { usePredictorStats } from '../hooks/usePredictorStats';
+import GamePageLayout from '../components/Feed/GamePageLayout';
+import { useGameDrawer } from '../components/Feed/GamePageLayout';
+import { useGameModuleVisibility, DEFAULT_GAME_MODULES } from '../hooks/useGameModuleVisibility';
+import { useSlipBuilder, propToSlipLeg } from '../contexts/SlipBuilderContext';
+import { useFeedDrawerRestoreOptional } from '../contexts/FeedDrawerRestoreContext';
+import { useEstimatedRotation } from '../hooks/useEstimatedRotation';
+import EstimatedRotationModule from '../components/Game/EstimatedRotationModule';
+import { buildTeamExploitations, getBetTypeForMatchupEndpoint } from '../utils/exploitationScoring';
+import { fetchTeamOutPlayersFromRecentRotations } from '../utils/teamOutPlayersFromRotation';
+import { fetchTeamAverageRotationSize } from '../utils/teamRotationSize';
+import { formatESTTime } from '../utils/nbaDateUtils';
+import { resolveGameTeamLines, moneylineToApproxSpread, parseAmericanOddsNumber, formatAmericanOdds, type TeamLinesByGame } from '../utils/gameOddsResolver';
+import { MATCHUP_FACTORS } from '../utils/matchupFactors';
+import { predictorTeamNameToTricode } from '../utils/predictorTeamNameToTricode';
+import { ExploitsDashboard, type ExploitSidebarRow, type ExploitChartType } from '../components/kibo-ui/exploits-dashboard';
 
 interface GameData {
   game_id: string;
@@ -49,6 +63,9 @@ interface GameData {
   game_date: string;
   arena_name?: string;
   arena_city?: string;
+  home_spread?: number | null;
+  away_spread?: number | null;
+  over_under?: number | null;
   home_team_id?: number;
   away_team_id?: number;
 }
@@ -119,6 +136,20 @@ interface PlayerProp {
   player_name: string;
   nba_player_id: number;
   player_id?: string;
+  game_id?: string;
+  game_date?: string;
+}
+
+interface GameHighlightClip {
+  id: string;
+  game_id: string;
+  period: number | null;
+  clock: string | null;
+  description: string | null;
+  action_type: string | null;
+  player_name: string | null;
+  team_tricode: string | null;
+  mp4_url: string;
 }
 
 type PropsVsTeamModalData = {
@@ -126,6 +157,59 @@ type PropsVsTeamModalData = {
   label: string;
   data: NonNullable<ReturnType<typeof useOpponentTeamPropsPerformance>['data']>;
 } | null;
+
+const normalizeBetType = (value: string) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[+\s]/g, '_')
+    .replace(/__+/g, '_')
+    .trim();
+
+const canonicalizeBetType = (value: string) =>
+  normalizeBetType(value).replace(/[^a-z0-9]/g, '');
+
+const expandBetTypeAliases = (value: string) => {
+  const normalized = normalizeBetType(value);
+  const aliases = new Set<string>([normalized]);
+  if (normalized === 'points') aliases.add('point');
+  if (normalized === 'rebounds') aliases.add('rebound');
+  if (normalized === 'assists') aliases.add('assist');
+  if (normalized === 'threes') {
+    aliases.add('three');
+    aliases.add('threepointersmade');
+  }
+  if (normalized === 'threepointersmade') aliases.add('threes');
+  if (normalized === 'blocks_steals') {
+    aliases.add('stocks');
+    aliases.add('steals_blocks');
+    aliases.add('blocks+steals');
+  }
+  if (normalized === 'points_rebounds_assists') aliases.add('pra');
+  if (normalized === 'points_rebounds') aliases.add('pr');
+  if (normalized === 'points_assists') aliases.add('pa');
+  if (normalized === 'rebounds_assists') aliases.add('ra');
+  return aliases;
+};
+
+// Assign chart styles intentionally across all 16 strategy categories.
+const EXPLOIT_CHART_SEQUENCE: ExploitChartType[] = [
+  'radar',
+  'line',
+  'bar',
+  'area',
+  'radial',
+  'pie',
+  'bar',
+  'line',
+  'radar',
+  'radial',
+  'pie',
+  'bar',
+  'line',
+  'area',
+  'radar',
+  'radial',
+];
 
 function PropsVsTeamRow({
   betType,
@@ -149,7 +233,7 @@ function PropsVsTeamRow({
     if (data.totalProps === 0) return <Typography sx={{ color: '#666', fontSize: isMobile ? '0.65rem' : '0.75rem' }}>No data</Typography>;
     const rate = data.hitRate != null ? data.hitRate.toFixed(0) : '—';
     const color = data.hitRate != null ? (data.hitRate >= 60 ? '#4CAF50' : data.hitRate <= 40 ? '#F44336' : '#FFC72C') : '#CCCCCC';
-    return (
+  return (
       <Box
         component="button"
         type="button"
@@ -194,7 +278,7 @@ function PropsVsTeamRow({
           <ModalClose sx={{ color: '#fff' }} />
           {modalData && (
             <>
-              <Typography level="h6" sx={{ color: '#fff', mb: 1 }}>
+              <Typography level="title-lg" sx={{ color: '#fff', mb: 1 }}>
                 {modalData.label} vs {modalData.teamTricode}
               </Typography>
               <Typography level="body-sm" sx={{ color: '#999', mb: 2 }}>
@@ -238,17 +322,65 @@ function PropsVsTeamRow({
   );
 }
 
-export default function GamePage() {
-  const { id: gameId } = useParams<{ id: string }>();
+export interface GamePageProps {
+  /** When provided (e.g. embedded in feed with ?game=), use this instead of route params. */
+  gameId?: string;
+  /** When true, use compact layout (no large top padding) for embedding in feed below the filter bar. */
+  embeddedInFeed?: boolean;
+}
+
+export default function GamePage(props: GamePageProps = {}) {
+  const { id: paramId } = useParams<{ id: string }>();
+  const gameId = props.gameId ?? paramId ?? undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const isMobile = useMediaQuery('(max-width: 900px)');
   const isLandscape = useMediaQuery('(orientation: landscape)');
   const isLandscapeMobile = isLandscape && isMobile;
+  const textScale = 1.1;
+  const { addLeg: addToSlip, canAddPlayer: canAddPlayerToSlip } = useSlipBuilder();
+  const gameDrawer = useGameDrawer();
+  const feedRestore = useFeedDrawerRestoreOptional();
+
+  const storageReturnPath = (() => {
+    try {
+      return window.sessionStorage.getItem('hoopgeek:returnPath') || undefined;
+    } catch {
+      return undefined;
+    }
+  })();
+  const storageReturnDate = (() => {
+    try {
+      return window.sessionStorage.getItem('hoopgeek:returnDate') || undefined;
+    } catch {
+      return undefined;
+    }
+  })();
   
-  // Get return path from location state or default to /today
-  const returnPath = (location.state as any)?.returnPath || '/today';
-  const returnDate = (location.state as any)?.returnDate;
+  // Optional return path from caller; otherwise fall back to browser history/root.
+  const returnPath = ((location.state as any)?.returnPath as string | undefined) || storageReturnPath;
+  const returnDate = (location.state as any)?.returnDate || storageReturnDate;
+
+  // Handle back navigation
+  function handleBack() {
+    try {
+      window.sessionStorage.removeItem('hoopgeek:returnPath');
+      window.sessionStorage.removeItem('hoopgeek:returnDate');
+    } catch {
+      // ignore storage errors
+    }
+    if (returnPath) {
+      navigate(returnPath, {
+        state: returnDate ? { selectedDate: returnDate } : undefined
+      });
+      return;
+    }
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate('/');
+  }
   
   // Get game date and set up date navigation
   const [selectedDate, setSelectedDate] = useState<Dayjs>(() => {
@@ -256,15 +388,42 @@ export default function GamePage() {
     return dayjs();
   });
 
-  // Team toggle state - default to away team (MUST be before any conditional returns)
-  const [selectedTeam, setSelectedTeam] = useState<'away' | 'home'>('away');
-  
-  // View toggle state - default to stats
-  const [activeView, setActiveView] = useState<'stats' | 'props' | 'advanced' | 'propsVsTeams' | 'predictor'>('stats');
+  // Team toggle state - restore per-game selection when available.
+  const [selectedTeam, setSelectedTeam] = useState<'away' | 'home'>(() => {
+    try {
+      const saved = window.sessionStorage.getItem(`hoopgeek:game:selectedTeam:${gameId ?? 'unknown'}`);
+      return saved === 'home' ? 'home' : 'away';
+    } catch {
+      return 'away';
+    }
+  });
+  const [statsTab, setStatsTab] = useState<'box_score' | 'basic' | 'advanced' | 'props' | 'hit_rates' | 'estimated_rotation' | 'exploits'>('basic');
   
   // Sorting state
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [canQueryGameHighlights, setCanQueryGameHighlights] = useState(true);
+
+  useEffect(() => {
+    try {
+      const saved = window.sessionStorage.getItem(`hoopgeek:game:selectedTeam:${gameId ?? 'unknown'}`);
+      if (saved === 'home' || saved === 'away') {
+        setSelectedTeam(saved);
+        return;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    setSelectedTeam('away');
+  }, [gameId]);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(`hoopgeek:game:selectedTeam:${gameId ?? 'unknown'}`, selectedTeam);
+    } catch {
+      // ignore storage errors
+    }
+  }, [gameId, selectedTeam]);
   
   // Handle column sorting
   const handleSort = (column: string) => {
@@ -277,21 +436,24 @@ export default function GamePage() {
   };
   
   // Sortable header component
+  const STAT_COLUMN_MIN = 56;
   const SortableHeader = ({ column, label }: { column: string; label: string }) => {
     const isSorted = sortColumn === column;
     return (
       <th 
         style={{ 
-          color: '#FFFFFF', 
+          color: '#334155',
           fontSize: isMobile ? '0.65rem' : '0.75rem', 
           textAlign: 'right',
           cursor: 'pointer',
           userSelect: 'none',
-          padding: isMobile ? '6px 3px' : '8px 4px'
+          padding: isMobile ? '6px 3px' : '8px 4px',
+          minWidth: STAT_COLUMN_MIN,
+          width: STAT_COLUMN_MIN,
         }}
         onClick={() => handleSort(column)}
         onMouseEnter={(e) => {
-          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.05)';
+          e.currentTarget.style.backgroundColor = '#f1f5f9';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.backgroundColor = 'transparent';
@@ -301,9 +463,9 @@ export default function GamePage() {
           <span>{label}</span>
           {isSorted && (
             sortDirection === 'asc' ? (
-              <ArrowUpward sx={{ fontSize: isMobile ? '0.7rem' : '0.875rem', color: '#FFC72C' }} />
+              <ArrowUpward sx={{ fontSize: isMobile ? '0.7rem' : '0.875rem', color: '#2563eb' }} />
             ) : (
-              <ArrowDownward sx={{ fontSize: isMobile ? '0.7rem' : '0.875rem', color: '#FFC72C' }} />
+              <ArrowDownward sx={{ fontSize: isMobile ? '0.7rem' : '0.875rem', color: '#2563eb' }} />
             )
           )}
         </Box>
@@ -325,7 +487,7 @@ export default function GamePage() {
       // Try to fetch the game
       const { data, error } = await supabase
         .from('nba_games')
-        .select('game_id, game_status, game_status_text, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_date, arena_name, arena_city')
+        .select('game_id, game_status, game_status_text, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_date, arena_name, arena_city, home_spread, away_spread, over_under')
         .eq('game_id', cleanGameId)
         .maybeSingle();
       
@@ -335,7 +497,7 @@ export default function GamePage() {
         console.log('🔍 Game not found, trying without leading zeros:', withoutLeadingZeros);
         const { data: altData, error: altError } = await supabase
           .from('nba_games')
-          .select('game_id, game_status, game_status_text, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_date, arena_name, arena_city')
+          .select('game_id, game_status, game_status_text, home_team_tricode, away_team_tricode, home_team_score, away_team_score, game_date, arena_name, arena_city, home_spread, away_spread, over_under')
           .eq('game_id', withoutLeadingZeros)
           .maybeSingle();
         
@@ -408,16 +570,34 @@ export default function GamePage() {
     gameDate: predictorDateKey ?? null,
     homeTricode: gameData?.home_team_tricode ?? null,
     awayTricode: gameData?.away_team_tricode ?? null,
-    enabled: !!predictorDateKey && !!gameData?.home_team_tricode && !!gameData?.away_team_tricode && activeView === 'predictor',
+    enabled: !!predictorDateKey && !!gameData?.home_team_tricode && !!gameData?.away_team_tricode,
   });
 
   // Determine game state - compute this first so it can be used in enabled conditions
   const gameState = useMemo(() => {
     if (!gameData) return 'loading';
+    const statusText = String(gameData.game_status_text ?? '').trim().toLowerCase();
+    const isLiveByText =
+      statusText.includes('live') ||
+      statusText.includes('in progress') ||
+      /\bq[1-4]\b/.test(statusText) ||
+      statusText.includes('half') ||
+      statusText.includes('ot');
+    const isFinalByText = statusText.startsWith('final');
+
+    if (gameData.game_status === 1 && isLiveByText) return 'live';
+    if ((gameData.game_status === 1 || gameData.game_status === 2) && isFinalByText) return 'completed';
     if (gameData.game_status === 1) return 'upcoming';
     if (gameData.game_status === 2) return 'live';
     return 'completed';
   }, [gameData]);
+  const gameHasStarted = gameState === 'live' || gameState === 'completed';
+
+  useEffect(() => {
+    if (!gameHasStarted && statsTab === 'box_score') {
+      setStatsTab('basic');
+    }
+  }, [gameHasStarted, statsTab]);
 
   // Whether to show the status chip in the header.
   // If the game time is already shown in yellow below the teams (upcoming, 0–0),
@@ -439,18 +619,16 @@ export default function GamePage() {
     return true;
   }, [gameData, gameState]);
   
-  // Set default sort column based on gameState and activeView
+  // Set default sort column based on gameState
   useEffect(() => {
     if (!sortColumn && gameState && gameState !== 'loading') {
-      if (activeView === 'advanced') {
-        setSortColumn('net_rtg');
-      } else if (gameState === 'upcoming') {
+      if (gameState === 'upcoming') {
         setSortColumn('mpg');
       } else {
         setSortColumn('fantasy_points');
       }
     }
-  }, [gameState, sortColumn, activeView]);
+  }, [gameState, sortColumn]);
 
   // Get current season for rosters - must be called before any conditional logic
   const { data: currentSeason } = useQuery({
@@ -705,54 +883,35 @@ export default function GamePage() {
     refetchInterval: gameData?.game_status === 2 ? 30000 : false, // Refetch every 30 seconds for live games only
   });
 
-  // Fetch feed posts for the game - sorted with fun_score first, then player_spotlight by fantasy points
-  const { data: feedPosts, isLoading: feedPostsLoading } = useQuery<FeedPost[]>({
-    queryKey: ['feed-posts-game', gameId],
+  // Fetch persisted MP4 highlight clips for the game.
+  const { data: gameHighlightClips, isLoading: gameHighlightClipsLoading } = useQuery<GameHighlightClip[]>({
+    queryKey: ['game-highlight-clips', gameId],
     queryFn: async () => {
       if (!gameId) return [];
-      
+
       const { data, error } = await supabase
-        .from('feed_posts')
-        .select('*')
+        .from('game_highlight_clips')
+        .select('id, game_id, period, clock, description, action_type, player_name, team_tricode, mp4_url')
         .eq('game_id', gameId)
-        .eq('status', 'published')
-        .in('post_type', ['fun_score', 'player_spotlight']);
-      
+        .order('period', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(60);
+
       if (error) {
-        console.error('Error fetching feed posts:', error);
+        // Some environments may not have this table yet; fail soft without noisy console spam.
+        if (error.code === 'PGRST205') {
+          setCanQueryGameHighlights(false);
+          return [];
+        }
+        if (error.code !== 'PGRST205') {
+          console.error('Error fetching game highlight clips:', error);
+        }
         return [];
       }
-      
-      if (!data || data.length === 0) return [];
-      
-      // Sort posts: fun_score first, then player_spotlight by fantasy points (descending)
-      const sortedPosts = [...data].sort((a, b) => {
-        // Fun score posts always come first
-        if (a.post_type === 'fun_score' && b.post_type !== 'fun_score') return -1;
-        if (a.post_type !== 'fun_score' && b.post_type === 'fun_score') return 1;
-        
-        // If both are fun_score, keep original order (or sort by fun_score if needed)
-        if (a.post_type === 'fun_score' && b.post_type === 'fun_score') {
-          const funScoreA = typeof a.metadata === 'object' ? (a.metadata?.fun_score || 0) : 0;
-          const funScoreB = typeof b.metadata === 'object' ? (b.metadata?.fun_score || 0) : 0;
-          return funScoreB - funScoreA; // Higher fun_score first
-        }
-        
-        // Both are player_spotlight - sort by fantasy points (descending)
-        if (a.post_type === 'player_spotlight' && b.post_type === 'player_spotlight') {
-          const metaA = typeof a.metadata === 'object' ? a.metadata : (typeof a.metadata === 'string' ? JSON.parse(a.metadata) : {});
-          const metaB = typeof b.metadata === 'object' ? b.metadata : (typeof b.metadata === 'string' ? JSON.parse(b.metadata) : {});
-          const fpA = metaA?.fantasyPoints || 0;
-          const fpB = metaB?.fantasyPoints || 0;
-          return fpB - fpA; // Higher fantasy points first
-        }
-        
-        return 0;
-      });
-      
-      return sortedPosts as FeedPost[];
+
+      return (data ?? []) as GameHighlightClip[];
     },
-    enabled: !!gameId,
+    enabled: !!gameId && canQueryGameHighlights,
   });
   
 
@@ -894,7 +1053,7 @@ export default function GamePage() {
       // Step 2: Query all props where game_id matches the player_props_games.id (UUID); full-game only
       const { data: allPropsRaw, error: propsError } = await supabase
         .from('player_props')
-        .select('id, bet_type, line, price, american_odds, bookmaker, player_name, nba_player_id, player_id, bet_type_id, raw_odd_data')
+        .select('id, game_id, bet_type, line, price, american_odds, bookmaker, player_name, nba_player_id, player_id, bet_type_id, raw_odd_data')
         .eq('game_id', propsGame.id)
         .order('player_name')
         .order('bet_type')
@@ -1013,6 +1172,18 @@ export default function GamePage() {
     : gameData?.away_team_tricode) : null;
   const currentRoster = selectedTeam === 'away' ? awayRoster : homeRoster;
   const normalizeTricode = (s: string | null | undefined) => (s ?? '').toString().trim().toUpperCase();
+  const formatSpreadForHeader = (value: number | null | undefined): string => {
+    if (value == null || Number.isNaN(value)) return '--';
+    return `${value > 0 ? '+' : ''}${Number(value).toFixed(1)}`;
+  };
+  const formatSpreadWithOddsForHeader = (
+    spread: number | null | undefined,
+    odds: string | null | undefined
+  ): string => {
+    const spreadText = formatSpreadForHeader(spread);
+    if (!odds) return spreadText;
+    return `${spreadText} (${odds})`;
+  };
 
   // First tab (basic stats) must use the same source of truth as advanced stats: nba_players.team_abbreviation.
   // Fetch current team from DB for game's players so we filter out traded players even if liveStats merge was stale.
@@ -1059,6 +1230,134 @@ export default function GamePage() {
       return set;
     },
     enabled: gameState === 'upcoming' && !!currentTeamTricode,
+  });
+
+  // Build a set of players who logged minutes in this team's last 5 games.
+  const { data: last5ActiveTeamPlayerIds } = useQuery<Set<number>>({
+    queryKey: ['game-last5-active-player-ids', currentTeamTricode, gameData?.game_date],
+    queryFn: async () => {
+      if (!currentTeamTricode) return new Set<number>();
+
+      const { data, error } = await supabase
+        .from('nba_boxscores')
+        .select('game_id, game_date, nba_player_id, min')
+        .eq('team_tricode', currentTeamTricode)
+        .gt('min', 0)
+        .order('game_date', { ascending: false })
+        .limit(220);
+
+      if (error) {
+        console.error('Error fetching last 5 active team players:', error);
+        return new Set<number>();
+      }
+
+      const gameIds = new Set<string>();
+      const selectedRows: any[] = [];
+      for (const row of data || []) {
+        if (!row.game_id) continue;
+        if (!gameIds.has(row.game_id) && gameIds.size >= 5) continue;
+        gameIds.add(row.game_id);
+        selectedRows.push(row);
+      }
+
+      const playerIds = new Set<number>();
+      selectedRows.forEach((row) => {
+        if (row.nba_player_id != null) {
+          playerIds.add(row.nba_player_id);
+        }
+      });
+      return playerIds;
+    },
+    enabled: !!currentTeamTricode,
+  });
+
+  // Build active player-id sets for both teams (same source of truth as Basic).
+  const { data: activeTeamPlayerIdsByTricode } = useQuery<Map<string, Set<number>>>({
+    queryKey: [
+      'game-active-player-ids-by-team',
+      gameData?.home_team_tricode,
+      gameData?.away_team_tricode,
+      gameState,
+    ],
+    queryFn: async () => {
+      const teams = [gameData?.home_team_tricode, gameData?.away_team_tricode]
+        .map((t) => String(t ?? '').trim().toUpperCase())
+        .filter(Boolean);
+      const out = new Map<string, Set<number>>();
+      teams.forEach((t) => out.set(t, new Set<number>()));
+      if (!teams.length || gameState !== 'upcoming') return out;
+
+      const { data, error } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, team_abbreviation, is_active')
+        .in('team_abbreviation', teams)
+        .eq('is_active', true);
+      if (error) {
+        console.error('Error fetching active player ids by team:', error);
+        return out;
+      }
+
+      (data || []).forEach((row: any) => {
+        const team = String(row.team_abbreviation ?? '').trim().toUpperCase();
+        const id = Number(row.nba_player_id);
+        if (!team || !Number.isFinite(id)) return;
+        const set = out.get(team) ?? new Set<number>();
+        set.add(id);
+        out.set(team, set);
+      });
+      return out;
+    },
+    enabled: gameState === 'upcoming' && !!gameData,
+  });
+
+  // Build recent-activity sets (last 5 team games) for both teams.
+  const { data: last5ActivePlayerIdsByTricode } = useQuery<Map<string, Set<number>>>({
+    queryKey: [
+      'game-last5-active-player-ids-by-team',
+      gameData?.home_team_tricode,
+      gameData?.away_team_tricode,
+      gameData?.game_date,
+      gameState,
+    ],
+    queryFn: async () => {
+      const teams = [gameData?.home_team_tricode, gameData?.away_team_tricode]
+        .map((t) => String(t ?? '').trim().toUpperCase())
+        .filter(Boolean);
+      const out = new Map<string, Set<number>>();
+      teams.forEach((t) => out.set(t, new Set<number>()));
+      if (!teams.length || gameState !== 'upcoming') return out;
+
+      const { data, error } = await supabase
+        .from('nba_boxscores')
+        .select('team_tricode, game_id, game_date, nba_player_id, min')
+        .in('team_tricode', teams)
+        .gt('min', 0)
+        .order('game_date', { ascending: false })
+        .limit(500);
+
+      if (error) {
+        console.error('Error fetching last 5 active players by team:', error);
+        return out;
+      }
+
+      teams.forEach((team) => {
+        const teamRows = (data || []).filter((row: any) => String(row.team_tricode ?? '').trim().toUpperCase() === team);
+        const gameIds = new Set<string>();
+        const playerIds = new Set<number>();
+        for (const row of teamRows) {
+          const gameId = String(row.game_id ?? '').trim();
+          if (!gameId) continue;
+          if (!gameIds.has(gameId) && gameIds.size >= 5) continue;
+          gameIds.add(gameId);
+          const id = Number(row.nba_player_id);
+          if (Number.isFinite(id)) playerIds.add(id);
+        }
+        out.set(team, playerIds);
+      });
+
+      return out;
+    },
+    enabled: gameState === 'upcoming' && !!gameData,
   });
 
   // Only show players who are currently on this team (exclude traded players).
@@ -1301,6 +1600,227 @@ export default function GamePage() {
     return filtered;
   }, [playerProps, currentTeamTricode, playerTeamsMap, playerNameMatches]);
 
+  // Pull game-line context from player_props_games.raw_event_data to mirror feed line cards.
+  const { data: headerRawLines } = useQuery<TeamLinesByGame | null>({
+    queryKey: ['game-header-raw-lines', gameId, gameData?.game_date, gameData?.home_team_tricode, gameData?.away_team_tricode],
+    queryFn: async () => {
+      if (!gameData?.game_date || !gameData?.home_team_tricode || !gameData?.away_team_tricode) return null;
+
+      const gameDate = String(gameData.game_date).slice(0, 10);
+      const homeTri = String(gameData.home_team_tricode).trim().toUpperCase();
+      const awayTri = String(gameData.away_team_tricode).trim().toUpperCase();
+      const datesToTry = [gameDate];
+      try {
+        const d = new Date(gameDate);
+        const prev = new Date(d); prev.setDate(prev.getDate() - 1);
+        const next = new Date(d); next.setDate(next.getDate() + 1);
+        datesToTry.push(prev.toISOString().slice(0, 10), next.toISOString().slice(0, 10));
+      } catch (_) {}
+
+      let matchedRow: any = null;
+      for (const d of [...new Set(datesToTry)]) {
+        const { data: rows, error } = await supabase
+          .from('player_props_games')
+          .select('id, nba_game_id, game_date, home_team_tricode, away_team_tricode, home_team, away_team, raw_event_data')
+          .eq('game_date', d)
+          .limit(30);
+        if (error || !rows?.length) continue;
+
+        const byGameId = rows.find((r: any) => String(r.nba_game_id || '') === String(gameId || ''));
+        if (byGameId) {
+          matchedRow = byGameId;
+          break;
+        }
+
+        const byTricode = rows.find((r: any) => {
+          const rHome = String(r.home_team_tricode || '').trim().toUpperCase();
+          const rAway = String(r.away_team_tricode || '').trim().toUpperCase();
+          return (rHome === homeTri && rAway === awayTri) || (rHome === awayTri && rAway === homeTri);
+        });
+        if (byTricode) {
+          matchedRow = byTricode;
+          break;
+        }
+      }
+
+      if (!matchedRow?.raw_event_data) return null;
+      let raw = matchedRow.raw_event_data as any;
+      if (typeof raw === 'string') {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          return null;
+        }
+      }
+      const odds = raw?.odds as Record<string, Record<string, unknown>> | undefined;
+      if (!odds) return null;
+
+      let homeSpread: number | null = null;
+      let awaySpread: number | null = null;
+      let homeSpreadOdds: string | null = null;
+      let awaySpreadOdds: string | null = null;
+      let homeMoneyline: number | null = null;
+      let awayMoneyline: number | null = null;
+      let homeMoneylineOdds: string | null = null;
+      let awayMoneylineOdds: string | null = null;
+
+      for (const [key, odd] of Object.entries(odds)) {
+        if (!odd || typeof odd !== 'object') continue;
+        const side = String(odd.sideID || '');
+        const marketName = String(odd.marketName || '').toLowerCase();
+        const betType = String(odd.betTypeID || '').toLowerCase();
+        const keyLower = String(key || '').toLowerCase();
+        const oddsText = formatAmericanOdds(odd.bookOdds ?? odd.openBookOdds);
+        const oddsNum = parseAmericanOddsNumber(odd.bookOdds ?? odd.openBookOdds);
+
+        const isSpread = marketName.includes('spread') || betType === 'spread' || keyLower.includes('spread');
+        if (isSpread) {
+          const spreadNum = odd.bookSpread != null
+            ? Number(odd.bookSpread)
+            : odd.openBookSpread != null
+              ? Number(odd.openBookSpread)
+              : NaN;
+          if (!Number.isNaN(spreadNum)) {
+            if (side === 'home') {
+              homeSpread = spreadNum;
+              homeSpreadOdds = oddsText;
+            } else if (side === 'away') {
+              awaySpread = spreadNum;
+              awaySpreadOdds = oddsText;
+            }
+          }
+        }
+
+        const isMoneyline = marketName.includes('moneyline') || betType.includes('ml') || keyLower.includes('-ml-') || keyLower.includes('moneyline');
+        if (isMoneyline && oddsNum != null) {
+          if (side === 'home') {
+            homeMoneyline = oddsNum;
+            homeMoneylineOdds = oddsText;
+          } else if (side === 'away') {
+            awayMoneyline = oddsNum;
+            awayMoneylineOdds = oddsText;
+          }
+        }
+      }
+
+      if (homeSpread != null && awaySpread == null) awaySpread = -homeSpread;
+      if (awaySpread != null && homeSpread == null) homeSpread = -awaySpread;
+      if (homeSpread == null && awaySpread == null && homeMoneyline != null && awayMoneyline != null) {
+        const derived = moneylineToApproxSpread(homeMoneyline, awayMoneyline);
+        if (derived) {
+          homeSpread = derived.homeSpread;
+          awaySpread = derived.awaySpread;
+          if (homeSpreadOdds == null) homeSpreadOdds = homeMoneylineOdds;
+          if (awaySpreadOdds == null) awaySpreadOdds = awayMoneylineOdds;
+        }
+      }
+
+      if (homeSpread == null && awaySpread == null) return null;
+      return {
+        homeSpread: homeSpread ?? -awaySpread!,
+        awaySpread: awaySpread ?? -homeSpread!,
+        homeSpreadOdds,
+        awaySpreadOdds,
+        homeMoneyline,
+        awayMoneyline,
+        homeMoneylineOdds,
+        awayMoneylineOdds,
+      };
+    },
+    enabled: !!gameData?.game_date && !!gameData?.home_team_tricode && !!gameData?.away_team_tricode,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const headerTeamLines = useMemo(() => {
+    if (!gameData) {
+      return {
+        awaySpread: null as number | null,
+        homeSpread: null as number | null,
+        awaySpreadOdds: null as string | null,
+        homeSpreadOdds: null as string | null,
+      };
+    }
+    const resolved = resolveGameTeamLines({
+      homeTricode: gameData.home_team_tricode,
+      awayTricode: gameData.away_team_tricode,
+      gameProps: playerProps || [],
+      initial: {
+        homeSpread: headerRawLines?.homeSpread ?? gameData.home_spread ?? null,
+        awaySpread: headerRawLines?.awaySpread ?? gameData.away_spread ?? null,
+        homeSpreadOdds: headerRawLines?.homeSpreadOdds ?? null,
+        awaySpreadOdds: headerRawLines?.awaySpreadOdds ?? null,
+      },
+    });
+    return {
+      awaySpread: resolved.awaySpread,
+      homeSpread: resolved.homeSpread,
+      awaySpreadOdds: resolved.awaySpreadOdds,
+      homeSpreadOdds: resolved.homeSpreadOdds,
+    };
+  }, [gameData, playerProps, headerRawLines]);
+
+  const { data: headerStandingsMap } = useQuery({
+    queryKey: ['game-header-standings', gameData?.home_team_tricode, gameData?.away_team_tricode, gameData?.game_date],
+    queryFn: async () => {
+      if (!gameData?.home_team_tricode || !gameData?.away_team_tricode) return new Map<string, { wins: number; losses: number }>();
+      const currentDate = gameData?.game_date ? new Date(gameData.game_date) : new Date();
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const season = month >= 10
+        ? `${year}-${(year + 1).toString().slice(-2)}`
+        : `${year - 1}-${year.toString().slice(-2)}`;
+
+      const { data } = await supabase
+        .from('nba_standings')
+        .select('team_abbreviation, wins, losses')
+        .eq('season', season)
+        .in('team_abbreviation', [gameData.home_team_tricode, gameData.away_team_tricode]);
+
+      const map = new Map<string, { wins: number; losses: number }>();
+      (data || []).forEach((team: any) => {
+        map.set(team.team_abbreviation, { wins: team.wins || 0, losses: team.losses || 0 });
+      });
+      return map;
+    },
+    enabled: !!gameData?.home_team_tricode && !!gameData?.away_team_tricode,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const handleAddPropToSlip = useCallback(
+    (prop: PlayerProp, side: 'over' | 'under' = 'over') => {
+      const leg = propToSlipLeg({
+        ...prop,
+        displaySide: side,
+        displayOdds: prop.american_odds || prop.price,
+        game_id: prop.game_id,
+        game_date: gameData?.game_date,
+      });
+      if (!leg) return;
+      const result = addToSlip(leg);
+      if (result.added) {
+        if (feedRestore) {
+          feedRestore.goToProfileSlipBuilderAfterAdd({
+            feedDrawerTab: 'props',
+            drawerProfileMode: false,
+            moduleName: 'prop_predictions_over',
+            propUi: {
+              mainTab: 'hit_rate',
+              activeTab: 'hottest',
+              propTypeFilter: 'all',
+              hitRatePage: 1,
+              teamConfidencePage: 1,
+              playerConfidencePage: 1,
+            },
+            dateString: selectedDate.format('YYYY-MM-DD'),
+          });
+        } else {
+          gameDrawer?.openDrawer();
+        }
+      }
+    },
+    [addToSlip, gameData?.game_date, gameId, feedRestore, gameDrawer, selectedDate]
+  );
+
   // Fetch player stats for upcoming games - sorted by minutes played (descending)
   // MUST be called before any conditional returns
   const { data: upcomingPlayerStats, isLoading: upcomingStatsLoading } = useQuery({
@@ -1414,6 +1934,38 @@ export default function GamePage() {
     enabled: gameState === 'upcoming' && !!currentTeamTricode && !!currentSeason && !!currentRoster,
   });
 
+  const advancedMpgByKey = useMemo(() => {
+    const map = new Map<string, number>();
+
+    if (gameState === 'upcoming') {
+      (upcomingPlayerStats || []).forEach((player: any) => {
+        const mpg = Number(player?.mpg || 0);
+        if (!Number.isFinite(mpg) || mpg <= 0) return;
+        if (player.player_id) map.set(`id:${player.player_id}`, mpg);
+        if (player.nba_player_id) map.set(`nba:${player.nba_player_id}`, mpg);
+      });
+      return map;
+    }
+
+    (currentTeamStats || []).forEach((player: any) => {
+      const stats = typeof player.stats === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(player.stats);
+            } catch {
+              return {};
+            }
+          })()
+        : (player.stats || {});
+      const min = Number(stats?.min || 0);
+      if (!Number.isFinite(min) || min <= 0) return;
+      if (player.player_id) map.set(`id:${player.player_id}`, min);
+      if (player.nba_player_id) map.set(`nba:${player.nba_player_id}`, min);
+    });
+
+    return map;
+  }, [gameState, upcomingPlayerStats, currentTeamStats]);
+
   // Fetch injuries for roster players (for upcoming games)
   const { data: playerInjuries } = useQuery<Map<number, any>>({
     queryKey: ['player-injuries-game', currentRoster?.length, gameData?.game_date],
@@ -1435,7 +1987,7 @@ export default function GamePage() {
         .select('*')
         .in('nba_player_id', nbaPlayerIds)
         .eq('is_current', true)
-        .in('injury_status', ['Out', 'Questionable', 'Day-to-Day'])
+        .in('injury_status', ['Out', 'Questionable', 'Probable', 'Day-to-Day'])
         .order('date_updated', { ascending: false });
       
       if (error) {
@@ -1457,6 +2009,823 @@ export default function GamePage() {
     },
     enabled: gameState === 'upcoming' && !!currentRoster && currentRoster.length > 0,
   });
+
+  const bestPropByPlayer = useMemo(() => {
+    const map = new Map<number, PlayerProp>();
+    teamProps.forEach((prop) => {
+      if (!prop.nba_player_id) return;
+      const existing = map.get(prop.nba_player_id);
+      if (!existing || Number(prop.line ?? 0) > Number(existing.line ?? 0)) {
+        map.set(prop.nba_player_id, prop);
+      }
+    });
+    return map;
+  }, [teamProps]);
+
+  const filteredHomeRosterForEstimatedRotation = useMemo(() => {
+    const team = String(gameData?.home_team_tricode ?? '').trim().toUpperCase();
+    const activeIds = team ? activeTeamPlayerIdsByTricode?.get(team) : undefined;
+    const recentIds = team ? last5ActivePlayerIdsByTricode?.get(team) : undefined;
+    return (homeRoster ?? []).filter((player: any) => {
+      const id = player.nba_player_id;
+      const activeOk = !activeIds || activeIds.size === 0 || (id != null && activeIds.has(id));
+      const recentOk = !recentIds || recentIds.size === 0 || (id != null && recentIds.has(id));
+      return activeOk && recentOk;
+    });
+  }, [homeRoster, gameData?.home_team_tricode, activeTeamPlayerIdsByTricode, last5ActivePlayerIdsByTricode]);
+
+  const filteredAwayRosterForEstimatedRotation = useMemo(() => {
+    const team = String(gameData?.away_team_tricode ?? '').trim().toUpperCase();
+    const activeIds = team ? activeTeamPlayerIdsByTricode?.get(team) : undefined;
+    const recentIds = team ? last5ActivePlayerIdsByTricode?.get(team) : undefined;
+    return (awayRoster ?? []).filter((player: any) => {
+      const id = player.nba_player_id;
+      const activeOk = !activeIds || activeIds.size === 0 || (id != null && activeIds.has(id));
+      const recentOk = !recentIds || recentIds.size === 0 || (id != null && recentIds.has(id));
+      return activeOk && recentOk;
+    });
+  }, [awayRoster, gameData?.away_team_tricode, activeTeamPlayerIdsByTricode, last5ActivePlayerIdsByTricode]);
+
+  const { data: averageRotationSizeByTeam } = useQuery({
+    queryKey: [
+      'game-avg-rotation-size-by-team',
+      gameData?.home_team_tricode,
+      gameData?.away_team_tricode,
+      gameData?.game_date,
+      gameState,
+    ],
+    queryFn: async () => {
+      if (!gameData) return new Map();
+      return fetchTeamAverageRotationSize({
+        teamTricodes: [gameData.home_team_tricode, gameData.away_team_tricode],
+        asOfDate: gameData.game_date,
+        lookbackGames: 10,
+      });
+    },
+    enabled: gameState === 'upcoming' && !!gameData,
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const homeRotationSizeTarget = useMemo(() => {
+    const tri = String(gameData?.home_team_tricode ?? '').trim().toUpperCase();
+    const avg = tri ? averageRotationSizeByTeam?.get(tri)?.averageRotationSize : undefined;
+    if (typeof avg !== 'number' || !Number.isFinite(avg) || avg <= 0) return null;
+    return Math.max(5, Math.min(12, Math.round(avg)));
+  }, [gameData?.home_team_tricode, averageRotationSizeByTeam]);
+
+  const awayRotationSizeTarget = useMemo(() => {
+    const tri = String(gameData?.away_team_tricode ?? '').trim().toUpperCase();
+    const avg = tri ? averageRotationSizeByTeam?.get(tri)?.averageRotationSize : undefined;
+    if (typeof avg !== 'number' || !Number.isFinite(avg) || avg <= 0) return null;
+    return Math.max(5, Math.min(12, Math.round(avg)));
+  }, [gameData?.away_team_tricode, averageRotationSizeByTeam]);
+
+  const { data: outPlayersByTeamForEstimator } = useQuery({
+    queryKey: [
+      'game-out-players-by-team',
+      gameData?.game_date,
+      gameData?.away_team_tricode,
+      gameData?.home_team_tricode,
+    ],
+    queryFn: async (): Promise<Map<string, Array<{ nbaPlayerId: number; playerName: string; teamTricode: string }>>> => {
+      if (!gameData) return new Map();
+      const teamTricodes = [gameData.away_team_tricode, gameData.home_team_tricode]
+        .map((t) => String(t ?? '').trim().toUpperCase())
+        .filter(Boolean);
+      if (!teamTricodes.length) return new Map();
+      return fetchTeamOutPlayersFromRecentRotations({
+        teamTricodes,
+        asOfDate: gameData.game_date,
+        lookbackGames: 5,
+      });
+    },
+    enabled: gameState === 'upcoming' && !!gameData,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const homeForcedOutPlayerIds = useMemo(() => {
+    const tri = String(gameData?.home_team_tricode ?? '').trim().toUpperCase();
+    const players = tri ? outPlayersByTeamForEstimator?.get(tri) ?? [] : [];
+    return players.map((p) => p.nbaPlayerId).filter((id) => Number.isFinite(id));
+  }, [gameData?.home_team_tricode, outPlayersByTeamForEstimator]);
+
+  const awayForcedOutPlayerIds = useMemo(() => {
+    const tri = String(gameData?.away_team_tricode ?? '').trim().toUpperCase();
+    const players = tri ? outPlayersByTeamForEstimator?.get(tri) ?? [] : [];
+    return players.map((p) => p.nbaPlayerId).filter((id) => Number.isFinite(id));
+  }, [gameData?.away_team_tricode, outPlayersByTeamForEstimator]);
+
+  const { data: estimatedRotation, isLoading: estimatedRotationLoading } = useEstimatedRotation({
+    enabled: gameState === 'upcoming' && !!gameData,
+    gameDate: gameData?.game_date,
+    homeTricode: gameData?.home_team_tricode,
+    awayTricode: gameData?.away_team_tricode,
+    homeRoster: filteredHomeRosterForEstimatedRotation.map((p) => ({
+      nba_player_id: p.nba_player_id,
+      player_id: p.player_id,
+      player_name: p.player_name,
+      position: p.position,
+      jersey_number: p.jersey_number,
+    })),
+    awayRoster: filteredAwayRosterForEstimatedRotation.map((p) => ({
+      nba_player_id: p.nba_player_id,
+      player_id: p.player_id,
+      player_name: p.player_name,
+      position: p.position,
+      jersey_number: p.jersey_number,
+    })),
+    lookbackGames: 8,
+    homeRotationSizeTarget,
+    awayRotationSizeTarget,
+    homeForcedOutPlayerIds,
+    awayForcedOutPlayerIds,
+  });
+
+  const { data: outPlayersByTeam, isLoading: outPlayersLoading } = useQuery({
+    queryKey: [
+      'game-out-players-by-team',
+      gameData?.game_date,
+      gameData?.away_team_tricode,
+      gameData?.home_team_tricode,
+    ],
+    queryFn: async (): Promise<Map<string, Array<{ nbaPlayerId: number; playerName: string; teamTricode: string }>>> => {
+      if (!gameData) return new Map();
+      const teamTricodes = [gameData.away_team_tricode, gameData.home_team_tricode]
+        .map((t) => String(t ?? '').trim().toUpperCase())
+        .filter(Boolean);
+      if (!teamTricodes.length) return new Map();
+      return fetchTeamOutPlayersFromRecentRotations({
+        teamTricodes,
+        asOfDate: gameData.game_date,
+        lookbackGames: 5,
+      });
+    },
+    enabled: gameState === 'upcoming' && !!gameData,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const selectedTeamOutPlayers = useMemo(() => {
+    if (!gameData) return [];
+    const tri = selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode;
+    return outPlayersByTeam?.get(String(tri ?? '').trim().toUpperCase()) ?? [];
+  }, [gameData, selectedTeam, outPlayersByTeam]);
+
+  const selectedTeamOutPlayerIds = useMemo(() => {
+    return new Set<number>(
+      selectedTeamOutPlayers
+        .map((player) => Number(player.nbaPlayerId))
+        .filter((id) => Number.isFinite(id))
+    );
+  }, [selectedTeamOutPlayers]);
+  const selectedTeamOutPlayerNamesNormalized = useMemo(() => {
+    const normalize = (name: string) =>
+      String(name || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return new Set<string>(
+      selectedTeamOutPlayers
+        .map((player) => normalize(String(player.playerName || '')))
+        .filter(Boolean)
+    );
+  }, [selectedTeamOutPlayers]);
+  const selectedTeamTricodeNormalized = useMemo(() => {
+    if (!gameData) return '';
+    return String(selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode)
+      .trim()
+      .toUpperCase();
+  }, [gameData, selectedTeam]);
+
+  const { data: selectedTeamStrictOutInjuries } = useQuery({
+    queryKey: ['selected-team-strict-out-injuries', selectedTeamTricodeNormalized, gameData?.game_date],
+    queryFn: async () => {
+      if (!selectedTeamTricodeNormalized) return [] as any[];
+      const { data: teamPlayers, error: teamPlayersError } = await supabase
+        .from('nba_players')
+        .select('nba_player_id, name')
+        .eq('team_abbreviation', selectedTeamTricodeNormalized);
+      if (teamPlayersError || !teamPlayers?.length) return [] as any[];
+      const nbaPlayerIds = teamPlayers
+        .map((player: any) => Number(player.nba_player_id))
+        .filter((id: number) => Number.isFinite(id));
+      if (!nbaPlayerIds.length) return [] as any[];
+      const playerNameById = new Map<number, string>();
+      teamPlayers.forEach((player: any) => {
+        const id = Number(player.nba_player_id);
+        if (Number.isFinite(id)) {
+          playerNameById.set(id, String(player.name || '').trim());
+        }
+      });
+
+      const { data, error } = await supabase
+        .from('nba_injuries')
+        .select('nba_player_id, raw_data, injury_status, date_updated')
+        .in('nba_player_id', nbaPlayerIds)
+        .eq('is_current', true)
+        .eq('injury_status', 'Out')
+        .order('date_updated', { ascending: false })
+        .limit(2000);
+      if (error || !data?.length) return [] as any[];
+      return data.map((injury: any) => {
+        const id = Number(injury.nba_player_id);
+        return {
+          ...injury,
+          player_name: playerNameById.get(id) || String(injury?.raw_data?.player_name || '').trim(),
+        };
+      });
+    },
+    enabled: !!selectedTeamTricodeNormalized,
+    staleTime: 2 * 60 * 1000,
+  });
+  const selectedTeamStrictOutPlayerIds = useMemo(() => {
+    return new Set<number>(
+      (selectedTeamStrictOutInjuries ?? [])
+        .map((injury: any) => Number(injury.nba_player_id))
+        .filter((id: number) => Number.isFinite(id))
+    );
+  }, [selectedTeamStrictOutInjuries]);
+  const selectedTeamStrictOutPlayerNamesNormalized = useMemo(() => {
+    const normalize = (name: string) =>
+      String(name || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    return new Set<string>(
+      (selectedTeamStrictOutInjuries ?? [])
+        .map((injury: any) => normalize(String(injury?.player_name ?? injury?.raw_data?.player_name ?? '')))
+        .filter(Boolean)
+    );
+  }, [selectedTeamStrictOutInjuries]);
+  const selectedTeamExcludedOutPlayerIds = useMemo(() => {
+    const set = new Set<number>(selectedTeamOutPlayerIds);
+    selectedTeamStrictOutPlayerIds.forEach((id) => set.add(id));
+    return set;
+  }, [selectedTeamOutPlayerIds, selectedTeamStrictOutPlayerIds]);
+  const selectedTeamExcludedOutPlayerNamesNormalized = useMemo(() => {
+    const set = new Set<string>(selectedTeamOutPlayerNamesNormalized);
+    selectedTeamStrictOutPlayerNamesNormalized.forEach((name) => set.add(name));
+    return set;
+  }, [selectedTeamOutPlayerNamesNormalized, selectedTeamStrictOutPlayerNamesNormalized]);
+
+  const selectedTeamInjuryNotes = useMemo(() => {
+    const notes = new Map<number, { nbaPlayerId: number; playerName: string; injuryStatus: string }>();
+
+    selectedTeamOutPlayers.forEach((player) => {
+      const id = Number(player.nbaPlayerId);
+      if (!Number.isFinite(id)) return;
+      notes.set(id, {
+        nbaPlayerId: id,
+        playerName: player.playerName,
+        injuryStatus: 'Out',
+      });
+    });
+
+    if (playerInjuries) {
+      playerInjuries.forEach((injury: any, nbaPlayerId: number) => {
+        const status = String(injury?.injury_status ?? '').trim();
+        if (!status) return;
+        const normalized = status.toLowerCase();
+        if (!(normalized.includes('probable') || normalized.includes('questionable'))) return;
+        if (notes.has(nbaPlayerId)) return;
+        const rosterName = (currentRoster || []).find((p: any) => p.nba_player_id === nbaPlayerId)?.player_name;
+        notes.set(nbaPlayerId, {
+          nbaPlayerId,
+          playerName: rosterName || injury?.player_name || 'Unknown',
+          injuryStatus: status,
+        });
+      });
+    }
+
+    return Array.from(notes.values()).sort((a, b) => a.playerName.localeCompare(b.playerName));
+  }, [selectedTeamOutPlayers, playerInjuries, currentRoster]);
+
+  const selectedTeamRotationRows = useMemo(() => {
+    const rows = selectedTeam === 'away' ? (estimatedRotation?.away ?? []) : (estimatedRotation?.home ?? []);
+    return rows
+      .filter((row) => {
+        const byUtility = row.nba_player_id != null && selectedTeamOutPlayerIds.has(row.nba_player_id);
+        const bySignal = row.signals.some((signal) => signal.toLowerCase().includes('out status'));
+        return !byUtility && !bySignal;
+      })
+      .map((row) => {
+        const isRecentlyActiveOut =
+          row.nba_player_id != null && selectedTeamOutPlayerIds.has(row.nba_player_id);
+        if (!isRecentlyActiveOut) return row;
+        const injurySignal = 'Recently active but currently OUT (rotation gap signal)';
+        if (row.signals.includes(injurySignal)) return row;
+        return {
+          ...row,
+          signals: [injurySignal, ...row.signals],
+        };
+      });
+  }, [selectedTeam, estimatedRotation?.away, estimatedRotation?.home, selectedTeamOutPlayerIds]);
+
+  const selectedTeamTotalEstimatedMinutes = useMemo(
+    () => (selectedTeamRotationRows.length > 0 ? 240 : 0),
+    [selectedTeamRotationRows]
+  );
+
+  const selectedTeamAvgRotationSize = useMemo(() => {
+    if (!gameData) return null;
+    const tri = String(selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode)
+      .trim()
+      .toUpperCase();
+    const avg = averageRotationSizeByTeam?.get(tri)?.averageRotationSize;
+    return typeof avg === 'number' && Number.isFinite(avg) ? avg : null;
+  }, [gameData, selectedTeam, averageRotationSizeByTeam]);
+
+  const exploitationRows = useMemo(() => {
+    return buildTeamExploitations({ predictorStats, maxPerTeam: 6 });
+  }, [predictorStats]);
+
+  const selectedTeamTricodeForStrategies = gameData
+    ? (selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode)
+    : '';
+  const opponentTeamTricodeForStrategies = gameData
+    ? (selectedTeam === 'away' ? gameData.home_team_tricode : gameData.away_team_tricode)
+    : '';
+
+  const strategyEndpointNames = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          MATCHUP_FACTORS.flatMap((factor) => [factor.playerOffenseEndpoint, factor.teamDefenseEndpoint])
+        )
+      ),
+    []
+  );
+
+  const {
+    data: strategyEndpointRows,
+    isLoading: strategyEndpointRowsLoading,
+    isError: strategyEndpointRowsError,
+  } = useQuery({
+    queryKey: ['strategy-endpoint-rows', gameData?.game_date, strategyEndpointNames.join(',')],
+    queryFn: async () => {
+      if (!gameData?.game_date) return {} as Record<string, Record<string, string>[]>;
+      const gameDate = String(gameData.game_date).slice(0, 10);
+      let targetDate = gameDate;
+      const { data: latestTeamStatDate } = await supabase
+        .from('nba_daily_team_stats')
+        .select('date')
+        .lte('date', gameDate)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestTeamStatDate?.date) {
+        targetDate = String(latestTeamStatDate.date).slice(0, 10);
+      }
+      const { data: rows, error } = await supabase
+        .from('nba_daily_team_stats')
+        .select('endpoint_name, data')
+        .eq('date', targetDate)
+        .in('endpoint_name', strategyEndpointNames);
+      if (error || !rows?.length) return {} as Record<string, Record<string, string>[]>;
+
+      const byEndpoint: Record<string, Record<string, string>[]> = {};
+      rows.forEach((row: any) => {
+        try {
+          const payload = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+          byEndpoint[row.endpoint_name] = Array.isArray(payload?.data) ? payload.data : [];
+        } catch {
+          byEndpoint[row.endpoint_name] = [];
+        }
+      });
+      return byEndpoint;
+    },
+    enabled: !!gameData?.game_date,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const { data: strategyPlayerEndpointRows } = useQuery({
+    queryKey: ['strategy-player-endpoint-rows', gameData?.game_date, strategyEndpointNames.join(',')],
+    queryFn: async () => {
+      if (!gameData?.game_date) return {} as Record<string, Record<string, string>[]>;
+      const gameDate = String(gameData.game_date).slice(0, 10);
+      let targetDate = gameDate;
+      const { data: latestPlayerStatDate } = await supabase
+        .from('nba_daily_player_stats')
+        .select('date')
+        .lte('date', gameDate)
+        .order('date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (latestPlayerStatDate?.date) {
+        targetDate = String(latestPlayerStatDate.date).slice(0, 10);
+      }
+      const { data: rows, error } = await supabase
+        .from('nba_daily_player_stats')
+        .select('endpoint_name, data')
+        .eq('date', targetDate)
+        .in('endpoint_name', strategyEndpointNames);
+      if (error || !rows?.length) return {} as Record<string, Record<string, string>[]>;
+
+      const byEndpoint: Record<string, Record<string, string>[]> = {};
+      rows.forEach((row: any) => {
+        try {
+          const payload = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+          byEndpoint[row.endpoint_name] = Array.isArray(payload?.data) ? payload.data : [];
+        } catch {
+          byEndpoint[row.endpoint_name] = [];
+        }
+      });
+      return byEndpoint;
+    },
+    enabled: !!gameData?.game_date,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  const strategyCategoryCards = useMemo(() => {
+    const toNumeric = (value: unknown): number | null => {
+      if (value == null) return null;
+      const parsed = parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const firstNumericFromRow = (
+      row: Record<string, string> | null | undefined,
+      keys: string[],
+      allowAnyNumericFallback: boolean = false
+    ): number | null => {
+      if (!row) return null;
+      for (const key of keys) {
+        const exact = toNumeric((row as any)[key]);
+        if (exact != null) return exact;
+        const matchKey = Object.keys(row).find((k) => k.toUpperCase() === key.toUpperCase());
+        if (matchKey) {
+          const matchVal = toNumeric((row as any)[matchKey]);
+          if (matchVal != null) return matchVal;
+        }
+      }
+      if (!allowAnyNumericFallback) return null;
+      for (const [k, raw] of Object.entries(row)) {
+        if (k.toUpperCase() === 'TEAM') continue;
+        const parsed = toNumeric(raw);
+        if (parsed != null) return parsed;
+      }
+      return null;
+    };
+    const average = (values: number[]): number | null => {
+      if (!values.length) return null;
+      return values.reduce((sum, num) => sum + num, 0) / values.length;
+    };
+    const percentileRank = (values: number[], value: number | null, higherIsBetter: boolean): number | null => {
+      if (value == null) return null;
+      const valid = values.filter((v) => Number.isFinite(v));
+      if (!valid.length) return null;
+      const lessOrEqual = valid.filter((v) => v <= value).length;
+      const raw = (lessOrEqual / valid.length) * 100;
+      return higherIsBetter ? raw : 100 - raw;
+    };
+    const percentileTier = (percentile: number | null): 'top10' | 'bottom10' | null => {
+      if (percentile == null) return null;
+      if (percentile >= 90) return 'top10';
+      if (percentile <= 10) return 'bottom10';
+      return null;
+    };
+    const leagueRank = (values: number[], value: number | null, higherIsBetter: boolean): number | null => {
+      if (value == null) return null;
+      const valid = values.filter((v) => Number.isFinite(v));
+      if (!valid.length) return null;
+      const sorted = valid.slice().sort((a, b) => (higherIsBetter ? b - a : a - b));
+      const idx = sorted.findIndex((v) => v === value);
+      if (idx >= 0) return idx + 1;
+      const firstWorse = sorted.findIndex((v) => (higherIsBetter ? v < value : v > value));
+      return firstWorse >= 0 ? firstWorse + 1 : sorted.length;
+    };
+
+    const teamTri = String(selectedTeamTricodeForStrategies || '').toUpperCase();
+    const oppTri = String(opponentTeamTricodeForStrategies || '').toUpperCase();
+    if (!teamTri || !oppTri) return [];
+
+    return MATCHUP_FACTORS.map((factor, index) => {
+      const offenseRowsRaw = strategyEndpointRows?.[factor.playerOffenseEndpoint] || [];
+      const defenseRows = strategyEndpointRows?.[factor.teamDefenseEndpoint] || [];
+      const offenseRows = offenseRowsRaw.length > 0 ? offenseRowsRaw : defenseRows;
+
+      const offenseSlice = predictorStats?.[factor.playerOffenseEndpoint];
+      const defenseSlice = predictorStats?.[factor.teamDefenseEndpoint];
+      const sliceSelectedOffenseRow =
+        selectedTeam === 'away'
+          ? (offenseSlice?.away as Record<string, string> | null | undefined)
+          : (offenseSlice?.home as Record<string, string> | null | undefined);
+      const sliceSelectedDefenseRow =
+        selectedTeam === 'away'
+          ? (defenseSlice?.away as Record<string, string> | null | undefined)
+          : (defenseSlice?.home as Record<string, string> | null | undefined);
+      const sliceOpponentDefenseRow =
+        selectedTeam === 'away'
+          ? (defenseSlice?.home as Record<string, string> | null | undefined)
+          : (defenseSlice?.away as Record<string, string> | null | undefined);
+
+      const offenseTeamRow = offenseRows.find((row) => predictorTeamNameToTricode(row.TEAM) === teamTri) || null;
+      const defenseTeamRow = defenseRows.find((row) => predictorTeamNameToTricode(row.TEAM) === teamTri) || null;
+      const opponentDefenseRow = defenseRows.find((row) => predictorTeamNameToTricode(row.TEAM) === oppTri) || null;
+
+      const offenseKeys = Array.from(
+        new Set([
+          factor.playerStatKey,
+          ...(factor.playerDisplayColumns ?? []),
+          factor.teamStatKey,
+          'PPP',
+          'FG%',
+          'OREB CHANCE%',
+          'DREB',
+        ])
+      );
+      const usageKeys = ['FREQ%', 'POSS', 'PTS', 'FGA', 'OREB CHANCES'];
+      const defenseKeys = Array.from(
+        new Set([
+          factor.teamStatKey,
+          ...(factor.teamDisplayColumns ?? []),
+          factor.playerStatKey,
+          'PPP',
+          'FG%',
+          'DFG%',
+          'DREB',
+        ])
+      );
+
+      // Prioritize values sourced from league row set so ranks/percentiles are aligned
+      // to the same exact stat column across all 30 teams.
+      const teamOffenseValue =
+        firstNumericFromRow(offenseTeamRow, offenseKeys) ??
+        firstNumericFromRow(sliceSelectedOffenseRow ?? null, offenseKeys);
+      const teamDefenseValue =
+        firstNumericFromRow(defenseTeamRow, defenseKeys) ??
+        firstNumericFromRow(sliceSelectedDefenseRow ?? null, defenseKeys);
+      const opponentDefenseValue =
+        firstNumericFromRow(opponentDefenseRow, defenseKeys) ??
+        firstNumericFromRow(sliceOpponentDefenseRow ?? null, defenseKeys);
+
+      const leagueOffenseAvg = average(
+        offenseRows
+          .map((row) => firstNumericFromRow(row, offenseKeys))
+          .filter((v): v is number => v != null)
+      );
+      const leagueDefenseAvg = average(
+        defenseRows
+          .map((row) => firstNumericFromRow(row, defenseKeys))
+          .filter((v): v is number => v != null)
+      );
+
+      const offenseVsLeague = teamOffenseValue != null && leagueOffenseAvg != null ? teamOffenseValue - leagueOffenseAvg : null;
+      const defenseVsLeague = teamDefenseValue != null && leagueDefenseAvg != null ? teamDefenseValue - leagueDefenseAvg : null;
+      const matchupVsOpponent = teamOffenseValue != null && opponentDefenseValue != null ? teamOffenseValue - opponentDefenseValue : null;
+      const offenseLeagueValues = offenseRows
+        .map((row) => firstNumericFromRow(row, offenseKeys))
+        .filter((v): v is number => v != null);
+      const defenseLeagueValues = defenseRows
+        .map((row) => firstNumericFromRow(row, defenseKeys))
+        .filter((v): v is number => v != null);
+
+      const teamOffensePercentile = percentileRank(
+        offenseLeagueValues,
+        teamOffenseValue,
+        factor.higherPlayerBetter
+      );
+      const teamDefenseStrengthPercentile = percentileRank(
+        defenseLeagueValues,
+        teamDefenseValue,
+        !factor.higherTeamValueWorseDefense
+      );
+      const opponentDefenseStrengthPercentile = percentileRank(
+        defenseLeagueValues,
+        opponentDefenseValue,
+        !factor.higherTeamValueWorseDefense
+      );
+      const categoryUsageRate = firstNumericFromRow(offenseTeamRow, usageKeys) ??
+        firstNumericFromRow(sliceSelectedOffenseRow ?? null, usageKeys);
+      const usageLeagueValues = offenseRows
+        .map((row) => firstNumericFromRow(row, usageKeys))
+        .filter((v): v is number => v != null);
+      const categoryUsagePercentile = percentileRank(
+        usageLeagueValues,
+        categoryUsageRate,
+        true
+      );
+      const matchupPercentileGap =
+        teamOffensePercentile != null && opponentDefenseStrengthPercentile != null
+          ? teamOffensePercentile - opponentDefenseStrengthPercentile
+          : null;
+      const usageWeight =
+        categoryUsagePercentile != null
+          ? (0.5 + categoryUsagePercentile / 100)
+          : 1;
+      const weightedMatchupScore =
+        matchupPercentileGap != null
+          ? matchupPercentileGap * usageWeight
+          : null;
+      const teamOffenseRank = leagueRank(
+        offenseLeagueValues,
+        teamOffenseValue,
+        factor.higherPlayerBetter
+      );
+      const teamDefenseStrengthRank = leagueRank(
+        defenseLeagueValues,
+        teamDefenseValue,
+        !factor.higherTeamValueWorseDefense
+      );
+      const opponentDefenseStrengthRank = leagueRank(
+        defenseLeagueValues,
+        opponentDefenseValue,
+        !factor.higherTeamValueWorseDefense
+      );
+      const playerRows = strategyPlayerEndpointRows?.[factor.playerOffenseEndpoint] || [];
+      const rowMatchesTricode = (row: Record<string, string>, tricode: string) => {
+        const teamRaw = String((row as any).TEAM || '').trim().toUpperCase();
+        if (!teamRaw) return false;
+        if (teamRaw === tricode) return true;
+        return predictorTeamNameToTricode(teamRaw) === tricode;
+      };
+      const toTopScorers = (tricode: string) =>
+        playerRows
+          .filter((row) => rowMatchesTricode(row, tricode))
+          .map((row) => {
+            // For "top scorers", prefer play-type PTS and fallback to primary category stat.
+            const points = toNumeric((row as any).PTS);
+            const primaryValue = firstNumericFromRow(row, offenseKeys);
+            const ppp = toNumeric((row as any).PPP);
+            const freq = toNumeric((row as any)['FREQ%']);
+            const poss = toNumeric((row as any).POSS);
+            const percentile = toNumeric((row as any).PERCENTILE);
+            const nbaPlayerId =
+              toNumeric((row as any).NBA_PLAYER_ID) ??
+              toNumeric((row as any).PERSON_ID) ??
+              toNumeric((row as any).PLAYER_ID);
+            const playerName = String((row as any).PLAYER || '').trim();
+            const normalizedPlayerName = playerName
+              .toLowerCase()
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-z0-9\s]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+            return {
+              name: playerName,
+              points,
+              value: primaryValue,
+              ppp,
+              freq,
+              poss,
+              percentile,
+              nbaPlayerId,
+              normalizedPlayerName,
+            };
+          })
+          .filter((p) => {
+            if (!p.name || (p.points == null && p.value == null)) return false;
+            if (p.nbaPlayerId != null && selectedTeamExcludedOutPlayerIds.has(Number(p.nbaPlayerId))) return false;
+            if (p.normalizedPlayerName && selectedTeamExcludedOutPlayerNamesNormalized.has(p.normalizedPlayerName)) return false;
+            return true;
+          })
+          .sort((a, b) => {
+            const scoreA = a.points ?? a.value ?? -9999;
+            const scoreB = b.points ?? b.value ?? -9999;
+            return scoreB - scoreA;
+          })
+          .slice(0, 3);
+      const mappedBetType = getBetTypeForMatchupEndpoint(factor.playerOffenseEndpoint);
+      const mappedBetTypeAliases = mappedBetType ? expandBetTypeAliases(mappedBetType) : new Set<string>();
+      const mappedCanonicalAliases = new Set(Array.from(mappedBetTypeAliases).map((alias) => canonicalizeBetType(alias)));
+      const isMappedBetType = (betTypeRaw: string) => {
+        const normalizedPropType = normalizeBetType(betTypeRaw || '');
+        const canonicalPropType = canonicalizeBetType(normalizedPropType);
+        for (const alias of mappedBetTypeAliases) {
+          const canonicalAlias = canonicalizeBetType(alias);
+          if (
+            normalizedPropType === alias ||
+            normalizedPropType.includes(alias) ||
+            alias.includes(normalizedPropType) ||
+            canonicalPropType === canonicalAlias ||
+            canonicalPropType.includes(canonicalAlias) ||
+            mappedCanonicalAliases.has(canonicalPropType)
+          ) {
+            return true;
+          }
+        }
+        return false;
+      };
+      const normalizePlayerNameForMatch = (value: string) =>
+        String(value || '')
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9\s]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      const selectedTeamTopPlayers = toTopScorers(teamTri).map((player) => {
+        const matchedProp = teamProps.find((prop) => {
+          if (!mappedBetType || !isMappedBetType(prop.bet_type || '')) return false;
+          const byNbaId =
+            player.nbaPlayerId != null &&
+            prop.nba_player_id != null &&
+            Number(player.nbaPlayerId) === Number(prop.nba_player_id);
+          if (byNbaId) return true;
+          const normalizedPropPlayerName = normalizePlayerNameForMatch(prop.player_name || '');
+          return Boolean(
+            player.normalizedPlayerName &&
+            normalizedPropPlayerName &&
+            player.normalizedPlayerName === normalizedPropPlayerName
+          );
+        });
+
+        return {
+          ...player,
+          matchedProp: matchedProp
+            ? {
+                betType: matchedProp.bet_type,
+                line: matchedProp.line,
+                americanOdds: matchedProp.american_odds,
+              }
+            : null,
+        };
+      });
+
+      return {
+        id: `${factor.playerOffenseEndpoint}__${factor.teamDefenseEndpoint}`,
+        label: factor.label,
+        chartType: EXPLOIT_CHART_SEQUENCE[index] ?? 'bar',
+        offenseStat: factor.playerStatKey,
+        defenseStat: factor.teamStatKey,
+        teamOffenseValue,
+        teamDefenseValue,
+        opponentDefenseValue,
+        leagueOffenseAvg,
+        leagueDefenseAvg,
+        offenseVsLeague,
+        defenseVsLeague,
+        matchupVsOpponent,
+        teamOffensePercentile,
+        teamDefenseStrengthPercentile,
+        opponentDefenseStrengthPercentile,
+        matchupPercentileGap,
+        teamOffenseRank,
+        teamDefenseStrengthRank,
+        opponentDefenseStrengthRank,
+        leagueTeamCountOffense: offenseLeagueValues.length,
+        leagueTeamCountDefense: defenseLeagueValues.length,
+        categoryUsageRate,
+        categoryUsagePercentile,
+        weightedMatchupScore,
+        teamOffenseTier: percentileTier(teamOffensePercentile),
+        teamDefenseTier: percentileTier(teamDefenseStrengthPercentile),
+        opponentDefenseTier: percentileTier(opponentDefenseStrengthPercentile),
+        selectedTeamTopPlayers,
+        selectedTeamTricode: teamTri,
+      };
+    });
+  }, [strategyEndpointRows, strategyPlayerEndpointRows, predictorStats, selectedTeam, selectedTeamTricodeForStrategies, opponentTeamTricodeForStrategies, selectedTeamExcludedOutPlayerIds, selectedTeamExcludedOutPlayerNamesNormalized, teamProps]);
+
+  const topExploitationSidebarRows = useMemo<ExploitSidebarRow[]>(() => {
+    const selectedRows = exploitationRows.filter((row) => row.attackTeam === selectedTeam).slice(0, 5);
+    return selectedRows.map((row, idx) => {
+      const aliases = expandBetTypeAliases(row.betType);
+      const canonicalAliases = new Set(Array.from(aliases).map((alias) => canonicalizeBetType(alias)));
+      const targetProp = teamProps.find((prop) => {
+        const normalizedPropType = normalizeBetType(prop.bet_type || '');
+        const canonicalPropType = canonicalizeBetType(normalizedPropType);
+        for (const alias of aliases) {
+          const canonicalAlias = canonicalizeBetType(alias);
+          if (
+            normalizedPropType === alias ||
+            normalizedPropType.includes(alias) ||
+            alias.includes(normalizedPropType) ||
+            canonicalPropType === canonicalAlias ||
+            canonicalPropType.includes(canonicalAlias) ||
+            canonicalAliases.has(canonicalPropType)
+          ) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      const normalizedBetType = row.betType.toLowerCase();
+      const ExploitIcon =
+        normalizedBetType.includes('point') ? TrendingUp :
+        normalizedBetType.includes('rebound') ? Shield :
+        normalizedBetType.includes('assist') ? Analytics :
+        normalizedBetType.includes('three') ? BarChart :
+        EmojiEvents;
+
+      return {
+        id: `${row.metricKey}-${idx}`,
+        icon: <ExploitIcon sx={{ fontSize: 16 }} />,
+        title: `${row.betType.replace(/_/g, ' ').toUpperCase()} edge (${row.score.toFixed(1)})`,
+        playerName: targetProp?.player_name ?? undefined,
+        onAdd: targetProp
+          ? () => handleAddPropToSlip(targetProp)
+          : undefined,
+        addDisabled: targetProp ? !canAddPlayerToSlip(targetProp.nba_player_id ?? null) : true,
+      };
+    });
+  }, [exploitationRows, selectedTeam, teamProps, canAddPlayerToSlip, handleAddPropToSlip]);
 
   // Fetch advanced stats for the current game/team
   const { data: advancedStats, isLoading: advancedStatsLoading } = useQuery({
@@ -1736,6 +3105,7 @@ export default function GamePage() {
     enabled: !!gameId && gameState === 'completed',
     staleTime: 1000 * 60 * 60, // Cache for 1 hour
   });
+  const { data: moduleVisibility } = useGameModuleVisibility();
 
   // NOW we can have conditional returns - ALL hooks (including useMemo) are called above
   if (gameLoading) {
@@ -1771,7 +3141,7 @@ export default function GamePage() {
           boxSizing: 'border-box',
         }}>
           <Button 
-            onClick={() => navigate('/today')}
+            onClick={handleBack}
             startDecorator={<ArrowBack />}
             variant="soft"
             color="neutral"
@@ -1794,27 +3164,1189 @@ export default function GamePage() {
   // Get game date for navigation
   const gameDate = gameData?.game_date ? dayjs(gameData.game_date) : selectedDate;
   
-  // Handle back navigation
-  const handleBack = () => {
-    navigate(returnPath, {
-      state: returnDate ? { selectedDate: returnDate } : undefined
-    });
+  const compactLayout = props.embeddedInFeed === true;
+  const activeTeamTricode = selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode;
+
+  const GameContentView = ({ viewType }: { viewType: 'stats' | 'team_comparison' | 'props' | 'hit_rates' | 'estimated_rotation' }) => {
+    const activeView = viewType === 'team_comparison' ? 'predictor' : viewType === 'hit_rates' ? 'propsVsTeams' : 'props';
+    return (
+      <>
+        {gameLoading ? (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <CircularProgress />
+          </Box>
+        ) : !gameData ? (
+        <Box sx={{ p: 3, textAlign: 'center' }}>
+          <Alert color="warning">
+            <Typography>Game not found</Typography>
+          </Alert>
+        </Box>
+      ) : viewType === 'stats' ? (
+        <GameStatsTabbedView />
+      ) : viewType === 'props' ? (
+        // Player Props View - Table format: one row per player, one column per prop type
+        <Box sx={{ width: '100%', overflowX: 'auto' }}>
+          {propsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (() => {
+            // teamProps is already filtered by team in useMemo above
+            // Show ALL players with props, regardless of roster membership
+
+            if (teamProps.length === 0) {
+              return (
+                <Box sx={{ p: 3, textAlign: 'center' }}>
+                  <Typography sx={{ color: '#64748b', fontSize: '0.75rem' }}>
+                    {playerProps && playerProps.length > 0 
+                      ? `No props found for ${selectedTeam === 'away' ? gameData?.away_team_tricode : gameData?.home_team_tricode} players.`
+                      : 'No player props available for this game'}
+                  </Typography>
+                </Box>
+              );
+            }
+
+            // Bookmaker priority: DraftKings > FanDuel > Consensus
+            const getBookmakerPriority = (bookmaker: string): number => {
+              const bookmakerLower = (bookmaker || '').toLowerCase();
+              if (bookmakerLower.includes('draftkings') || bookmakerLower === 'draftkings') return 1;
+              if (bookmakerLower.includes('fanduel') || bookmakerLower === 'fanduel') return 2;
+              if (bookmakerLower === 'consensus') return 3;
+              return 4;
+            };
+
+            // Group props by player and bet_type, then filter to show only ONE prop per bet_type
+            const propsByPlayerAndType = new Map<string, PlayerProp[]>();
+            teamProps.forEach(prop => {
+              const key = `${prop.player_name || prop.nba_player_id}_${prop.bet_type}`;
+              if (!propsByPlayerAndType.has(key)) {
+                propsByPlayerAndType.set(key, []);
+              }
+              propsByPlayerAndType.get(key)!.push(prop);
+            });
+
+            // Filter and prioritize props - ALWAYS take the one with the HIGHEST line value
+            // If lines are equal, use bookmaker priority as tiebreaker
+            const filteredProps: PlayerProp[] = [];
+            propsByPlayerAndType.forEach((props) => {
+              // Sort by line value (descending - highest first), then by bookmaker priority as tiebreaker
+              props.sort((a, b) => {
+                const lineA = parseFloat(a.line?.toString() || '0');
+                const lineB = parseFloat(b.line?.toString() || '0');
+                
+                // First sort by line (descending - higher is better)
+                if (lineA !== lineB) {
+                  return lineB - lineA;
+                }
+                
+                // If lines are equal, use bookmaker priority as tiebreaker
+                return getBookmakerPriority(a.bookmaker) - getBookmakerPriority(b.bookmaker);
+              });
+              
+              // Take the first one (highest line, or best bookmaker if tied)
+              const bestProp = props[0];
+              if (bestProp) {
+                filteredProps.push(bestProp);
+              }
+            });
+
+            // Get all unique bet types and sort them with new order and abbreviations
+            const betTypes = Array.from(new Set(filteredProps.map(p => p.bet_type)));
+            
+            // Bet type to abbreviation mapping
+            const betTypeAbbreviation: Record<string, string> = {
+              // Main stats
+              'points': 'PTS', 'pts': 'PTS', 'point': 'PTS',
+              'rebounds': 'REB', 'reb': 'REB', 'rebound': 'REB',
+              'assists': 'AST', 'ast': 'AST', 'assist': 'AST',
+              'points_rebounds_assists': 'P+R+A', 'points+rebounds+assists': 'P+R+A',
+              'threes': '3PM', '3pm': '3PM', 'three_pointers_made': '3PM', 'three_pointers': '3PM',
+              'points_assists': 'PTS+AST', 'points+assists': 'PTS+AST',
+              'rebounds_assists': 'AST+REB', 'rebounds+assists': 'AST+REB', 'assists_rebounds': 'AST+REB',
+              'blocks_steals': 'STL+BLK', 'blocks+steals': 'STL+BLK', 'stocks': 'STL+BLK', 'steals_blocks': 'STL+BLK',
+              'blocks': 'BLK', 'blk': 'BLK', 'block': 'BLK',
+              'steals': 'STL', 'stl': 'STL', 'steal': 'STL',
+              'turnovers': 'TO', 'tov': 'TO', 'turnover': 'TO',
+              // Field goals
+              'field_goals_made': 'FGM', 'fgm': 'FGM', 'field_goals': 'FGM',
+              'free_throws_made': 'FTM', 'ftm': 'FTM', 'free_throws': 'FTM',
+              'field_goals_attempted': 'FGA', 'fga': 'FGA', 'field_goal_attempts': 'FGA',
+              'three_pointers_attempted': '3PA', '3pa': '3PA', 'three_point_attempts': '3PA', 'threes_attempted': '3PA',
+              // Legacy mappings
+              'points_rebounds': 'PTS+REB', 'points+rebounds': 'PTS+REB',
+            };
+            
+            // Bet type order (priority order)
+            const betTypeOrder: Record<string, number> = {
+              'points': 1, 'pts': 1, 'point': 1,
+              'rebounds': 2, 'reb': 2, 'rebound': 2,
+              'assists': 3, 'ast': 3, 'assist': 3,
+              'points_rebounds_assists': 4, 'points+rebounds+assists': 4,
+              'threes': 5, '3pm': 5, 'three_pointers_made': 5, 'three_pointers': 5,
+              'points_assists': 6, 'points+assists': 6,
+              'rebounds_assists': 7, 'rebounds+assists': 7, 'assists_rebounds': 7,
+              'blocks_steals': 8, 'blocks+steals': 8, 'stocks': 8, 'steals_blocks': 8,
+              'blocks': 9, 'blk': 9, 'block': 9,
+              'steals': 10, 'stl': 10, 'steal': 10,
+              'turnovers': 11, 'tov': 11, 'turnover': 11,
+              'field_goals_made': 12, 'fgm': 12, 'field_goals': 12,
+              'free_throws_made': 13, 'ftm': 13, 'free_throws': 13,
+              'field_goals_attempted': 14, 'fga': 14, 'field_goal_attempts': 14,
+              'three_pointers_attempted': 15, '3pa': 15, 'three_point_attempts': 15, 'threes_attempted': 15,
+            };
+            
+            betTypes.sort((a, b) => {
+              const orderA = betTypeOrder[a.toLowerCase()] || 999;
+              const orderB = betTypeOrder[b.toLowerCase()] || 999;
+              return orderA - orderB;
+            });
+
+            // Group props by player
+            const propsByPlayer = new Map<string, Map<string, PlayerProp>>();
+            filteredProps.forEach(prop => {
+              const playerKey = prop.player_name || `${prop.nba_player_id}`;
+              if (!propsByPlayer.has(playerKey)) {
+                propsByPlayer.set(playerKey, new Map());
+              }
+              propsByPlayer.get(playerKey)!.set(prop.bet_type, prop);
+            });
+
+            // Get list of players from props (show ALL players with props, not just those in roster)
+            // Create a map to store player info from props, using enhanced props with matched info
+            const playersMap = new Map<string, { name: string; nba_player_id: number; player_id?: string }>();
+            
+            filteredProps.forEach(prop => {
+              const playerKey = prop.player_name || `${prop.nba_player_id || prop.player_id}`;
+              if (!playersMap.has(playerKey)) {
+                // Use matched player info if available, otherwise use prop info
+                const nbaPlayerId = prop.nba_player_id || (playerNameMatches?.get(prop.player_name)?.nba_player_id);
+                const playerId = prop.player_id || (playerNameMatches?.get(prop.player_name)?.player_id);
+                
+                playersMap.set(playerKey, {
+                  name: prop.player_name,
+                  nba_player_id: nbaPlayerId || 0,
+                  player_id: playerId
+                });
+              }
+            });
+            
+            // Convert to array and sort by player name
+            const players = Array.from(playersMap.values()).sort((a, b) => 
+              (a.name || '').localeCompare(b.name || '')
+            );
+            
+            console.log('📊 Players with props:', players.length, players.map(p => p.name));
+
+            // For completed games, get actual stats and calculate prop results
+            const getPropResult = (prop: PlayerProp) => {
+              if (gameState !== 'completed' || !liveStats) return null;
+              
+              const player = liveStats.find(p => 
+                (p.player_id && p.player_id === prop.player_id) ||
+                (p.nba_player_id === prop.nba_player_id)
+              );
+              
+              if (!player || !player.stats) return null;
+              
+              const stats = typeof player.stats === 'string' 
+                ? JSON.parse(player.stats) 
+                : player.stats;
+              
+              return calculatePropResult(prop.bet_type, prop.line, {
+                pts: stats.pts || 0,
+                reb: stats.reb || 0,
+                ast: stats.ast || 0,
+                stl: stats.stl || 0,
+                blk: stats.blk || 0,
+                tov: stats.tov || 0,
+                fg3m: stats.fg3m || 0,
+                ftm: stats.ftm || 0,
+              });
+            };
+
+            // Format bet type for display using abbreviations
+            const formatBetType = (betType: string): string => {
+              const normalized = betType.toLowerCase();
+              return betTypeAbbreviation[normalized] || betType.replace(/_/g, ' ').replace(/\+/g, '+').toUpperCase();
+            };
+
+            // Increased column width for better legibility
+            const columnWidth = isMobile
+              ? (gameState === 'completed' ? 132 : 132)
+              : (gameState === 'completed' ? 205 : 205);
+            const playerColumnMinWidth = isMobile ? 90 : 200;
+            const minWidth = playerColumnMinWidth + (betTypes.length * columnWidth);
+
+            return (
+              <Table sx={{ bgcolor: '#ffffff', width: '100%', minWidth: `${minWidth}px` }}>
+                <thead>
+                  <tr>
+                    <th style={{ color: '#334155', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: `${playerColumnMinWidth}px`, width: `${playerColumnMinWidth}px`, maxWidth: `${playerColumnMinWidth}px`, whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#ffffff', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
+                    {betTypes.map(betType => (
+                      <th key={betType} style={{ color: '#334155', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 6px' : '12px 16px', minWidth: `${columnWidth}px`, width: `${columnWidth}px` }}>
+                        {formatBetType(betType)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {players.map((player, playerIndex) => {
+                    const playerPropsMap = propsByPlayer.get(player.name || `${player.nba_player_id}`) || new Map();
+                    // Try to find player in roster for jersey/position info, but don't require it
+                    const rosterPlayer: any = currentRoster?.find((p: any) => 
+                      (p.player_id && p.player_id === player.player_id) ||
+                      (p.nba_player_id === player.nba_player_id) ||
+                      (p.player_name === player.name)
+                    ) || currentTeamStats?.find((p: any) =>
+                      (p.player_id && p.player_id === player.player_id) ||
+                      (p.nba_player_id === player.nba_player_id) ||
+                      (p.player_name === player.name)
+                    );
+                    // Unique key: nba_player_id can be 0 or duplicated for unmatched names
+                    const rowKey = [player.nba_player_id, player.player_id, player.name].filter(Boolean).join('_') || `player_${playerIndex}`;
+
+                    return (
+                      <tr
+                        key={rowKey}
+                        style={{
+                          borderBottom: '1px solid #e2e8f0',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.backgroundColor = '#f8fafc';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.backgroundColor = 'transparent';
+                        }}
+                      >
+                        <td 
+                          style={{ 
+                            color: '#0f172a', 
+                            fontSize: isMobile ? '0.65rem' : '0.75rem', 
+                            padding: isMobile ? '8px 6px' : '12px',
+                            minWidth: `${playerColumnMinWidth}px`,
+                            width: `${playerColumnMinWidth}px`,
+                            maxWidth: `${playerColumnMinWidth}px`,
+                            whiteSpace: 'nowrap',
+                            position: 'sticky',
+                            left: 0,
+                            zIndex: 9,
+                            backgroundColor: '#ffffff'
+                          }}
+                        >
+                          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: { xs: 0.25, md: 0.5 } }}>
+                              <Avatar
+                                src={player.nba_player_id && player.nba_player_id > 0
+                                  ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`
+                                  : undefined
+                                }
+                                alt={player.name}
+                                sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
+                              >
+                                {(!player.nba_player_id || player.nba_player_id === 0) && (
+                                  <Typography sx={{ fontSize: isMobile ? '0.5rem' : '0.6rem', color: '#334155' }}>
+                                    {player.name?.charAt(0) || '?'}
+                                  </Typography>
+                                )}
+                              </Avatar>
+                              <Typography sx={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'center' }}>
+                                {player.name}
+                              </Typography>
+                            </Box>
+                            {(rosterPlayer?.jersey_number || rosterPlayer?.position) && (
+                              <Typography sx={{ color: '#64748b', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
+                                {rosterPlayer?.jersey_number ? `#${rosterPlayer.jersey_number}` : ''}
+                                {rosterPlayer?.jersey_number && rosterPlayer?.position ? ' • ' : ''}
+                                {rosterPlayer?.position || ''}
+                              </Typography>
+                            )}
+                          </Box>
+                        </td>
+                        {betTypes.map(betType => {
+                          const prop = playerPropsMap.get(betType);
+                          const propResult = prop ? getPropResult(prop) : null;
+                          const canAdd = canAddPlayerToSlip(prop?.nba_player_id ?? null);
+                          const enableButtons = gameState === 'upcoming' && !!prop;
+
+                          return (
+                            <td 
+                              key={betType}
+                              style={{ 
+                                color: '#0f172a',
+                                fontSize: isMobile ? '0.65rem' : '0.75rem', 
+                                textAlign: 'right', 
+                                padding: isMobile ? '8px 6px' : '12px 16px',
+                                minWidth: `${columnWidth}px`,
+                                width: `${columnWidth}px`
+                              }}
+                            >
+                              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.4, alignItems: 'stretch' }}>
+                                <Box sx={{ display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: 0.35, alignItems: 'center' }}>
+                                  <Button
+                                    size="sm"
+                                    variant="soft"
+                                    color="neutral"
+                                    disabled={!enableButtons || !canAdd}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (prop) handleAddPropToSlip(prop, 'under');
+                                    }}
+                                    sx={{
+                                      minHeight: isMobile ? 20 : 22,
+                                      minWidth: isMobile ? 22 : 26,
+                                      px: isMobile ? 0.35 : 0.5,
+                                      fontSize: isMobile ? '0.52rem' : '0.56rem',
+                                      fontWeight: 700,
+                                      bgcolor: '#f8fafc',
+                                      color: '#334155',
+                                      border: '1px solid #e2e8f0',
+                                      '&:hover': { bgcolor: '#f1f5f9' },
+                                    }}
+                                  >
+                                    U
+                                  </Button>
+                                  <PropPerformanceCell
+                                    prop={prop || null}
+                                    propResult={propResult}
+                                    gameState={gameState === 'loading' ? 'upcoming' : gameState}
+                                    opponentTeamTricode={opponentTeamTricode}
+                                    isMobile={isMobile}
+                                    american_odds={prop?.american_odds}
+                                    price={prop?.price}
+                                    cellButton
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="soft"
+                                    color="neutral"
+                                    disabled={!enableButtons || !canAdd}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (prop) handleAddPropToSlip(prop, 'over');
+                                    }}
+                                    sx={{
+                                      minHeight: isMobile ? 20 : 22,
+                                      minWidth: isMobile ? 22 : 26,
+                                      px: isMobile ? 0.35 : 0.5,
+                                      fontSize: isMobile ? '0.52rem' : '0.56rem',
+                                      fontWeight: 700,
+                                      bgcolor: '#f8fafc',
+                                      color: '#334155',
+                                      border: '1px solid #e2e8f0',
+                                      '&:hover': { bgcolor: '#f1f5f9' },
+                                    }}
+                                  >
+                                    O
+                                  </Button>
+                                </Box>
+                              </Box>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </Table>
+            );
+          })()}
+        </Box>
+      ) : viewType === 'estimated_rotation' && gameData ? (
+        <Box sx={{ width: '100%', px: { xs: 2, sm: 0 } }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1fr) 280px' },
+              gap: 1.5,
+              alignItems: 'start',
+            }}
+          >
+            <Box sx={{ minWidth: 0, overflowX: 'auto' }}>
+              <EstimatedRotationModule
+                rows={selectedTeamRotationRows}
+                isLoading={estimatedRotationLoading}
+                teamTricode={selectedTeam === 'away' ? gameData.away_team_tricode : gameData.home_team_tricode}
+                isMobile={isMobile}
+                propByPlayer={bestPropByPlayer}
+                canAddPlayerToSlip={canAddPlayerToSlip}
+                onAddProp={handleAddPropToSlip}
+              />
+            </Box>
+            <Card variant="outlined" sx={{ borderColor: '#dbe1ea', bgcolor: '#ffffff' }}>
+              <CardContent sx={{ p: 1.5 }}>
+                <Typography level="title-sm" sx={{ color: '#111827', fontWeight: 700, mb: 0.5 }}>
+                  Rotation Snapshot
+                </Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.75 }}>
+                  <Typography level="body-xs" sx={{ color: '#64748b' }}>
+                    Total Est Min
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700 }}>
+                    {selectedTeamTotalEstimatedMinutes.toFixed(1)}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                  <Typography level="body-xs" sx={{ color: '#64748b' }}>
+                    Avg Rotation Size (last 10)
+                  </Typography>
+                  <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700 }}>
+                    {selectedTeamAvgRotationSize != null ? selectedTeamAvgRotationSize.toFixed(1) : 'N/A'}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.45, mb: 1.25 }}>
+                  {selectedTeamRotationRows.map((row) => {
+                    const widthPct = Math.max(0, Math.min(100, (Number(row.estimated_minutes || 0) / 40) * 100));
+                    const minuteDelta = Number(row.injury_delta_minutes || 0);
+                    const isBoost = minuteDelta > 0.1;
+                    const isDown = minuteDelta < -0.1;
+                    return (
+                      <Box key={`bar-${row.nba_player_id}-${row.player_name}`} sx={{ minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 0.5 }}>
+                          <Typography
+                            level="body-xs"
+                            sx={{
+                              color: '#334155',
+                              fontWeight: 600,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              minWidth: 0,
+                              maxWidth: '75%',
+                            }}
+                          >
+                            {row.player_name}
+                          </Typography>
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25, flexShrink: 0 }}>
+                            {isBoost && <ArrowUpward sx={{ fontSize: 12, color: '#16a34a' }} />}
+                            {isDown && <ArrowDownward sx={{ fontSize: 12, color: '#dc2626' }} />}
+                            <Typography level="body-xs" sx={{ color: '#0f172a', fontWeight: 700 }}>
+                              {Number(row.estimated_minutes || 0).toFixed(1)}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Box sx={{ mt: 0.2, height: 5, bgcolor: '#e2e8f0', borderRadius: 999 }}>
+                          <Box
+                            sx={{
+                              width: `${widthPct}%`,
+                              height: '100%',
+                              bgcolor: '#2563eb',
+                              borderRadius: 999,
+                            }}
+                          />
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Box>
+                <Typography level="title-sm" sx={{ color: '#F8FAFC', fontWeight: 700, mb: 0.5 }}>
+                  Injury Notes
+                </Typography>
+                <Typography level="body-xs" sx={{ color: '#CBD5E1', mb: 1 }}>
+                  Current injury statuses impacting rotation (OUT/Questionable/Probable).
+                </Typography>
+                {outPlayersLoading ? (
+                  <Typography level="body-sm" sx={{ color: '#CBD5E1' }}>
+                    Loading injury notes...
+                  </Typography>
+                ) : selectedTeamInjuryNotes.length === 0 ? (
+                  <Typography level="body-sm" sx={{ color: '#CBD5E1' }}>
+                    No active injury notes for this team.
+                  </Typography>
+                ) : (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                    {selectedTeamInjuryNotes.slice(0, 12).map((player) => (
+                      <Box
+                        key={`inj-${player.nbaPlayerId}-${player.injuryStatus}`}
+                        sx={{ display: 'flex', alignItems: 'center', gap: 0.75, minWidth: 0 }}
+                      >
+                        <Avatar
+                          size="sm"
+                          src={`https://cdn.nba.com/headshots/nba/latest/260x190/${player.nbaPlayerId}.png`}
+                          alt={player.playerName}
+                          sx={{ width: 22, height: 22, flexShrink: 0 }}
+                        />
+                        <Typography
+                          level="body-sm"
+                          sx={{
+                            color: '#F8FAFC',
+                            fontWeight: 600,
+                            fontSize: '0.72rem',
+                            minWidth: 0,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {player.playerName}
+                        </Typography>
+                        <Chip
+                          size="sm"
+                          variant="soft"
+                          color={
+                            String(player.injuryStatus).toLowerCase().includes('out')
+                              ? 'danger'
+                              : String(player.injuryStatus).toLowerCase().includes('questionable')
+                                ? 'warning'
+                                : 'primary'
+                          }
+                          sx={{
+                            ml: 'auto',
+                            fontWeight: 700,
+                            fontSize: '0.58rem',
+                            color: '#FFFFFF',
+                            bgcolor: String(player.injuryStatus).toLowerCase().includes('out')
+                              ? '#DC2626'
+                              : String(player.injuryStatus).toLowerCase().includes('questionable')
+                                ? '#EA580C'
+                                : '#0284C7',
+                          }}
+                        >
+                          {player.injuryStatus}
+                        </Chip>
+                      </Box>
+                    ))}
+                    {selectedTeamInjuryNotes.length > 12 && (
+                      <Typography level="body-xs" sx={{ color: '#CBD5E1' }}>
+                        +{selectedTeamInjuryNotes.length - 12} more
+                      </Typography>
+                    )}
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Box>
+        </Box>
+      ) : viewType === 'hit_rates' && gameData ? (
+        // Props vs Teams: how players have fared against each team's defense (last 10 games)
+        <Box sx={{ width: '100%', overflowX: 'auto', px: { xs: 2, sm: 0 } }}>
+          <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '320px' : '500px' }}>
+            <thead>
+              <tr>
+                <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'left', padding: '10px 12px' }}>Prop</th>
+                <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
+                  vs {gameData.home_team_tricode}
+                </th>
+                <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
+                  vs {gameData.away_team_tricode}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { betType: 'points', label: 'PTS' },
+                { betType: 'rebounds', label: 'REB' },
+                { betType: 'assists', label: 'AST' },
+                { betType: 'threes', label: '3PM' },
+                { betType: 'steals', label: 'STL' },
+                { betType: 'blocks', label: 'BLK' },
+                { betType: 'turnovers', label: 'TOV' },
+                { betType: 'blocks_steals', label: 'STL+BLK' },
+                { betType: 'points_rebounds', label: 'P+R' },
+                { betType: 'points_assists', label: 'P+A' },
+                { betType: 'rebounds_assists', label: 'R+A' },
+                { betType: 'points_rebounds_assists', label: 'P+R+A' },
+                { betType: 'freethrowsmade', label: 'FTM' },
+                { betType: 'fieldgoalsmade', label: 'FGM' },
+                { betType: 'fieldgoalsattempted', label: 'FGA' },
+                { betType: 'threepointersattempted', label: '3PA' },
+                { betType: 'twopointersmade', label: '2PM' },
+              ].map(({ betType, label }) => (
+                <PropsVsTeamRow
+                  key={betType}
+                  betType={betType}
+                  label={label}
+                  homeTricode={gameData.home_team_tricode}
+                  awayTricode={gameData.away_team_tricode}
+                  isMobile={isMobile}
+                />
+              ))}
+            </tbody>
+          </Table>
+        </Box>
+      ) : viewType === 'team_comparison' ? (
+        <Box sx={{ width: '100%', maxWidth: '100%', m: 0, p: 0 }}>
+          <ExploitsDashboard
+            categories={strategyCategoryCards}
+            sidebarTitle={`Top Exploitations (${selectedTeam === 'away' ? gameData?.away_team_tricode : gameData?.home_team_tricode} offense)`}
+            sidebarRows={topExploitationSidebarRows}
+            loading={strategyEndpointRowsLoading}
+            emptyMessage={
+              strategyEndpointRowsError
+                ? 'Unable to load strategy category data right now.'
+                : 'No strategy category data for this date. Data is stored in nba_daily_team_stats.'
+            }
+          />
+        </Box>
+      ) : null }
+      </>
+    );
   };
 
+  const GameAdvancedStatsTable = () => (
+    <Box sx={{ width: '100%', overflowX: 'auto', minWidth: 960 }}>
+      {advancedStatsLoading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      ) : !advancedStats || advancedStats.length === 0 ? (
+        <Box sx={{ p: 3, textAlign: 'center' }}>
+          <Typography sx={{ color: '#CCCCCC', fontSize: '0.75rem' }}>
+            {gameState === 'upcoming'
+              ? 'Advanced stats will be available after the game starts'
+              : 'No advanced stats available for this game'}
+          </Typography>
+        </Box>
+      ) : (
+        <Table sx={{ bgcolor: '#ffffff', width: '100%', minWidth: isMobile ? '720px' : '960px' }}>
+          <thead>
+            <tr>
+              <th style={{ color: '#334155', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: isMobile ? '90px' : '150px', width: isMobile ? '90px' : '150px', maxWidth: isMobile ? '90px' : '150px', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#ffffff', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
+              <SortableHeader column="mpg" label="MPG" />
+              <SortableHeader column="off_rtg" label="ORtg" />
+              <SortableHeader column="def_rtg" label="DRtg" />
+              <SortableHeader column="net_rtg" label="NetRtg" />
+              <SortableHeader column="ts_pct" label="TS%" />
+              <SortableHeader column="usg_pct" label="USG%" />
+              <SortableHeader column="efg_pct" label="eFG%" />
+              <SortableHeader column="ast_ratio" label="Ast Ratio" />
+              <SortableHeader column="reb_pct" label="Reb%" />
+              <SortableHeader column="tov_pct" label="TOV%" />
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              let sortedStats = [...advancedStats];
+              if (last5ActiveTeamPlayerIds && last5ActiveTeamPlayerIds.size > 0) {
+                sortedStats = sortedStats.filter(
+                  (stat: any) => stat.nba_player_id != null && last5ActiveTeamPlayerIds.has(stat.nba_player_id)
+                );
+              }
+              if (sortColumn) {
+                sortedStats.sort((a: any, b: any) => {
+                  let aVal: number | null = null;
+                  let bVal: number | null = null;
+                  const getMpg = (row: any): number | null => {
+                    const byId = row?.player_id ? advancedMpgByKey.get(`id:${row.player_id}`) : undefined;
+                    if (typeof byId === 'number') return byId;
+                    const byNba = row?.nba_player_id ? advancedMpgByKey.get(`nba:${row.nba_player_id}`) : undefined;
+                    return typeof byNba === 'number' ? byNba : null;
+                  };
+                  if (sortColumn === 'mpg') { aVal = getMpg(a); bVal = getMpg(b); }
+                  else if (sortColumn === 'off_rtg') { aVal = a.off_rtg ?? null; bVal = b.off_rtg ?? null; }
+                  else if (sortColumn === 'def_rtg') { aVal = a.def_rtg ?? null; bVal = b.def_rtg ?? null; }
+                  else if (sortColumn === 'net_rtg') { aVal = a.net_rtg ?? null; bVal = b.net_rtg ?? null; }
+                  else if (sortColumn === 'ts_pct') { aVal = a.ts_pct ?? null; bVal = b.ts_pct ?? null; }
+                  else if (sortColumn === 'usg_pct') { aVal = a.usg_pct ?? null; bVal = b.usg_pct ?? null; }
+                  else if (sortColumn === 'efg_pct') { aVal = a.efg_pct ?? null; bVal = b.efg_pct ?? null; }
+                  else if (sortColumn === 'ast_ratio') { aVal = a.ast_ratio ?? null; bVal = b.ast_ratio ?? null; }
+                  else if (sortColumn === 'reb_pct') { aVal = a.reb_pct ?? null; bVal = b.reb_pct ?? null; }
+                  else if (sortColumn === 'tov_pct') { aVal = a.tov_pct ?? null; bVal = b.tov_pct ?? null; }
+                  if (aVal === null && bVal === null) return 0;
+                  if (aVal === null) return 1;
+                  if (bVal === null) return -1;
+                  return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                });
+              }
+              return sortedStats.map((stat: any) => {
+                const rosterPlayer = (currentRoster || []).find((p: any) => p.player_id === stat.player_id || p.nba_player_id === stat.nba_player_id);
+                const injury = playerInjuries?.get(stat.nba_player_id);
+                return (
+                  <tr
+                    key={stat.player_id}
+                    onClick={() => stat.player_id && navigate(`/player/${stat.player_id}`)}
+                    style={{ cursor: 'pointer', borderBottom: '1px solid #e2e8f0' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#f8fafc'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}
+                  >
+                    <td style={{ minWidth: isMobile ? '90px' : '150px', width: isMobile ? '90px' : '150px', maxWidth: isMobile ? '90px' : '150px', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 9, backgroundColor: '#ffffff', padding: isMobile ? '8px 6px' : '12px' }}>
+                      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: { xs: 0.25, md: 0.5 } }}>
+                          <Avatar src={`https://cdn.nba.com/headshots/nba/latest/260x190/${stat.nba_player_id}.png`} alt={stat.player_name} sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }} />
+                          <Typography sx={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'center' }}>{stat.player_name}</Typography>
+                        </Box>
+                        {(rosterPlayer?.jersey_number || rosterPlayer?.position) && (
+                          <Typography sx={{ color: '#64748b', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
+                            {rosterPlayer?.jersey_number ? `#${rosterPlayer.jersey_number}` : ''}
+                            {rosterPlayer?.jersey_number && rosterPlayer?.position ? ' • ' : ''}
+                            {rosterPlayer?.position || ''}
+                          </Typography>
+                        )}
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                          {injury && injury.injury_status === 'Out' && <Chip size="sm" color="danger" variant="solid" sx={{ fontSize: isMobile ? '0.55rem' : '0.65rem', height: isMobile ? '14px' : '16px', fontWeight: 'bold', alignSelf: 'flex-start' }}>{injury.injury_status}</Chip>}
+                          {injury && (injury.injury_status === 'Questionable' || injury.injury_status === 'Day-to-Day') && <Chip size="sm" color="warning" variant="solid" sx={{ fontSize: isMobile ? '0.55rem' : '0.65rem', height: isMobile ? '14px' : '16px', fontWeight: 'bold', alignSelf: 'flex-start' }}>{injury.injury_status}</Chip>}
+                        </Box>
+                      </Box>
+                    </td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>
+                      {(() => {
+                        const byId = stat.player_id ? advancedMpgByKey.get(`id:${stat.player_id}`) : undefined;
+                        const byNba = stat.nba_player_id ? advancedMpgByKey.get(`nba:${stat.nba_player_id}`) : undefined;
+                        const mpg = byId ?? byNba;
+                        return typeof mpg === 'number' ? mpg.toFixed(1) : 'N/A';
+                      })()}
+                    </td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.off_rtg != null ? stat.off_rtg.toFixed(1) : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.def_rtg != null ? stat.def_rtg.toFixed(1) : 'N/A'}</td>
+                    <td style={{ color: '#2563eb', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.net_rtg != null ? stat.net_rtg.toFixed(1) : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.ts_pct != null ? (stat.ts_pct * 100).toFixed(1) + '%' : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.usg_pct != null ? (stat.usg_pct * 100).toFixed(1) + '%' : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.efg_pct != null ? (stat.efg_pct * 100).toFixed(1) + '%' : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.ast_ratio != null ? stat.ast_ratio.toFixed(1) : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.reb_pct != null ? (stat.reb_pct * 100).toFixed(1) + '%' : 'N/A'}</td>
+                    <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px', minWidth: STAT_COLUMN_MIN }}>{stat.tov_pct != null ? (stat.tov_pct * 100).toFixed(1) + '%' : 'N/A'}</td>
+                  </tr>
+                );
+              });
+            })()}
+          </tbody>
+        </Table>
+      )}
+    </Box>
+  );
+
+  const GameStatsTabbedView = () => {
+    return (
+      <Card variant="outlined" sx={{ position: 'relative', bgcolor: '#ffffff', borderColor: '#dbe1ea', height: '100%' }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            px: 1.5,
+            py: 1,
+            borderBottom: '1px solid',
+            borderColor: '#e2e8f0',
+            overflow: 'hidden',
+          }}
+        >
+          <Box
+            sx={{
+              flex: 1,
+              minWidth: 0,
+              overflowX: 'auto',
+              overflowY: 'hidden',
+              scrollbarWidth: 'none',
+              '&::-webkit-scrollbar': { display: 'none' },
+            }}
+          >
+            <Box sx={{ display: 'flex', gap: 1, width: 'max-content', pr: 1 }}>
+              {gameHasStarted && (
+                <Button
+                  size="sm"
+                  variant={statsTab === 'box_score' ? 'solid' : 'outlined'}
+                  color="danger"
+                  onClick={() => setStatsTab('box_score')}
+                >
+                  Box Score
+                </Button>
+              )}
+              <Button size="sm" variant={statsTab === 'basic' ? 'solid' : 'outlined'} color="primary" onClick={() => setStatsTab('basic')}>Basic</Button>
+              <Button
+                size="sm"
+                variant={statsTab === 'advanced' ? 'solid' : 'outlined'}
+                color="primary"
+                onClick={() => {
+                  setStatsTab('advanced');
+                  setSortColumn('mpg');
+                  setSortDirection('desc');
+                }}
+              >
+                Advanced
+              </Button>
+              <Button size="sm" variant={statsTab === 'props' ? 'solid' : 'outlined'} color="primary" onClick={() => setStatsTab('props')}>Props</Button>
+              <Button size="sm" variant={statsTab === 'hit_rates' ? 'solid' : 'outlined'} color="primary" onClick={() => setStatsTab('hit_rates')}>Hit Rates</Button>
+              <Button size="sm" variant={statsTab === 'exploits' ? 'solid' : 'outlined'} color="primary" onClick={() => setStatsTab('exploits')}>Exploits</Button>
+              <Button size="sm" variant={statsTab === 'estimated_rotation' ? 'solid' : 'outlined'} color="primary" onClick={() => setStatsTab('estimated_rotation')}>Est Rotation</Button>
+            </Box>
+          </Box>
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              flexShrink: 0,
+              position: 'sticky',
+              right: 0,
+              zIndex: 2,
+              bgcolor: '#ffffff',
+              pl: 1,
+            }}
+          >
+            <Button size="sm" variant={selectedTeam === 'away' ? 'solid' : 'outlined'} color="primary" onClick={() => setSelectedTeam('away')}>
+              {gameData.away_team_tricode}
+            </Button>
+            <Button size="sm" variant={selectedTeam === 'home' ? 'solid' : 'outlined'} color="primary" onClick={() => setSelectedTeam('home')}>
+              {gameData.home_team_tricode}
+            </Button>
+          </Box>
+        </Box>
+        <CardContent
+          sx={{
+            bgcolor: '#ffffff',
+            pt: 1,
+            ...(statsTab === 'exploits' ? { px: 0, pb: 1 } : {}),
+          }}
+        >
+          {statsTab === 'box_score' && gameData && (
+            <BoxScore
+              gameId={gameData.game_id}
+              homeTeamTricode={gameData.home_team_tricode}
+              awayTeamTricode={gameData.away_team_tricode}
+              homeTeamScore={gameData.home_team_score}
+              awayTeamScore={gameData.away_team_score}
+              players={liveStats || []}
+              isGameOver={gameState === 'completed'}
+              quarterScores={
+                getQuarterScores(gameJsonData)
+                  ? {
+                      away: getQuarterScores(gameJsonData)!.map((q) => q.away),
+                      home: getQuarterScores(gameJsonData)!.map((q) => q.home),
+                    }
+                  : undefined
+              }
+              selectedTeam={selectedTeam}
+            />
+          )}
+          {statsTab === 'basic' && (
+        <Box sx={{ width: '100%', overflowX: 'auto', minWidth: 720 }}>
+          <Table sx={{ bgcolor: '#ffffff', width: '100%', minWidth: isMobile ? '320px' : '720px' }}>
+            <thead>
+              <tr>
+                <th style={{ color: '#334155', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: isMobile ? '90px' : '150px', width: isMobile ? '90px' : '150px', maxWidth: isMobile ? '90px' : '150px', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#ffffff', padding: isMobile ? '8px 6px' : '12px' }}>
+                  Player ({activeTeamTricode})
+                </th>
+                {gameState === 'upcoming' && (
+                  <>
+                    <SortableHeader column="mpg" label="MPG" />
+                    <SortableHeader column="ppg" label="PPG" />
+                    <SortableHeader column="rpg" label="RPG" />
+                    <SortableHeader column="apg" label="APG" />
+                    <SortableHeader column="spg" label="SPG" />
+                    <SortableHeader column="bpg" label="BPG" />
+                    <SortableHeader column="fg_pct" label="FG%" />
+                    <SortableHeader column="fg3_pct" label="3P%" />
+                    <SortableHeader column="ft_pct" label="FT%" />
+        </>
+      )}
+                {(gameState === 'live' || gameState === 'completed') && (
+                  <>
+                    <SortableHeader column="pts" label="PTS" />
+                    <SortableHeader column="reb" label="REB" />
+                    <SortableHeader column="ast" label="AST" />
+                    <SortableHeader column="fantasy_points" label="FP" />
+                  </>
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {gameState === 'upcoming' ? (
+                // Render roster with stats for upcoming games - sorted by minutes played (descending)
+                (() => {
+                  if (upcomingStatsLoading) {
+                    return (
+                      <tr>
+                        <td colSpan={12} style={{ textAlign: 'center', padding: '20px' }}>
+                          <CircularProgress size="sm" />
+                        </td>
+                      </tr>
+                    );
+                  }
+                  
+                  if (!upcomingPlayerStats || upcomingPlayerStats.length === 0) {
+                    // Fallback to roster if no stats available - ensure we only show CURRENT active team players
+                    const filteredRoster = (currentRoster || []).filter((player: any) => {
+                      if (!currentTeamTricode) return true;
+                      const teamOk = player.team_abbreviation === currentTeamTricode;
+                      const idOk =
+                        !upcomingTeamNbaPlayerIds ||
+                        upcomingTeamNbaPlayerIds.size === 0 ||
+                        (player.nba_player_id != null && upcomingTeamNbaPlayerIds.has(player.nba_player_id));
+                      const recentOk =
+                        !last5ActiveTeamPlayerIds ||
+                        last5ActiveTeamPlayerIds.size === 0 ||
+                        (player.nba_player_id != null && last5ActiveTeamPlayerIds.has(player.nba_player_id));
+                      return teamOk && idOk && recentOk;
+                    });
+                    return filteredRoster.map((player) => (
+                  <GamePlayerRow
+                    key={player.id}
+                    player={player}
+                    teamTricode={currentTeamTricode || ''}
+                    gameState={gameState}
+                    navigate={navigate}
+                    playerProps={playerProps}
+                    injury={playerInjuries?.get(player.nba_player_id)}
+                    isMobile={isMobile}
+                  />
+                    ));
+                  }
+                  
+                  // Map upcoming stats to roster players to get position and jersey number
+                  // Filter to ensure we only show players from the CURRENT active team
+                  const rosterMap = new Map();
+                  (currentRoster || []).forEach((p: any) => {
+                    const key = p.player_id || String(p.nba_player_id);
+                    rosterMap.set(key, p);
+                  });
+                  
+                  let filteredStats = upcomingPlayerStats.filter((stat) => {
+                    if (currentTeamTricode && stat.team_tricode !== currentTeamTricode) return false;
+                    if (upcomingTeamNbaPlayerIds && upcomingTeamNbaPlayerIds.size > 0) {
+                      if (!(stat.nba_player_id != null && upcomingTeamNbaPlayerIds.has(stat.nba_player_id))) return false;
+                    }
+                    if (last5ActiveTeamPlayerIds && last5ActiveTeamPlayerIds.size > 0) {
+                      return stat.nba_player_id != null && last5ActiveTeamPlayerIds.has(stat.nba_player_id);
+                    }
+                    return true;
+                  });
+                  
+                  // Apply sorting
+                  if (sortColumn) {
+                    filteredStats = [...filteredStats].sort((a, b) => {
+                      let aVal: number = 0;
+                      let bVal: number = 0;
+                      
+                      if (sortColumn === 'mpg') {
+                        aVal = a.mpg || 0;
+                        bVal = b.mpg || 0;
+                      } else if (sortColumn === 'ppg') {
+                        aVal = a.ppg || 0;
+                        bVal = b.ppg || 0;
+                      } else if (sortColumn === 'rpg') {
+                        aVal = a.rpg || 0;
+                        bVal = b.rpg || 0;
+                      } else if (sortColumn === 'apg') {
+                        aVal = a.apg || 0;
+                        bVal = b.apg || 0;
+                      } else if (sortColumn === 'spg') {
+                        aVal = a.spg || 0;
+                        bVal = b.spg || 0;
+                      } else if (sortColumn === 'bpg') {
+                        aVal = a.bpg || 0;
+                        bVal = b.bpg || 0;
+                      } else if (sortColumn === 'fg_pct') {
+                        aVal = a.fg_pct || 0;
+                        bVal = b.fg_pct || 0;
+                      } else if (sortColumn === 'fg3_pct') {
+                        aVal = a.fg3_pct || 0;
+                        bVal = b.fg3_pct || 0;
+                      } else if (sortColumn === 'ft_pct') {
+                        aVal = a.ft_pct || 0;
+                        bVal = b.ft_pct || 0;
+                      }
+                      
+                      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    });
+                  }
+                  
+                  return filteredStats.map((stat) => {
+                    const rosterPlayer = rosterMap.get(stat.player_id || String(stat.nba_player_id));
+                    return (
+                      <GamePlayerRow
+                        key={stat.player_id || stat.nba_player_id}
+                        player={{
+                          ...stat,
+                          position: rosterPlayer?.position,
+                          jersey_number: rosterPlayer?.jersey_number,
+                          player_id: stat.player_id,
+                          nba_player_id: stat.nba_player_id,
+                          // Prefer full name from roster if available; fall back to boxscore name
+                          player_name: rosterPlayer?.player_name || stat.player_name,
+                        }}
+                        teamTricode={currentTeamTricode || ''}
+                        gameState={gameState}
+                        navigate={navigate}
+                        playerProps={playerProps}
+                        stats={{
+                          ppg: stat.ppg,
+                          rpg: stat.rpg,
+                          apg: stat.apg,
+                          mpg: stat.mpg,
+                          spg: stat.spg,
+                          bpg: stat.bpg,
+                          fg_pct: stat.fg_pct,
+                          fg3_pct: stat.fg3_pct,
+                          ft_pct: stat.ft_pct,
+                        }}
+                        injury={playerInjuries?.get(stat.nba_player_id)}
+                        isMobile={isMobile}
+                      />
+                    );
+                  });
+                })()
+              ) : (
+                // Render live/completed game stats
+                (() => {
+                  let sortedStats = [...currentTeamStats];
+                  if (last5ActiveTeamPlayerIds && last5ActiveTeamPlayerIds.size > 0) {
+                    sortedStats = sortedStats.filter(
+                      (player: any) => player.nba_player_id != null && last5ActiveTeamPlayerIds.has(player.nba_player_id)
+                    );
+                  }
+                  
+                  // Apply sorting
+                  if (sortColumn) {
+                    sortedStats.sort((a, b) => {
+                      let aVal: number = 0;
+                      let bVal: number = 0;
+                      
+                      let aStats = a.stats || {};
+                      if (typeof aStats === 'string') {
+                        try {
+                          aStats = JSON.parse(aStats);
+                        } catch (e) {
+                          aStats = {};
+                        }
+                      }
+                      
+                      let bStats = b.stats || {};
+                      if (typeof bStats === 'string') {
+                        try {
+                          bStats = JSON.parse(bStats);
+                        } catch (e) {
+                          bStats = {};
+                        }
+                      }
+                      
+                      if (sortColumn === 'pts') {
+                        aVal = aStats.pts || 0;
+                        bVal = bStats.pts || 0;
+                      } else if (sortColumn === 'reb') {
+                        aVal = aStats.reb || 0;
+                        bVal = bStats.reb || 0;
+                      } else if (sortColumn === 'ast') {
+                        aVal = aStats.ast || 0;
+                        bVal = bStats.ast || 0;
+                      } else if (sortColumn === 'fantasy_points') {
+                        aVal = a.fantasy_points || 0;
+                        bVal = b.fantasy_points || 0;
+                      }
+                      
+                      return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+                    });
+                  } else {
+                    // Default sort by fantasy points descending
+                    sortedStats.sort((a, b) => (b.fantasy_points || 0) - (a.fantasy_points || 0));
+                  }
+                  
+                  return sortedStats.map((player) => {
+                    let parsedStats = player.stats || {};
+                    if (typeof parsedStats === 'string') {
+                      try {
+                        parsedStats = JSON.parse(parsedStats);
+                      } catch (e) {
+                        parsedStats = {};
+                      }
+                    }
+                    return (
+                      <GamePlayerRow
+                        key={`${player.nba_player_id}-${player.team_tricode}`}
+                        player={player}
+                        teamTricode={player.team_tricode}
+                        gameState={gameState}
+                        navigate={navigate}
+                        playerProps={playerProps}
+                        stats={parsedStats}
+                        fantasyPoints={player.fantasy_points}
+                        isMobile={isMobile}
+                      />
+                    );
+                  });
+                })()
+              )}
+            </tbody>
+          </Table>
+        </Box>
+          )}
+          {statsTab === 'advanced' && (
+            <GameAdvancedStatsTable />
+          )}
+          {statsTab === 'props' && (
+            <GameContentView viewType="props" />
+          )}
+          {statsTab === 'hit_rates' && (
+            <GameContentView viewType="hit_rates" />
+          )}
+          {statsTab === 'exploits' && (
+            <GameContentView viewType="team_comparison" />
+          )}
+          {statsTab === 'estimated_rotation' && (
+            <GameContentView viewType="estimated_rotation" />
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const allGameModules = [
+    { name: 'stats', label: 'Stats', content: <GameContentView viewType="stats" /> },
+  ] as const;
+  const effectiveGameModuleVisibility = moduleVisibility ?? DEFAULT_GAME_MODULES;
+  const inlineModules = Object.entries(effectiveGameModuleVisibility)
+    .filter(([, config]) => config.is_visible)
+    .sort((a, b) => a[1].display_order - b[1].display_order)
+    .map(([name]) => allGameModules.find((module) => module.name === name))
+    .filter(Boolean) as Array<(typeof allGameModules)[number]>;
+
   return (
+    <GamePageLayout hideHeader={compactLayout}>
     <Box sx={{ 
-      bgcolor: '#000000',
-      minHeight: '100vh',
+      bgcolor: '#ffffff',
+      minHeight: compactLayout ? undefined : '100vh',
       overflowX: 'hidden',
       width: '100%',
+      // Global text-size bump for this page only.
+      '& .MuiTypography-root': { fontSize: `${textScale}em !important` },
+      '& th, & td, & button, & label, & input, & textarea, & small': {
+        fontSize: `${textScale}em !important`,
+      },
+      '& .MuiChip-root, & .MuiButton-root, & .MuiIconButton-root': {
+        fontSize: `${textScale}em !important`,
+      },
+      // Visual refresh: whiter surfaces, darker text, reduced yellow accents.
+      '& .MuiTypography-root, & th, & td': {
+        color: '#111827 !important',
+      },
+      '& .MuiCard-root, & .MuiSheet-root, & .MuiTable-root': {
+        backgroundColor: '#ffffff !important',
+        color: '#111827 !important',
+        borderColor: '#e5e7eb !important',
+      },
+      '& thead th': {
+        backgroundColor: '#111827 !important',
+        color: '#ffffff !important',
+        borderColor: '#1f2937 !important',
+      },
+      '& .MuiModalDialog-root': {
+        backgroundColor: '#ffffff !important',
+        color: '#111827 !important',
+        borderColor: '#e5e7eb !important',
+      },
+      '& .MuiChip-root': {
+        color: '#111827 !important',
+      },
+      '& .MuiButton-root, & .MuiIconButton-root': {
+        color: '#1f2937 !important',
+        borderColor: '#d1d5db !important',
+      },
+      '& code': {
+        backgroundColor: '#f3f4f6 !important',
+        color: '#111827 !important',
+        padding: '0 4px',
+        borderRadius: 4,
+      },
+      '& [style*="#FFC72C"], & [style*="#ffC72C"], & [style*="#ffc72c"]': {
+        color: '#1d4ed8 !important',
+      },
     }}>
       <Box sx={{ 
         maxWidth: { xs: '100%', sm: 805, md: 1035 },
         minWidth: { xs: '100%', sm: 805, md: 1035 },
         mx: 'auto', 
-        pt: isLandscapeMobile 
-          ? '12px' // Minimal padding in landscape mobile
-          : { xs: '12px', md: 'calc((100vh - 40px) / 16 + 20px)' }, // Minimal padding on mobile, normal on desktop
+        pt: compactLayout
+          ? { xs: 0, sm: 0, md: 0 }
+          : isLandscapeMobile 
+            ? 0
+            : { xs: 0, md: 0 },
         pb: 2,
         px: { xs: 0, sm: 2, md: 2 },
         width: '100%',
@@ -1828,9 +4360,58 @@ export default function GamePage() {
             flexDirection: 'row',
             alignItems: 'center', 
             gap: { xs: 1.5, md: 2 }, 
-            mb: 1, 
-            px: { xs: 2, sm: 0 },
+            mb: 0.5,
+            px: { xs: 1, sm: 0 },
+            py: 1,
+            position: 'sticky',
+            top: 0,
+            zIndex: 5,
+            border: '2px solid transparent',
+            borderRadius: 10,
+            background: `linear-gradient(#ffffff, #ffffff) padding-box, linear-gradient(120deg, ${awayColors.primary}, ${awayColors.secondary}, ${homeColors.primary}, ${homeColors.secondary}) border-box`,
+            width: '100%',
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
           }}>
+            <Box
+              sx={{
+                position: 'absolute',
+                right: { sm: 8, md: 12 },
+                top: 0,
+                display: { xs: 'none', sm: 'flex' },
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: { sm: 1.5, md: 2 },
+                zIndex: 0,
+                pointerEvents: 'none',
+              }}
+            >
+              <Box
+                component="img"
+                src={getTeamLogoUrl(gameData.away_team_tricode)}
+                alt={gameData.away_team_tricode}
+                sx={{
+                  width: { sm: 96, md: 108 },
+                  height: { sm: 96, md: 108 },
+                  objectFit: 'contain',
+                  filter: selectedTeam === 'away' ? 'none' : 'grayscale(1) saturate(0)',
+                  opacity: selectedTeam === 'away' ? 1 : 0.12,
+                }}
+              />
+              <Box
+                component="img"
+                src={getTeamLogoUrl(gameData.home_team_tricode)}
+                alt={gameData.home_team_tricode}
+                sx={{
+                  width: { sm: 96, md: 108 },
+                  height: { sm: 96, md: 108 },
+                  objectFit: 'contain',
+                  filter: selectedTeam === 'home' ? 'none' : 'grayscale(1) saturate(0)',
+                  opacity: selectedTeam === 'home' ? 1 : 0.12,
+                }}
+              />
+            </Box>
             {/* Back Button */}
             <IconButton
               size="sm"
@@ -1841,116 +4422,19 @@ export default function GamePage() {
                 minWidth: 'auto',
                 width: { xs: 28, md: 32 },
                 height: { xs: 28, md: 32 },
-                borderColor: '#FFFFFF',
-                color: '#FFFFFF',
+                borderColor: '#333333',
+                color: '#333333',
                 flexShrink: 0,
+                position: 'relative',
+                zIndex: 1,
                 '&:hover': {
-                  bgcolor: 'rgba(255, 255, 255, 0.1)',
+                  bgcolor: 'rgba(0, 0, 0, 0.06)',
                 },
               }}
               title="Back"
             >
               <ArrowBack sx={{ fontSize: { xs: '1rem', md: '1.125rem' } }} />
             </IconButton>
-
-            {/* Split Team Avatar Section - Left side, matching feed avatar bar size */}
-            <Box sx={{ 
-              display: 'flex', 
-              flexDirection: 'column',
-              flexShrink: 0, 
-              alignItems: 'center', 
-              gap: 0.5, 
-              position: 'relative',
-            }}>
-              <Box sx={{ 
-                position: 'relative', 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-              }}>
-                {/* Split Team Avatar Container - Matching feed avatar bar size */}
-                <Box
-                  sx={{
-                    position: 'relative',
-                    width: { xs: 77, md: 83 },
-                    height: { xs: 77, md: 83 },
-                    borderRadius: '50%',
-                    border: `3px solid ${
-                      gameState === 'completed' ? '#666666' : 
-                      gameState === 'live' ? '#FFC72C' : 
-                      '#FFFFFF'
-                    }`,
-                    overflow: 'hidden',
-                    flexShrink: 0,
-                  }}
-                >
-                  {/* Left half - Away team */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      bgcolor: getTeamPrimaryColor(gameData.away_team_tricode),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={getTeamLogoUrl(gameData.away_team_tricode)}
-                      alt={gameData.away_team_tricode}
-                      sx={{
-                        width: '70%',
-                        height: '70%',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </Box>
-                  
-                  {/* Vertical divider */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      left: '50%',
-                      top: 0,
-                      width: '2px',
-                      height: '100%',
-                      bgcolor: '#000000',
-                      zIndex: 1,
-                    }}
-                  />
-                  
-                  {/* Right half - Home team */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      right: 0,
-                      top: 0,
-                      width: '50%',
-                      height: '100%',
-                      bgcolor: getTeamPrimaryColor(gameData.home_team_tricode),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <Box
-                      component="img"
-                      src={getTeamLogoUrl(gameData.home_team_tricode)}
-                      alt={gameData.home_team_tricode}
-                      sx={{
-                        width: '70%',
-                        height: '70%',
-                        objectFit: 'contain',
-                      }}
-                    />
-                  </Box>
-                </Box>
-              </Box>
-            </Box>
 
             {/* Game Details Section - Right side */}
             <Box sx={{ 
@@ -1961,6 +4445,9 @@ export default function GamePage() {
               alignItems: 'flex-start',
               justifyContent: 'center',
               textAlign: 'left',
+              position: 'relative',
+              zIndex: 1,
+              pr: { xs: 0, sm: 1, md: 1.5 },
             }}>
               {/* Matchup with Score */}
               <Box sx={{ mb: 1, width: '100%' }}>
@@ -1973,7 +4460,7 @@ export default function GamePage() {
                       lineHeight: 1.2,
                       m: 0,
                       p: 0,
-                      color: '#FFFFFF',
+                      color: '#111111',
                     }}
                   >
                     {gameData.away_team_tricode} @ {gameData.home_team_tricode}
@@ -2008,7 +4495,7 @@ export default function GamePage() {
                           mt: 0.5,
                         }}
                       >
-                        {gameData.game_status_text}
+                        {formatESTTime(gameData.game_date, 'time')} EST
                       </Typography>
                     );
                   }
@@ -2036,7 +4523,7 @@ export default function GamePage() {
                   <Typography 
                     level="body-sm" 
                     sx={{ 
-                      color: '#CCCCCC', 
+                      color: '#666666', 
                       fontSize: { xs: '0.7rem', md: '0.75rem' },
                       mt: 0.5,
                     }}
@@ -2045,130 +4532,176 @@ export default function GamePage() {
                     {gameData.arena_city && `, ${gameData.arena_city}`}
                   </Typography>
                 )}
-              </Box>
-
-              {/* View Tabs: Stats, Props, Advanced */}
-              <Box sx={{ 
-                display: 'flex', 
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-                gap: { xs: 1, md: 1.5 }, 
-                flexWrap: 'wrap',
-                width: '100%',
-              }}>
-                {/* Stats */}
-                <IconButton
-                  size="sm"
-                  variant={activeView === 'stats' ? 'solid' : 'outlined'}
-                  color={activeView === 'stats' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('stats')}
-                  sx={{
-                    fontSize: { xs: '0.65rem', md: '0.75rem' },
-                    width: { xs: 28, md: 32 },
-                    height: { xs: 28, md: 32 },
-                  }}
-                >
-                  <BarChart sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
-                </IconButton>
-                {/* Advanced stats */}
-                <IconButton
-                  size="sm"
-                  variant={activeView === 'advanced' ? 'solid' : 'outlined'}
-                  color={activeView === 'advanced' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('advanced')}
-                  sx={{
-                    fontSize: { xs: '0.65rem', md: '0.75rem' },
-                    width: { xs: 28, md: 32 },
-                    height: { xs: 28, md: 32 },
-                  }}
-                >
-                  <Analytics sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
-                </IconButton>
-                {/* Team analytics compare (predictor placeholder) */}
-                <IconButton
-                  size="sm"
-                  variant={activeView === 'predictor' ? 'solid' : 'outlined'}
-                  color={activeView === 'predictor' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('predictor')}
-                  sx={{
-                    fontSize: { xs: '0.65rem', md: '0.75rem' },
-                    width: { xs: 28, md: 32 },
-                    height: { xs: 28, md: 32 },
-                  }}
-                  title="Team analytics comparison"
-                >
-                  <TrendingUp sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
-                </IconButton>
-                {/* Player props */}
-                <IconButton
-                  size="sm"
-                  variant={activeView === 'props' ? 'solid' : 'outlined'}
-                  color={activeView === 'props' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('props')}
-                  sx={{
-                    fontSize: { xs: '0.65rem', md: '0.75rem' },
-                    width: { xs: 28, md: 32 },
-                    height: { xs: 28, md: 32 },
-                  }}
-                >
-                  <EmojiEvents sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
-                </IconButton>
-                {/* Props vs teams (shield) */}
-                <IconButton
-                  size="sm"
-                  variant={activeView === 'propsVsTeams' ? 'solid' : 'outlined'}
-                  color={activeView === 'propsVsTeams' ? 'primary' : 'neutral'}
-                  onClick={() => setActiveView('propsVsTeams')}
-                  sx={{
-                    fontSize: { xs: '0.65rem', md: '0.75rem' },
-                    width: { xs: 28, md: 32 },
-                    height: { xs: 28, md: 32 },
-                  }}
-                  title="Props vs teams (how players fare against each defense)"
-                >
-                  <Shield sx={{ fontSize: { xs: '0.75rem', md: '1rem' } }} />
-                </IconButton>
-                <Box sx={{ ml: { xs: 0.5, md: 1 }, display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
-                  <IconButton
+                <Box sx={{ mt: 1, display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                  <Chip
                     size="sm"
-                    variant={selectedTeam === 'away' ? 'solid' : 'outlined'}
-                    onClick={() => setSelectedTeam('away')}
+                    variant="soft"
                     sx={{
-                      p: { xs: 0.25, md: 0.5 },
-                      width: { xs: 24, md: 28 },
-                      height: { xs: 24, md: 28 },
+                      fontWeight: 700,
+                      fontSize: { xs: '0.62rem', md: '0.68rem' },
+                      bgcolor: `${hexToRgba(awayColors.primary, 0.14)} !important`,
+                      color: '#0f172a !important',
+                      border: `1px solid ${hexToRgba(awayColors.primary, 0.45)}`,
                     }}
-                    title="Away Team"
                   >
-                    <Avatar
-                      src={getTeamLogoUrl(gameData.away_team_tricode)}
-                      alt={gameData.away_team_tricode}
-                      sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 } }}
-                    />
-                  </IconButton>
-                  <IconButton
+                    {gameData.away_team_tricode} {formatSpreadWithOddsForHeader(headerTeamLines.awaySpread, headerTeamLines.awaySpreadOdds)}
+                  </Chip>
+                  <Chip
                     size="sm"
-                    variant={selectedTeam === 'home' ? 'solid' : 'outlined'}
-                    onClick={() => setSelectedTeam('home')}
+                    variant="soft"
                     sx={{
-                      p: { xs: 0.25, md: 0.5 },
-                      width: { xs: 24, md: 28 },
-                      height: { xs: 24, md: 28 },
+                      fontWeight: 700,
+                      fontSize: { xs: '0.62rem', md: '0.68rem' },
+                      bgcolor: `${hexToRgba(homeColors.primary, 0.14)} !important`,
+                      color: '#0f172a !important',
+                      border: `1px solid ${hexToRgba(homeColors.primary, 0.45)}`,
                     }}
-                    title="Home Team"
                   >
-                    <Avatar
-                      src={getTeamLogoUrl(gameData.home_team_tricode)}
-                      alt={gameData.home_team_tricode}
-                      sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 } }}
-                    />
-                  </IconButton>
+                    {gameData.home_team_tricode} {formatSpreadWithOddsForHeader(headerTeamLines.homeSpread, headerTeamLines.homeSpreadOdds)}
+                  </Chip>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: { xs: '0.62rem', md: '0.68rem' },
+                      bgcolor: '#dbeafe !important',
+                      color: '#1e3a8a !important',
+                      border: '1px solid #93c5fd',
+                    }}
+                  >
+                    O/U {gameData.over_under != null ? Number(gameData.over_under).toFixed(1) : '--'}
+                  </Chip>
+                  <Chip
+                    size="sm"
+                    variant="soft"
+                    sx={{
+                      fontWeight: 700,
+                      fontSize: { xs: '0.62rem', md: '0.68rem' },
+                      bgcolor: '#dcfce7 !important',
+                      color: '#166534 !important',
+                      border: '1px solid #86efac',
+                    }}
+                  >
+                    Props {playerProps?.length ?? 0}
+                  </Chip>
                 </Box>
+                <Box
+                  sx={{
+                    mt: 0.9,
+                    display: 'grid',
+                    gridTemplateColumns: { xs: 'repeat(2, minmax(0, 1fr))', md: 'repeat(6, minmax(0, 1fr))' },
+                    gap: 0.65,
+                    width: '100%',
+                  }}
+                >
+                  <Box sx={{ p: 0.6, border: `1px solid ${hexToRgba(awayColors.primary, 0.4)}`, borderRadius: 8, bgcolor: hexToRgba(awayColors.primary, 0.08) }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Away Line</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {gameData.away_team_tricode} {formatSpreadWithOddsForHeader(headerTeamLines.awaySpread, headerTeamLines.awaySpreadOdds)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 0.6, border: `1px solid ${hexToRgba(homeColors.primary, 0.4)}`, borderRadius: 8, bgcolor: hexToRgba(homeColors.primary, 0.08) }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Home Line</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {gameData.home_team_tricode} {formatSpreadWithOddsForHeader(headerTeamLines.homeSpread, headerTeamLines.homeSpreadOdds)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 0.6, border: '1px solid #e2e8f0', borderRadius: 8, bgcolor: '#f8fafc' }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Total</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {gameData.over_under != null ? Number(gameData.over_under).toFixed(1) : '--'}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 0.6, border: '1px solid #e2e8f0', borderRadius: 8, bgcolor: '#f8fafc' }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Game Props</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {playerProps?.length ?? 0}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 0.6, border: '1px solid #e2e8f0', borderRadius: 8, bgcolor: '#f8fafc' }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Injury Notes</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {selectedTeamInjuryNotes.length}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ p: 0.6, border: '1px solid #e2e8f0', borderRadius: 8, bgcolor: '#f8fafc' }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem' }}>Avg Rotation</Typography>
+                    <Typography level="body-sm" sx={{ color: '#0f172a', fontWeight: 700, fontSize: '0.72rem' }}>
+                      {selectedTeamAvgRotationSize != null ? selectedTeamAvgRotationSize.toFixed(1) : '--'}
+                    </Typography>
+                  </Box>
+                </Box>
+                {selectedTeamInjuryNotes.length > 0 && (
+                  <Box sx={{ mt: 0.75 }}>
+                    <Typography level="body-xs" sx={{ color: '#64748b', fontSize: '0.58rem', mb: 0.45 }}>
+                      Injury Notes
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 0.45, flexWrap: 'wrap' }}>
+                      {selectedTeamInjuryNotes.slice(0, 8).map((injury) => (
+                        <Chip
+                          key={`header-injury-${injury.nbaPlayerId}-${injury.injuryStatus}`}
+                          size="sm"
+                          variant="soft"
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: { xs: '0.56rem', md: '0.62rem' },
+                            bgcolor: String(injury.injuryStatus).toLowerCase().includes('out')
+                              ? '#fee2e2 !important'
+                              : String(injury.injuryStatus).toLowerCase().includes('questionable')
+                                ? '#fef3c7 !important'
+                                : '#dbeafe !important',
+                            color: String(injury.injuryStatus).toLowerCase().includes('out')
+                              ? '#991b1b !important'
+                              : String(injury.injuryStatus).toLowerCase().includes('questionable')
+                                ? '#92400e !important'
+                                : '#1e3a8a !important',
+                            border: '1px solid #cbd5e1',
+                          }}
+                        >
+                          {injury.playerName} - {injury.injuryStatus}
+                        </Chip>
+                      ))}
+                      {selectedTeamInjuryNotes.length > 8 && (
+                        <Chip
+                          size="sm"
+                          variant="soft"
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: { xs: '0.56rem', md: '0.62rem' },
+                            bgcolor: '#f1f5f9 !important',
+                            color: '#334155 !important',
+                            border: '1px solid #cbd5e1',
+                          }}
+                        >
+                          +{selectedTeamInjuryNotes.length - 8} more
+                        </Chip>
+                      )}
+                    </Box>
+                  </Box>
+                )}
               </Box>
             </Box>
           </Box>
         )}
+
+        <Box sx={{ px: { xs: 2, sm: 0 }, mb: 3 }}>
+          {inlineModules.map(({ name, label, content }) => (
+            <Box key={name} sx={{ mb: 3 }}>
+              {name !== 'stats' && (
+                <Typography level="title-md" sx={{ color: '#111111', fontWeight: 700, mb: 1.25 }}>
+                  {label}
+                </Typography>
+              )}
+              {content}
+            </Box>
+          ))}
+          {inlineModules.length === 0 && (
+            <Typography level="body-sm" sx={{ color: '#666666', py: 2 }}>
+              No modules enabled.
+            </Typography>
+          )}
+        </Box>
 
         {/* Enhanced Game Data Sections for Completed Games */}
         {gameState === 'completed' && gameJsonData && (
@@ -2443,931 +4976,69 @@ export default function GamePage() {
           </Box>
         )}
 
-        {/* Content Area - Stats/Props/Advanced Tables */}
-        {gameLoading ? (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <CircularProgress />
-          </Box>
-        ) : !gameData ? (
-          <Box sx={{ p: 3, textAlign: 'center' }}>
-            <Alert color="warning">
-              <Typography>Game not found</Typography>
-            </Alert>
-          </Box>
-        ) : activeView === 'props' ? (
-          // Player Props View - Table format: one row per player, one column per prop type
-          <Box sx={{ width: '100%', overflowX: 'auto' }}>
-            {propsLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                <CircularProgress />
+        {/* Persisted game highlights (MP4 clips) */}
+        {gameData && (
+          <Box sx={{ mt: 2, px: { xs: 2, sm: 0 } }}>
+            {gameHighlightClipsLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+                <CircularProgress size="lg" sx={{ '--CircularProgress-trackColor': '#222', '--CircularProgress-progressColor': '#FFC72C' }} />
               </Box>
-            ) : (() => {
-              // teamProps is already filtered by team in useMemo above
-              // Show ALL players with props, regardless of roster membership
-
-              if (teamProps.length === 0) {
-                return (
-                  <Box sx={{ p: 3, textAlign: 'center' }}>
-                    <Typography sx={{ color: '#CCCCCC', fontSize: '0.75rem' }}>
-                      {playerProps && playerProps.length > 0 
-                        ? `No props found for ${selectedTeam === 'away' ? gameData?.away_team_tricode : gameData?.home_team_tricode} players.`
-                        : 'No player props available for this game'}
-                    </Typography>
-                  </Box>
-                );
-              }
-
-              // Bookmaker priority: DraftKings > FanDuel > Consensus
-              const getBookmakerPriority = (bookmaker: string): number => {
-                const bookmakerLower = (bookmaker || '').toLowerCase();
-                if (bookmakerLower.includes('draftkings') || bookmakerLower === 'draftkings') return 1;
-                if (bookmakerLower.includes('fanduel') || bookmakerLower === 'fanduel') return 2;
-                if (bookmakerLower === 'consensus') return 3;
-                return 4;
-              };
-
-              // Group props by player and bet_type, then filter to show only ONE prop per bet_type
-              const propsByPlayerAndType = new Map<string, PlayerProp[]>();
-              teamProps.forEach(prop => {
-                const key = `${prop.player_name || prop.nba_player_id}_${prop.bet_type}`;
-                if (!propsByPlayerAndType.has(key)) {
-                  propsByPlayerAndType.set(key, []);
-                }
-                propsByPlayerAndType.get(key)!.push(prop);
-              });
-
-              // Filter and prioritize props - ALWAYS take the one with the HIGHEST line value
-              // If lines are equal, use bookmaker priority as tiebreaker
-              const filteredProps: PlayerProp[] = [];
-              propsByPlayerAndType.forEach((props) => {
-                // Sort by line value (descending - highest first), then by bookmaker priority as tiebreaker
-                props.sort((a, b) => {
-                  const lineA = parseFloat(a.line?.toString() || '0');
-                  const lineB = parseFloat(b.line?.toString() || '0');
-                  
-                  // First sort by line (descending - higher is better)
-                  if (lineA !== lineB) {
-                    return lineB - lineA;
-                  }
-                  
-                  // If lines are equal, use bookmaker priority as tiebreaker
-                  return getBookmakerPriority(a.bookmaker) - getBookmakerPriority(b.bookmaker);
-                });
-                
-                // Take the first one (highest line, or best bookmaker if tied)
-                const bestProp = props[0];
-                if (bestProp) {
-                  filteredProps.push(bestProp);
-                }
-              });
-
-              // Get all unique bet types and sort them with new order and abbreviations
-              const betTypes = Array.from(new Set(filteredProps.map(p => p.bet_type)));
-              
-              // Bet type to abbreviation mapping
-              const betTypeAbbreviation: Record<string, string> = {
-                // Main stats
-                'points': 'PTS', 'pts': 'PTS', 'point': 'PTS',
-                'rebounds': 'REB', 'reb': 'REB', 'rebound': 'REB',
-                'assists': 'AST', 'ast': 'AST', 'assist': 'AST',
-                'points_rebounds_assists': 'P+R+A', 'points+rebounds+assists': 'P+R+A',
-                'threes': '3PM', '3pm': '3PM', 'three_pointers_made': '3PM', 'three_pointers': '3PM',
-                'points_assists': 'PTS+AST', 'points+assists': 'PTS+AST',
-                'rebounds_assists': 'AST+REB', 'rebounds+assists': 'AST+REB', 'assists_rebounds': 'AST+REB',
-                'blocks_steals': 'STL+BLK', 'blocks+steals': 'STL+BLK', 'stocks': 'STL+BLK', 'steals_blocks': 'STL+BLK',
-                'blocks': 'BLK', 'blk': 'BLK', 'block': 'BLK',
-                'steals': 'STL', 'stl': 'STL', 'steal': 'STL',
-                'turnovers': 'TO', 'tov': 'TO', 'turnover': 'TO',
-                // Field goals
-                'field_goals_made': 'FGM', 'fgm': 'FGM', 'field_goals': 'FGM',
-                'free_throws_made': 'FTM', 'ftm': 'FTM', 'free_throws': 'FTM',
-                'field_goals_attempted': 'FGA', 'fga': 'FGA', 'field_goal_attempts': 'FGA',
-                'three_pointers_attempted': '3PA', '3pa': '3PA', 'three_point_attempts': '3PA', 'threes_attempted': '3PA',
-                // Legacy mappings
-                'points_rebounds': 'PTS+REB', 'points+rebounds': 'PTS+REB',
-              };
-              
-              // Bet type order (priority order)
-              const betTypeOrder: Record<string, number> = {
-                'points': 1, 'pts': 1, 'point': 1,
-                'rebounds': 2, 'reb': 2, 'rebound': 2,
-                'assists': 3, 'ast': 3, 'assist': 3,
-                'points_rebounds_assists': 4, 'points+rebounds+assists': 4,
-                'threes': 5, '3pm': 5, 'three_pointers_made': 5, 'three_pointers': 5,
-                'points_assists': 6, 'points+assists': 6,
-                'rebounds_assists': 7, 'rebounds+assists': 7, 'assists_rebounds': 7,
-                'blocks_steals': 8, 'blocks+steals': 8, 'stocks': 8, 'steals_blocks': 8,
-                'blocks': 9, 'blk': 9, 'block': 9,
-                'steals': 10, 'stl': 10, 'steal': 10,
-                'turnovers': 11, 'tov': 11, 'turnover': 11,
-                'field_goals_made': 12, 'fgm': 12, 'field_goals': 12,
-                'free_throws_made': 13, 'ftm': 13, 'free_throws': 13,
-                'field_goals_attempted': 14, 'fga': 14, 'field_goal_attempts': 14,
-                'three_pointers_attempted': 15, '3pa': 15, 'three_point_attempts': 15, 'threes_attempted': 15,
-              };
-              
-              betTypes.sort((a, b) => {
-                const orderA = betTypeOrder[a.toLowerCase()] || 999;
-                const orderB = betTypeOrder[b.toLowerCase()] || 999;
-                return orderA - orderB;
-              });
-
-              // Group props by player
-              const propsByPlayer = new Map<string, Map<string, PlayerProp>>();
-              filteredProps.forEach(prop => {
-                const playerKey = prop.player_name || `${prop.nba_player_id}`;
-                if (!propsByPlayer.has(playerKey)) {
-                  propsByPlayer.set(playerKey, new Map());
-                }
-                propsByPlayer.get(playerKey)!.set(prop.bet_type, prop);
-              });
-
-              // Get list of players from props (show ALL players with props, not just those in roster)
-              // Create a map to store player info from props, using enhanced props with matched info
-              const playersMap = new Map<string, { name: string; nba_player_id: number; player_id?: string }>();
-              
-              filteredProps.forEach(prop => {
-                const playerKey = prop.player_name || `${prop.nba_player_id || prop.player_id}`;
-                if (!playersMap.has(playerKey)) {
-                  // Use matched player info if available, otherwise use prop info
-                  const nbaPlayerId = prop.nba_player_id || (playerNameMatches?.get(prop.player_name)?.nba_player_id);
-                  const playerId = prop.player_id || (playerNameMatches?.get(prop.player_name)?.player_id);
-                  
-                  playersMap.set(playerKey, {
-                    name: prop.player_name,
-                    nba_player_id: nbaPlayerId || 0,
-                    player_id: playerId
-                  });
-                }
-              });
-              
-              // Convert to array and sort by player name
-              const players = Array.from(playersMap.values()).sort((a, b) => 
-                (a.name || '').localeCompare(b.name || '')
-              );
-              
-              console.log('📊 Players with props:', players.length, players.map(p => p.name));
-
-              // For completed games, get actual stats and calculate prop results
-              const getPropResult = (prop: PlayerProp) => {
-                if (gameState !== 'completed' || !liveStats) return null;
-                
-                const player = liveStats.find(p => 
-                  (p.player_id && p.player_id === prop.player_id) ||
-                  (p.nba_player_id === prop.nba_player_id)
-                );
-                
-                if (!player || !player.stats) return null;
-                
-                const stats = typeof player.stats === 'string' 
-                  ? JSON.parse(player.stats) 
-                  : player.stats;
-                
-                return calculatePropResult(prop.bet_type, prop.line, {
-                  pts: stats.pts || 0,
-                  reb: stats.reb || 0,
-                  ast: stats.ast || 0,
-                  stl: stats.stl || 0,
-                  blk: stats.blk || 0,
-                  tov: stats.tov || 0,
-                  fg3m: stats.fg3m || 0,
-                  ftm: stats.ftm || 0,
-                });
-              };
-
-              // Format bet type for display using abbreviations
-              const formatBetType = (betType: string): string => {
-                const normalized = betType.toLowerCase();
-                return betTypeAbbreviation[normalized] || betType.replace(/_/g, ' ').replace(/\+/g, '+').toUpperCase();
-              };
-
-              // Increased column width for better legibility
-              const columnWidth = isMobile 
-                ? (gameState === 'completed' ? 90 : 75)
-                : (gameState === 'completed' ? 140 : 110);
-              const playerColumnWidth = isMobile ? 140 : 180;
-              const minWidth = playerColumnWidth + (betTypes.length * columnWidth);
-
-              return (
-                <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: `${minWidth}px` }}>
-                  <thead>
-                    <tr>
-                      <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: `${playerColumnWidth}px`, width: `${playerColumnWidth}px`, position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#000000', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
-                      {betTypes.map(betType => (
-                        <th key={betType} style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 6px' : '12px 16px', minWidth: `${columnWidth}px`, width: `${columnWidth}px` }}>
-                          {formatBetType(betType)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {players.map((player, playerIndex) => {
-                      const playerPropsMap = propsByPlayer.get(player.name || `${player.nba_player_id}`) || new Map();
-                      // Try to find player in roster for jersey/position info, but don't require it
-                      const rosterPlayer: any = currentRoster?.find((p: any) => 
-                        (p.player_id && p.player_id === player.player_id) ||
-                        (p.nba_player_id === player.nba_player_id) ||
-                        (p.player_name === player.name)
-                      ) || currentTeamStats?.find((p: any) =>
-                        (p.player_id && p.player_id === player.player_id) ||
-                        (p.nba_player_id === player.nba_player_id) ||
-                        (p.player_name === player.name)
-                      );
-                      // Unique key: nba_player_id can be 0 or duplicated for unmatched names
-                      const rowKey = [player.nba_player_id, player.player_id, player.name].filter(Boolean).join('_') || `player_${playerIndex}`;
-
-                      return (
-                        <tr
-                          key={rowKey}
-                          style={{
-                            borderBottom: '1px solid #333333',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 199, 44, 0.1)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <td 
-                            style={{ 
-                              color: '#FFFFFF', 
-                              fontSize: isMobile ? '0.65rem' : '0.75rem', 
-                              padding: isMobile ? '8px 6px' : '12px',
-                              minWidth: `${playerColumnWidth}px`,
-                              width: `${playerColumnWidth}px`,
-                              position: 'sticky',
-                              left: 0,
-                              zIndex: 9,
-                              backgroundColor: 'transparent'
-                            }}
-                          >
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
-                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isMobile ? '24px' : '30px', flexShrink: 0 }}>
-                                {rosterPlayer?.jersey_number && (
-                                  <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.6rem' : '0.7rem', fontWeight: 'bold', lineHeight: 1 }}>
-                                    #{rosterPlayer.jersey_number}
-                                  </Typography>
-                                )}
-                                {rosterPlayer?.position && (
-                                  <Typography sx={{ color: '#CCCCCC', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
-                                    {rosterPlayer.position}
-                                  </Typography>
-                                )}
-                              </Box>
-                              <Avatar
-                                src={player.nba_player_id && player.nba_player_id > 0
-                                  ? `https://cdn.nba.com/headshots/nba/latest/260x190/${player.nba_player_id}.png`
-                                  : undefined
-                                }
-                                alt={player.name}
-                                sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
-                              >
-                                {(!player.nba_player_id || player.nba_player_id === 0) && (
-                                  <Typography sx={{ fontSize: isMobile ? '0.5rem' : '0.6rem', color: '#FFFFFF' }}>
-                                    {player.name?.charAt(0) || '?'}
-                                  </Typography>
-                                )}
-                              </Avatar>
-                              <Typography sx={{ 
-                                color: '#FFFFFF', 
-                                fontSize: isMobile ? '0.65rem' : '0.75rem',
-                                whiteSpace: 'nowrap',
-                                overflow: 'visible',
-                                flex: 1,
-                                minWidth: isMobile ? '80px' : '100px'
-                              }}>
-                                {player.name}
-                              </Typography>
-                            </Box>
-                          </td>
-                          {betTypes.map(betType => {
-                            const prop = playerPropsMap.get(betType);
-                            const propResult = prop ? getPropResult(prop) : null;
-
-                            return (
-                              <td 
-                                key={betType}
-                                style={{ 
-                                  color: '#FFFFFF', 
-                                  fontSize: isMobile ? '0.65rem' : '0.75rem', 
-                                  textAlign: 'right', 
-                                  padding: isMobile ? '8px 6px' : '12px 16px',
-                                  minWidth: `${columnWidth}px`,
-                                  width: `${columnWidth}px`
-                                }}
-                              >
-                                <PropPerformanceCell
-                                  prop={prop || null}
-                                  propResult={propResult}
-                                  gameState={gameState}
-                                  opponentTeamTricode={opponentTeamTricode}
-                                  isMobile={isMobile}
-                                  american_odds={prop?.american_odds}
-                                  price={prop?.price}
-                                />
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </Table>
-              );
-            })()}
-          </Box>
-        ) : activeView === 'propsVsTeams' && gameData ? (
-          // Props vs Teams: how players have fared against each team's defense (last 10 games)
-          <Box sx={{ width: '100%', overflowX: 'auto', px: { xs: 2, sm: 0 } }}>
-            <Typography level="body-sm" sx={{ color: '#CCCCCC', mb: 2 }}>
-              Hit rates for player props against each team over their last 10 completed games. Higher % = opponents hit that prop more often. Click a cell to see the game-by-game breakdown.
-            </Typography>
-            <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '320px' : '500px' }}>
-              <thead>
-                <tr>
-                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'left', padding: '10px 12px' }}>Prop</th>
-                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
-                    vs {gameData.home_team_tricode}
-                  </th>
-                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.7rem' : '0.8rem', textAlign: 'right', padding: '10px 12px' }}>
-                    vs {gameData.away_team_tricode}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  { betType: 'points', label: 'PTS' },
-                  { betType: 'rebounds', label: 'REB' },
-                  { betType: 'assists', label: 'AST' },
-                  { betType: 'threes', label: '3PM' },
-                  { betType: 'steals', label: 'STL' },
-                  { betType: 'blocks', label: 'BLK' },
-                  { betType: 'turnovers', label: 'TOV' },
-                  { betType: 'blocks_steals', label: 'STL+BLK' },
-                  { betType: 'points_rebounds', label: 'P+R' },
-                  { betType: 'points_assists', label: 'P+A' },
-                  { betType: 'rebounds_assists', label: 'R+A' },
-                  { betType: 'points_rebounds_assists', label: 'P+R+A' },
-                  { betType: 'freethrowsmade', label: 'FTM' },
-                  { betType: 'fieldgoalsmade', label: 'FGM' },
-                  { betType: 'fieldgoalsattempted', label: 'FGA' },
-                  { betType: 'threepointersattempted', label: '3PA' },
-                  { betType: 'twopointersmade', label: '2PM' },
-                ].map(({ betType, label }) => (
-                  <PropsVsTeamRow
-                    key={betType}
-                    betType={betType}
-                    label={label}
-                    homeTricode={gameData.home_team_tricode}
-                    awayTricode={gameData.away_team_tricode}
-                    isMobile={isMobile}
-                  />
-                ))}
-              </tbody>
-            </Table>
-          </Box>
-        ) : activeView === 'advanced' ? (
-          // Advanced View - Display advanced stats
-          <Box sx={{ width: '100%', overflowX: 'auto' }}>
-            {advancedStatsLoading ? (
-              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                <CircularProgress />
-              </Box>
-            ) : !advancedStats || advancedStats.length === 0 ? (
-              <Box sx={{ p: 3, textAlign: 'center' }}>
-                <Typography sx={{ color: '#CCCCCC', fontSize: '0.75rem' }}>
-                  {gameState === 'upcoming' 
-                    ? 'Advanced stats will be available after the game starts'
-                    : 'No advanced stats available for this game'}
-                </Typography>
-              </Box>
-            ) : (
-              <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '600px' : '800px' }}>
-              <thead>
-                <tr>
-                    <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: isMobile ? '140px' : '180px', width: isMobile ? '140px' : '180px', position: 'sticky', left: 0, zIndex: 10, backgroundColor: '#000000', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
-                    <SortableHeader column="off_rtg" label="ORtg" />
-                    <SortableHeader column="def_rtg" label="DRtg" />
-                    <SortableHeader column="net_rtg" label="NetRtg" />
-                    <SortableHeader column="ts_pct" label="TS%" />
-                    <SortableHeader column="usg_pct" label="USG%" />
-                    <SortableHeader column="efg_pct" label="eFG%" />
-                    <SortableHeader column="ast_ratio" label="Ast Ratio" />
-                    <SortableHeader column="reb_pct" label="Reb%" />
-                    <SortableHeader column="tov_pct" label="TOV%" />
-                </tr>
-              </thead>
-              <tbody>
-                  {(() => {
-                    let sortedStats = [...advancedStats];
-                    
-                    // Apply sorting - handle nulls by putting them last
-                    if (sortColumn) {
-                      sortedStats.sort((a: any, b: any) => {
-                        let aVal: number | null = null;
-                        let bVal: number | null = null;
-                        
-                        if (sortColumn === 'off_rtg') {
-                          aVal = a.off_rtg ?? null;
-                          bVal = b.off_rtg ?? null;
-                        } else if (sortColumn === 'def_rtg') {
-                          aVal = a.def_rtg ?? null;
-                          bVal = b.def_rtg ?? null;
-                        } else if (sortColumn === 'net_rtg') {
-                          aVal = a.net_rtg ?? null;
-                          bVal = b.net_rtg ?? null;
-                        } else if (sortColumn === 'ts_pct') {
-                          aVal = a.ts_pct ?? null;
-                          bVal = b.ts_pct ?? null;
-                        } else if (sortColumn === 'usg_pct') {
-                          aVal = a.usg_pct ?? null;
-                          bVal = b.usg_pct ?? null;
-                        } else if (sortColumn === 'efg_pct') {
-                          aVal = a.efg_pct ?? null;
-                          bVal = b.efg_pct ?? null;
-                        } else if (sortColumn === 'ast_ratio') {
-                          aVal = a.ast_ratio ?? null;
-                          bVal = b.ast_ratio ?? null;
-                        } else if (sortColumn === 'reb_pct') {
-                          aVal = a.reb_pct ?? null;
-                          bVal = b.reb_pct ?? null;
-                        } else if (sortColumn === 'tov_pct') {
-                          aVal = a.tov_pct ?? null;
-                          bVal = b.tov_pct ?? null;
-                        }
-                        
-                        // Handle nulls - put them at the end
-                        if (aVal === null && bVal === null) return 0;
-                        if (aVal === null) return 1; // a goes to end
-                        if (bVal === null) return -1; // b goes to end
-                        
-                        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-                      });
-                    }
-                    
-                    return sortedStats.map((stat: any) => {
-                      // Find player in roster for position/jersey
-                      const rosterPlayer = (currentRoster || []).find((p: any) => 
-                        p.player_id === stat.player_id || p.nba_player_id === stat.nba_player_id
-                      );
-                      const injury = playerInjuries?.get(stat.nba_player_id);
-                      
-                      return (
-                        <tr
-                          key={stat.player_id}
-                          onClick={() => stat.player_id && navigate(`/player/${stat.player_id}`)}
-                          style={{
-                            cursor: 'pointer',
-                            borderBottom: '1px solid #333333',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = 'rgba(255, 199, 44, 0.1)';
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                        >
-                          <td style={{ 
-                            minWidth: isMobile ? '140px' : '180px', 
-                            width: isMobile ? '140px' : '180px', 
-                            maxWidth: isMobile ? '140px' : '180px',
-                            position: 'sticky',
-                            left: 0,
-                            zIndex: 9,
-                            backgroundColor: 'transparent',
-                            padding: isMobile ? '8px 6px' : '12px'
-                          }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
-                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isMobile ? '24px' : '30px', flexShrink: 0 }}>
-                                {rosterPlayer?.jersey_number && (
-                                  <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.6rem' : '0.7rem', fontWeight: 'bold', lineHeight: 1 }}>
-                                    #{rosterPlayer.jersey_number}
-                                  </Typography>
-                                )}
-                                {rosterPlayer?.position && (
-                                  <Typography sx={{ color: '#CCCCCC', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
-                                    {rosterPlayer.position}
-                                  </Typography>
-                                )}
-                              </Box>
-                              <Avatar
-                                src={`https://cdn.nba.com/headshots/nba/latest/260x190/${stat.nba_player_id}.png`}
-                                alt={stat.player_name}
-                                sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
-                              />
-                              <Box sx={{ flex: 1, minWidth: isMobile ? '90px' : '120px', maxWidth: isMobile ? '100px' : '130px', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-                                <Typography sx={{ 
-                                  color: '#FFFFFF', 
-                                  fontSize: isMobile ? '0.65rem' : '0.75rem',
-                                  whiteSpace: 'nowrap',
-                                  overflow: 'visible',
-                                }}>
-                                  {stat.player_name}
-                                </Typography>
-                                {/* Injury status badges (same design as Stats view) */}
-                                {injury && injury.injury_status === 'Out' && (
-                                  <Chip
-                                    size="sm"
-                                    color="danger"
-                                    variant="solid"
-                                    sx={{ 
-                                      fontSize: isMobile ? '0.55rem' : '0.65rem', 
-                                      height: isMobile ? '14px' : '16px',
-                                      fontWeight: 'bold',
-                                      alignSelf: 'flex-start'
-                                    }}
-                                  >
-                                    {injury.injury_status}
-                                  </Chip>
-                                )}
-                                {injury && (injury.injury_status === 'Questionable' || injury.injury_status === 'Day-to-Day') && (
-                                  <Chip
-                                    size="sm"
-                                    color="warning"
-                                    variant="solid"
-                                    sx={{ 
-                                      fontSize: isMobile ? '0.55rem' : '0.65rem', 
-                                      height: isMobile ? '14px' : '16px',
-                                      fontWeight: 'bold',
-                                      alignSelf: 'flex-start'
-                                    }}
-                                  >
-                                    {injury.injury_status}
-                                  </Chip>
-                                )}
-                              </Box>
-                            </Box>
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.off_rtg !== null && stat.off_rtg !== undefined ? stat.off_rtg.toFixed(1) : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.def_rtg !== null && stat.def_rtg !== undefined ? stat.def_rtg.toFixed(1) : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.net_rtg !== null && stat.net_rtg !== undefined ? stat.net_rtg.toFixed(1) : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.ts_pct !== null && stat.ts_pct !== undefined ? (stat.ts_pct * 100).toFixed(1) + '%' : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.usg_pct !== null && stat.usg_pct !== undefined ? (stat.usg_pct * 100).toFixed(1) + '%' : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.efg_pct !== null && stat.efg_pct !== undefined ? (stat.efg_pct * 100).toFixed(1) + '%' : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.ast_ratio !== null && stat.ast_ratio !== undefined ? stat.ast_ratio.toFixed(1) : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.reb_pct !== null && stat.reb_pct !== undefined ? (stat.reb_pct * 100).toFixed(1) + '%' : 'N/A'}
-                          </td>
-                          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
-                            {stat.tov_pct !== null && stat.tov_pct !== undefined ? (stat.tov_pct * 100).toFixed(1) + '%' : 'N/A'}
-                  </td>
-                </tr>
-                      );
-                    });
-                  })()}
-              </tbody>
-            </Table>
             )}
-          </Box>
-        ) : activeView === 'predictor' ? (
-          // Predictor / team analytics comparison – Phase 2: defense_dash_overall for this game's two teams
-          <Box sx={{ p: 3 }}>
-            <Card sx={{ bgcolor: '#1a1a1a', border: '1px solid #333333' }}>
-              <CardContent>
-                <Typography level="title-md" sx={{ color: '#FFFFFF', mb: 1 }}>
-                  Team Analytics Comparison
+            {!gameHighlightClipsLoading && gameHighlightClips && gameHighlightClips.length > 0 && (
+              <Box>
+                <Typography level="h4" sx={{ color: '#FFF', fontFamily: '"Libre Baskerville", serif', mb: 1.5 }}>
+                  Highlights
                 </Typography>
-                <Typography level="body-sm" sx={{ color: '#CCCCCC', mb: 2 }}>
-                  Last 10 games team stats from <code>nba_daily_team_stats</code> for game date {predictorDateKey ?? '—'}.
-                </Typography>
-                {predictorStatsLoading ? (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size="sm" />
-                    <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                      Loading team stats...
-                    </Typography>
-                  </Box>
-                ) : predictorStatsError ? (
-                  <Typography level="body-sm" sx={{ color: '#f44336' }}>
-                    {predictorStatsError instanceof Error ? predictorStatsError.message : 'Failed to load team stats.'}
-                  </Typography>
-                ) : predictorStats ? (
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: 2,
-                      maxHeight: '70vh',
-                      overflowY: 'auto',
-                      pr: 1,
-                    }}
-                  >
-                    {Object.entries(predictorStats).map(([endpointName, slice]) => {
-                      const hasData = slice.home || slice.away;
-                      const sample = slice.home ?? slice.away ?? {};
-                      const columns = Object.keys(sample).filter((k) => k !== 'TEAM');
-                      return (
-                        <Box key={endpointName}>
-                          <Typography level="body-sm" sx={{ color: '#9e9e9e', mb: 0.5 }}>
-                            {endpointName}
-                          </Typography>
-                          {hasData ? (
-                            <Table
-                              size="sm"
-                              sx={{
-                                bgcolor: '#0d0d0d',
-                                '& th, & td': { borderColor: '#333', color: '#e0e0e0', fontSize: '0.75rem', padding: '6px 8px' },
-                              }}
-                            >
-                              <thead>
-                                <tr>
-                                  <th style={{ textAlign: 'left' }}>Team</th>
-                                  {columns.map((col) => (
-                                    <th key={col} style={{ textAlign: 'right' }}>{col}</th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {slice.home && (
-                                  <tr>
-                                    <td>{gameData?.home_team_tricode} (H)</td>
-                                    {columns.map((col) => (
-                                      <td key={col} style={{ textAlign: 'right' }}>{slice.home![col] ?? '—'}</td>
-                                    ))}
-                                  </tr>
-                                )}
-                                {slice.away && (
-                                  <tr>
-                                    <td>{gameData?.away_team_tricode} (A)</td>
-                                    {columns.map((col) => (
-                                      <td key={col} style={{ textAlign: 'right' }}>{slice.away![col] ?? '—'}</td>
-                                    ))}
-                                  </tr>
-                                )}
-                              </tbody>
-                            </Table>
-                          ) : (
-                            <Typography level="body-sm" sx={{ color: '#666' }}>
-                              No {endpointName} data for this matchup.
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: { xs: 2, md: 2.5 } }}>
+                  {gameHighlightClips.map((clip) => (
+                    <Card key={clip.id} variant="outlined" sx={{ bgcolor: '#111', borderColor: '#262626' }}>
+                      <Box sx={{ width: '100%', aspectRatio: '16 / 9', bgcolor: '#000' }}>
+                        <video
+                          src={clip.mp4_url}
+                          controls
+                          preload="metadata"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                        />
+                      </Box>
+                      <CardContent sx={{ gap: 0.75 }}>
+                        <Typography level="title-sm" sx={{ color: '#F1F1F1' }}>
+                          {clip.description || `${clip.team_tricode || ''} Highlight`}
+                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                          {clip.period != null && (
+                            <Chip size="sm" variant="soft" sx={{ bgcolor: 'rgba(255,199,44,0.12)', color: '#FFC72C' }}>
+                              Q{clip.period}{clip.clock ? ` - ${clip.clock}` : ''}
+                            </Chip>
+                          )}
+                          {clip.team_tricode && (
+                            <Chip size="sm" variant="outlined" sx={{ borderColor: '#3A3A3A', color: '#CFCFCF' }}>
+                              {clip.team_tricode}
+                            </Chip>
+                          )}
+                          {clip.player_name && (
+                            <Typography level="body-xs" sx={{ color: '#A8A8A8' }}>
+                              {clip.player_name}
                             </Typography>
                           )}
                         </Box>
-                      );
-                    })}
-                  </Box>
-                ) : (
-                  <Typography level="body-sm" sx={{ color: '#CCCCCC' }}>
-                    No team stats for this date. Data is stored in the <code>nba_daily_team_stats</code> table.
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
-          </Box>
-        ) : (
-          // Stats View (default) - Single full-width table
-          <Box sx={{ width: '100%', overflowX: 'auto' }}>
-            <Table sx={{ bgcolor: '#000000', width: '100%', minWidth: isMobile ? '300px' : '400px' }}>
-              <thead>
-                <tr>
-                  <th style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', minWidth: isMobile ? '140px' : '180px', width: isMobile ? '140px' : '180px', padding: isMobile ? '8px 6px' : '12px' }}>Player</th>
-                  {gameState === 'upcoming' && (
-                    <>
-                      <SortableHeader column="mpg" label="MPG" />
-                      <SortableHeader column="ppg" label="PPG" />
-                      <SortableHeader column="rpg" label="RPG" />
-                      <SortableHeader column="apg" label="APG" />
-                      <SortableHeader column="spg" label="SPG" />
-                      <SortableHeader column="bpg" label="BPG" />
-                      <SortableHeader column="fg_pct" label="FG%" />
-                      <SortableHeader column="fg3_pct" label="3P%" />
-                      <SortableHeader column="ft_pct" label="FT%" />
-          </>
-        )}
-                  {(gameState === 'live' || gameState === 'completed') && (
-                    <>
-                      <SortableHeader column="pts" label="PTS" />
-                      <SortableHeader column="reb" label="REB" />
-                      <SortableHeader column="ast" label="AST" />
-                      <SortableHeader column="fantasy_points" label="FP" />
-                    </>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {gameState === 'upcoming' ? (
-                  // Render roster with stats for upcoming games - sorted by minutes played (descending)
-                  (() => {
-                    if (upcomingStatsLoading) {
-                      return (
-                        <tr>
-                          <td colSpan={12} style={{ textAlign: 'center', padding: '20px' }}>
-                            <CircularProgress size="sm" />
-                          </td>
-                        </tr>
-                      );
-                    }
-                    
-                    if (!upcomingPlayerStats || upcomingPlayerStats.length === 0) {
-                      // Fallback to roster if no stats available - ensure we only show CURRENT active team players
-                      const filteredRoster = (currentRoster || []).filter((player: any) => {
-                        if (!currentTeamTricode) return true;
-                        const teamOk = player.team_abbreviation === currentTeamTricode;
-                        const idOk =
-                          !upcomingTeamNbaPlayerIds ||
-                          upcomingTeamNbaPlayerIds.size === 0 ||
-                          (player.nba_player_id != null && upcomingTeamNbaPlayerIds.has(player.nba_player_id));
-                        return teamOk && idOk;
-                      });
-                      return filteredRoster.map((player) => (
-                    <GamePlayerRow
-                      key={player.id}
-                      player={player}
-                      teamTricode={currentTeamTricode || ''}
-                      gameState={gameState}
-                      navigate={navigate}
-                      playerProps={playerProps}
-                      injury={playerInjuries?.get(player.nba_player_id)}
-                      isMobile={isMobile}
-                    />
-                      ));
-                    }
-                    
-                    // Map upcoming stats to roster players to get position and jersey number
-                    // Filter to ensure we only show players from the CURRENT active team
-                    const rosterMap = new Map();
-                    (currentRoster || []).forEach((p: any) => {
-                      const key = p.player_id || String(p.nba_player_id);
-                      rosterMap.set(key, p);
-                    });
-                    
-                    let filteredStats = upcomingPlayerStats.filter((stat) => {
-                      if (currentTeamTricode && stat.team_tricode !== currentTeamTricode) return false;
-                      if (upcomingTeamNbaPlayerIds && upcomingTeamNbaPlayerIds.size > 0) {
-                        return stat.nba_player_id != null && upcomingTeamNbaPlayerIds.has(stat.nba_player_id);
-                      }
-                      return true;
-                    });
-                    
-                    // Apply sorting
-                    if (sortColumn) {
-                      filteredStats = [...filteredStats].sort((a, b) => {
-                        let aVal: number = 0;
-                        let bVal: number = 0;
-                        
-                        if (sortColumn === 'mpg') {
-                          aVal = a.mpg || 0;
-                          bVal = b.mpg || 0;
-                        } else if (sortColumn === 'ppg') {
-                          aVal = a.ppg || 0;
-                          bVal = b.ppg || 0;
-                        } else if (sortColumn === 'rpg') {
-                          aVal = a.rpg || 0;
-                          bVal = b.rpg || 0;
-                        } else if (sortColumn === 'apg') {
-                          aVal = a.apg || 0;
-                          bVal = b.apg || 0;
-                        } else if (sortColumn === 'spg') {
-                          aVal = a.spg || 0;
-                          bVal = b.spg || 0;
-                        } else if (sortColumn === 'bpg') {
-                          aVal = a.bpg || 0;
-                          bVal = b.bpg || 0;
-                        } else if (sortColumn === 'fg_pct') {
-                          aVal = a.fg_pct || 0;
-                          bVal = b.fg_pct || 0;
-                        } else if (sortColumn === 'fg3_pct') {
-                          aVal = a.fg3_pct || 0;
-                          bVal = b.fg3_pct || 0;
-                        } else if (sortColumn === 'ft_pct') {
-                          aVal = a.ft_pct || 0;
-                          bVal = b.ft_pct || 0;
-                        }
-                        
-                        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-                      });
-                    }
-                    
-                    return filteredStats.map((stat) => {
-                      const rosterPlayer = rosterMap.get(stat.player_id || String(stat.nba_player_id));
-                      return (
-                        <GamePlayerRow
-                          key={stat.player_id || stat.nba_player_id}
-                          player={{
-                            ...stat,
-                            position: rosterPlayer?.position,
-                            jersey_number: rosterPlayer?.jersey_number,
-                            player_id: stat.player_id,
-                            nba_player_id: stat.nba_player_id,
-                            // Prefer full name from roster if available; fall back to boxscore name
-                            player_name: rosterPlayer?.player_name || stat.player_name,
-                          }}
-                          teamTricode={currentTeamTricode || ''}
-                          gameState={gameState}
-                          navigate={navigate}
-                          playerProps={playerProps}
-                          stats={{
-                            ppg: stat.ppg,
-                            rpg: stat.rpg,
-                            apg: stat.apg,
-                            mpg: stat.mpg,
-                            spg: stat.spg,
-                            bpg: stat.bpg,
-                            fg_pct: stat.fg_pct,
-                            fg3_pct: stat.fg3_pct,
-                            ft_pct: stat.ft_pct,
-                          }}
-                          injury={playerInjuries?.get(stat.nba_player_id)}
-                          isMobile={isMobile}
-                        />
-                      );
-                    });
-                  })()
-                ) : (
-                  // Render live/completed game stats
-                  (() => {
-                    let sortedStats = [...currentTeamStats];
-                    
-                    // Apply sorting
-                    if (sortColumn) {
-                      sortedStats.sort((a, b) => {
-                        let aVal: number = 0;
-                        let bVal: number = 0;
-                        
-                        let aStats = a.stats || {};
-                        if (typeof aStats === 'string') {
-                          try {
-                            aStats = JSON.parse(aStats);
-                          } catch (e) {
-                            aStats = {};
-                          }
-                        }
-                        
-                        let bStats = b.stats || {};
-                        if (typeof bStats === 'string') {
-                          try {
-                            bStats = JSON.parse(bStats);
-                          } catch (e) {
-                            bStats = {};
-                          }
-                        }
-                        
-                        if (sortColumn === 'pts') {
-                          aVal = aStats.pts || 0;
-                          bVal = bStats.pts || 0;
-                        } else if (sortColumn === 'reb') {
-                          aVal = aStats.reb || 0;
-                          bVal = bStats.reb || 0;
-                        } else if (sortColumn === 'ast') {
-                          aVal = aStats.ast || 0;
-                          bVal = bStats.ast || 0;
-                        } else if (sortColumn === 'fantasy_points') {
-                          aVal = a.fantasy_points || 0;
-                          bVal = b.fantasy_points || 0;
-                        }
-                        
-                        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
-                      });
-                    } else {
-                      // Default sort by fantasy points descending
-                      sortedStats.sort((a, b) => (b.fantasy_points || 0) - (a.fantasy_points || 0));
-                    }
-                    
-                    return sortedStats.map((player) => {
-                      let parsedStats = player.stats || {};
-                      if (typeof parsedStats === 'string') {
-                        try {
-                          parsedStats = JSON.parse(parsedStats);
-                        } catch (e) {
-                          parsedStats = {};
-                        }
-                      }
-                      return (
-                        <GamePlayerRow
-                          key={`${player.nba_player_id}-${player.team_tricode}`}
-                          player={player}
-                          teamTricode={player.team_tricode}
-                          gameState={gameState}
-                          navigate={navigate}
-                          playerProps={playerProps}
-                          stats={parsedStats}
-                          fantasyPoints={player.fantasy_points}
-                          isMobile={isMobile}
-                        />
-                      );
-                    });
-                  })()
-                )}
-              </tbody>
-            </Table>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </Box>
+              </Box>
+            )}
           </Box>
         )}
+        {!gameData && gameLoading && (
+          <Box sx={{ p: 3, textAlign: 'center' }}><CircularProgress /></Box>
+        )}
+        {!gameData && !gameLoading && (
+          <Box sx={{ p: 3, textAlign: 'center' }}><Alert color="warning"><Typography>Game not found</Typography></Alert></Box>
+        )}
+
       </Box>
     </Box>
+    </GamePageLayout>
   );
 }
 
@@ -3488,48 +5159,35 @@ function GamePlayerRow({
       onClick={() => playerId && navigate(`/player/${playerId}`)}
       style={{
         cursor: 'pointer',
-        borderBottom: '1px solid #333333',
+        borderBottom: '1px solid #e2e8f0',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.backgroundColor = 'rgba(255, 199, 44, 0.1)';
+        e.currentTarget.style.backgroundColor = '#f8fafc';
       }}
       onMouseLeave={(e) => {
         e.currentTarget.style.backgroundColor = 'transparent';
       }}
     >
-      <td style={{ 
-        minWidth: isMobile ? '140px' : '180px', 
-        width: isMobile ? '140px' : '180px', 
-        maxWidth: isMobile ? '140px' : '180px',
-        padding: isMobile ? '8px 6px' : '12px'
-      }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.25, md: 0.5 } }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: isMobile ? '24px' : '30px', flexShrink: 0 }}>
-            {jerseyNumber && (
-              <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.6rem' : '0.7rem', fontWeight: 'bold', lineHeight: 1 }}>
-                #{jerseyNumber}
-              </Typography>
-            )}
-            {position && (
-              <Typography sx={{ color: '#CCCCCC', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
-                {position}
-              </Typography>
-            )}
+      <td style={{ minWidth: isMobile ? '90px' : '150px', width: isMobile ? '90px' : '150px', maxWidth: isMobile ? '90px' : '150px', whiteSpace: 'nowrap', position: 'sticky', left: 0, zIndex: 9, backgroundColor: '#ffffff', padding: isMobile ? '8px 6px' : '12px' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: { xs: 0.25, md: 0.5 } }}>
+            <Avatar
+              src={`https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png`}
+              alt={playerName}
+              sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
+            />
+            <Typography sx={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'center' }}>
+              {playerName}
+            </Typography>
           </Box>
-          <Avatar
-            src={`https://cdn.nba.com/headshots/nba/latest/260x190/${nbaPlayerId}.png`}
-            alt={playerName}
-            sx={{ width: { xs: 16, md: 20 }, height: { xs: 16, md: 20 }, flexShrink: 0 }}
-          />
-          <Box sx={{ flex: 1, minWidth: isMobile ? '90px' : '120px', maxWidth: isMobile ? '100px' : '130px', display: 'flex', flexDirection: 'column', gap: 0.25 }}>
-          <Typography sx={{ 
-            color: '#FFFFFF', 
-            fontSize: isMobile ? '0.65rem' : '0.75rem',
-            whiteSpace: 'nowrap',
-            overflow: 'visible',
-          }}>
-            {playerName}
-          </Typography>
+          {(jerseyNumber || position) && (
+            <Typography sx={{ color: '#64748b', fontSize: isMobile ? '0.55rem' : '0.65rem', lineHeight: 1 }}>
+              {jerseyNumber ? `#${jerseyNumber}` : ''}
+              {jerseyNumber && position ? ' • ' : ''}
+              {position || ''}
+            </Typography>
+          )}
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
             {injury && injury.injury_status === 'Out' && (
               <Chip
                 size="sm"
@@ -3565,35 +5223,35 @@ function GamePlayerRow({
       </td>
       {gameState === 'upcoming' && (
         <>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'mpg' in displayStats ? (displayStats.mpg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#2563eb', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats ? (displayStats.ppg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats ? (displayStats.rpg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats ? (displayStats.apg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'spg' in displayStats ? (displayStats.spg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'bpg' in displayStats ? (displayStats.bpg?.toFixed(1) || '0.0') : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'fg_pct' in displayStats && displayStats.fg_pct !== undefined 
               ? (displayStats.fg_pct * 100).toFixed(1) + '%' 
               : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'fg3_pct' in displayStats && displayStats.fg3_pct !== undefined 
               ? (displayStats.fg3_pct * 100).toFixed(1) + '%' 
               : 'N/A'}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {displayStats && 'ft_pct' in displayStats && displayStats.ft_pct !== undefined 
               ? (displayStats.ft_pct * 100).toFixed(1) + '%' 
               : 'N/A'}
@@ -3602,16 +5260,16 @@ function GamePlayerRow({
       )}
       {(gameState === 'live' || gameState === 'completed') && (
         <>
-          <td style={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#2563eb', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', fontWeight: 600, padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {stats?.pts || 0}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {stats?.reb || 0}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {stats?.ast || 0}
           </td>
-          <td style={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
+          <td style={{ color: '#0f172a', fontSize: isMobile ? '0.65rem' : '0.75rem', textAlign: 'right', padding: isMobile ? '8px 4px' : '12px 8px' }}>
             {fantasyPoints?.toFixed(1) || '0.0'}
           </td>
         </>

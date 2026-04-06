@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500888",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612759,
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "name": "Spurs",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 131,
+      "stats": {
+        "fg_pct": 0.551,
+        "ft_pct": 0.833,
+        "fg3_pct": 0.4,
+        "ast": 36,
+        "reb": 56,
+        "tov": 15
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 91,
+      "stats": {
+        "fg_pct": 0.347,
+        "ft_pct": 0.789,
+        "fg3_pct": 0.238,
+        "ast": 20,
+        "reb": 40,
+        "tov": 13
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500888",
+      "LAST_GAME_ID": "0022401018",
+      "LAST_GAME_DATE_EST": "2025-03-21T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612755,
+      "LAST_GAME_HOME_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_HOME_TEAM_NAME": "76ers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "PHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 120,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612759,
+      "LAST_GAME_VISITOR_TEAM_CITY": "San Antonio",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Spurs",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 128
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500888": {
+      "team_stats": {}
+    }
+  }
+}

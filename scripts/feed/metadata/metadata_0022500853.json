@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500853",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.442,
+        "ft_pct": 0.871,
+        "fg3_pct": 0.217,
+        "ast": 27,
+        "reb": 45,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612741,
+      "abbreviation": "CHI",
+      "city": "Chicago",
+      "name": "Bulls",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 112,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.767,
+        "fg3_pct": 0.3,
+        "ast": 29,
+        "reb": 41,
+        "tov": 20
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500853",
+      "LAST_GAME_ID": "0022401122",
+      "LAST_GAME_DATE_EST": "2025-04-04T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612741,
+      "LAST_GAME_HOME_TEAM_CITY": "Chicago",
+      "LAST_GAME_HOME_TEAM_NAME": "Bulls",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "CHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 118,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612757,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Portland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "POR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500853": {
+      "team_stats": {}
+    }
+  }
+}

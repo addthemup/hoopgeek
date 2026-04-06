@@ -22,6 +22,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { supabase } from '../utils/supabase';
 import { useIsAdmin } from '../hooks/useIsAdmin';
 import { PLAYER_MODULE_DEFINITIONS } from '../hooks/usePlayerModuleVisibility';
+import { CONTENT_MAX_WIDTH } from '../constants/layout';
 
 interface PlayerModuleVisibilityRow {
   id?: string;
@@ -200,7 +201,7 @@ export default function AdminPlayer() {
   return (
     <Box
       sx={{
-        maxWidth: 1200,
+        maxWidth: CONTENT_MAX_WIDTH,
         mx: 'auto',
         px: { xs: 1.5, sm: 2, md: 3 },
         pt: { xs: 2, md: 3 },

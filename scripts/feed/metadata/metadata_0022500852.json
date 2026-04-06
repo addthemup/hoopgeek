@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500852",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612745,
+      "abbreviation": "HOU",
+      "city": "Houston",
+      "name": "Rockets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 113,
+      "stats": {
+        "fg_pct": 0.524,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.379,
+        "ast": 24,
+        "reb": 41,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612753,
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "name": "Magic",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 108,
+      "stats": {
+        "fg_pct": 0.455,
+        "ft_pct": 0.619,
+        "fg3_pct": 0.405,
+        "ast": 25,
+        "reb": 40,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500852": {
+      "team_stats": {}
+    }
+  }
+}

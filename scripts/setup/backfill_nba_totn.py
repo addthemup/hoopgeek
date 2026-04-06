@@ -17,6 +17,7 @@ Writes one denormalized row per game_date into nba_totn.
 Usage:
     python3 scripts/setup/backfill_nba_totn.py --dry-run          # preview
     python3 scripts/setup/backfill_nba_totn.py --date 2026-02-08  # single date
+    python3 scripts/setup/backfill_nba_totn.py --days 10         # last 10 days ending yesterday (for daily maintenance)
     python3 scripts/setup/backfill_nba_totn.py                    # full backfill
 
 Requires: supabase (pip install supabase)
@@ -47,7 +48,9 @@ DEFAULT_SALARY = 1_157_153  # League minimum
 MAX_PLAYERS = 12
 
 SEASON_START = date(2025, 10, 21)
-SEASON_END = date(2026, 2, 9)
+# Use today for full backfill so new boxscore dates get TOTN; override with --end-date if needed
+def _season_end() -> date:
+    return date.today()
 
 
 def setup_supabase(verbose: bool = False) -> Client:
@@ -301,6 +304,7 @@ def get_dates_with_games(supabase: Client, start: str, end: str) -> List[str]:
 
 def run(
     single_date: Optional[str] = None,
+    days_back: Optional[int] = None,
     dry_run: bool = False,
     verbose: bool = False,
 ):
@@ -322,11 +326,23 @@ def run(
     # Determine dates to process
     if single_date:
         game_dates = [single_date]
-    else:
+    elif days_back is not None and days_back > 0:
+        # Last N days ending yesterday (so we add "last night" and fill any gaps in the window)
+        end_date = date.today() - timedelta(days=1)
+        start_date = end_date - timedelta(days=days_back - 1)
+        start_s = start_date.isoformat()
+        end_s = end_date.isoformat()
         if verbose:
-            print(f"Finding game dates from {SEASON_START} to {SEASON_END}...")
+            print(f"Finding game dates in last {days_back} days ({start_s} → {end_s})...")
+        game_dates = get_dates_with_games(supabase, start_s, end_s)
+        if verbose:
+            print(f"  {len(game_dates)} dates with boxscores")
+    else:
+        end = _season_end()
+        if verbose:
+            print(f"Finding game dates from {SEASON_START} to {end}...")
         game_dates = get_dates_with_games(
-            supabase, SEASON_START.isoformat(), SEASON_END.isoformat()
+            supabase, SEASON_START.isoformat(), end.isoformat()
         )
         if verbose:
             print(f"  {len(game_dates)} dates with boxscores")
@@ -384,12 +400,14 @@ def main():
         description="Backfill nba_totn (Team of the Night) for 2025-26 season"
     )
     ap.add_argument("--date", default=None, help="Single date to process (YYYY-MM-DD)")
+    ap.add_argument("--days", type=int, default=None, metavar="N", help="Process last N days ending yesterday (ensures TOTN for last night + fills gaps)")
     ap.add_argument("--dry-run", action="store_true", help="Preview only, do not write")
     ap.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     args = ap.parse_args()
 
     upserted, skipped, total = run(
         single_date=args.date,
+        days_back=args.days,
         dry_run=args.dry_run,
         verbose=args.verbose,
     )

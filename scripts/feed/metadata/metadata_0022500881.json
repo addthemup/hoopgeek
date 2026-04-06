@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500881",
+  "gameMetadata": {
+    "date": "2026-03-02T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612743,
+      "abbreviation": "DEN",
+      "city": "Denver",
+      "name": "Nuggets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612762,
+      "abbreviation": "UTA",
+      "city": "Utah",
+      "name": "Jazz",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500881": {
+      "team_stats": {}
+    }
+  }
+}

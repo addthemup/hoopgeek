@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500897",
+  "gameMetadata": {
+    "date": "2026-03-04T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 131,
+      "stats": {
+        "fg_pct": 0.543,
+        "ft_pct": 0.688,
+        "fg3_pct": 0.444,
+        "ast": 33,
+        "reb": 40,
+        "tov": 11
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612749,
+      "abbreviation": "MIL",
+      "city": "Milwaukee",
+      "name": "Bucks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 113,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.7,
+        "fg3_pct": 0.333,
+        "ast": 27,
+        "reb": 41,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500897",
+      "LAST_GAME_ID": "0022401083",
+      "LAST_GAME_DATE_EST": "2025-03-30T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612749,
+      "LAST_GAME_HOME_TEAM_CITY": "Milwaukee",
+      "LAST_GAME_HOME_TEAM_NAME": "Bucks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIL",
+      "LAST_GAME_HOME_TEAM_POINTS": 124,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612737,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Atlanta",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hawks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "ATL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 145
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500897": {
+      "team_stats": {}
+    }
+  }
+}

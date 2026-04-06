@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500794",
+  "gameMetadata": {
+    "date": "2026-02-19T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612737,
+      "abbreviation": "ATL",
+      "city": "Atlanta",
+      "name": "Hawks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 117,
+      "stats": {
+        "fg_pct": 0.427,
+        "ft_pct": 0.775,
+        "fg3_pct": 0.313,
+        "ast": 24,
+        "reb": 51,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 107,
+      "stats": {
+        "fg_pct": 0.384,
+        "ft_pct": 0.811,
+        "fg3_pct": 0.333,
+        "ast": 17,
+        "reb": 46,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500794",
+      "LAST_GAME_ID": "0022401173",
+      "LAST_GAME_DATE_EST": "2025-04-11T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612755,
+      "LAST_GAME_HOME_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_HOME_TEAM_NAME": "76ers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "PHI",
+      "LAST_GAME_HOME_TEAM_POINTS": 110,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612737,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Atlanta",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hawks",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "ATL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 124
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500794": {
+      "team_stats": {}
+    }
+  }
+}

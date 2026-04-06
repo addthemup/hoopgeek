@@ -1,20 +1,26 @@
 /**
  * Game Recap section generator.
  *
- * Produces: hero → video_carousel → stat_comparisons → player_highlights → pull_quote (fun score)
+ * Produces: hero → video_carousel → stat_comparisons → player_highlights
+ *           → post_link (prop_results) → post_link (injury_report)
+ *           → post_link[] (player_spotlight carousel) → pull_quote (fun score)
  */
 
+import { supabase } from '../../../../utils/supabase'
 import { getHighlightClipsForPostType } from '../../../../utils/feedHighlightClips'
 import { sortHighlightClipsChronological } from '../../../../utils/sortHighlightClips'
 import type {
+  PostType,
   HeroContent,
   StatComparisonContent,
   PlayerHighlightContent,
+  PostLinkContent,
   PullQuoteContent,
 } from '../../../../types/feed'
 import type { SectionDraft, GeneratorContext, PlayByPlayAction, GameData } from '../types'
 import { nextSectionId, resetSectionIdCounter } from '../utils'
 import { getPlayerHighlightClips } from './shared'
+import { buildAggregatedTeamStatsHtml } from '../../../../utils/spotlightAutomationSections'
 
 export async function generateGameRecapSections(ctx: GeneratorContext): Promise<SectionDraft[]> {
   const { draft, matchedGameData, recapHighlightCount = 8, recapPlayerClipCount = 3 } = ctx
@@ -89,6 +95,18 @@ export async function generateGameRecapSections(ctx: GeneratorContext): Promise<
     }
   }
 
+  const teamStatsHtml = buildAggregatedTeamStatsHtml(data.raw as Record<string, unknown>, data.teamTricodes || [])
+  if (teamStatsHtml) {
+    sections.push({
+      id: nextSectionId(),
+      section_type: 'rich_text',
+      title: 'Team stats',
+      content: { markdown: teamStatsHtml },
+      player_id: null,
+      team_tricode: null,
+    })
+  }
+
   // Top 5 player highlights with per-player slideshows
   const topPlayers = (data.playerStats || [])
     .filter((p: any) => p.pts != null)
@@ -132,6 +150,115 @@ export async function generateGameRecapSections(ctx: GeneratorContext): Promise<
       player_id: playerId || null,
       team_tricode: p.teamTricode || p.team_abbreviation || null,
     })
+  }
+
+  // ─── Related posts (prop_results, injury_report, player spotlights) ──
+  const teams = data.teamTricodes || []
+  const gameId = data.gameId
+  const gameDate = data.gameDate || draft.game_date || ''
+  const gameDateClean = gameDate.includes('T') ? gameDate.split('T')[0] : gameDate
+
+  if (teams.length >= 2) {
+    // Prop results for this game
+    const { data: propResultsPosts } = await supabase
+      .from('feed_posts')
+      .select('id, slug, title, subtitle, post_type, cover_image_url, game_date, team_tricodes')
+      .eq('status', 'published')
+      .eq('post_type', 'prop_results')
+      .contains('team_tricodes', teams)
+      .order('published_at', { ascending: false })
+      .limit(1)
+
+    for (const p of propResultsPosts || []) {
+      sections.push({
+        id: nextSectionId(),
+        section_type: 'post_link',
+        title: '',
+        content: {
+          post_id: p.id,
+          slug: p.slug,
+          title: p.title,
+          subtitle: p.subtitle,
+          preview_text: p.subtitle ?? undefined,
+          post_type: p.post_type as PostType,
+          cover_image_url: p.cover_image_url,
+          context: 'Prop Results',
+          game_date: p.game_date,
+          team_tricodes: p.team_tricodes,
+        } satisfies PostLinkContent,
+        player_id: null,
+        team_tricode: null,
+      })
+    }
+
+    // Injury report for this game
+    const { data: injuryPosts } = await supabase
+      .from('feed_posts')
+      .select('id, slug, title, subtitle, post_type, cover_image_url, game_date, team_tricodes')
+      .eq('status', 'published')
+      .eq('post_type', 'injury_report')
+      .contains('team_tricodes', teams)
+      .order('published_at', { ascending: false })
+      .limit(1)
+
+    for (const p of injuryPosts || []) {
+      sections.push({
+        id: nextSectionId(),
+        section_type: 'post_link',
+        title: '',
+        content: {
+          post_id: p.id,
+          slug: p.slug,
+          title: p.title,
+          subtitle: p.subtitle,
+          preview_text: p.subtitle ?? undefined,
+          post_type: p.post_type as PostType,
+          cover_image_url: p.cover_image_url,
+          context: 'Injury Report',
+          game_date: p.game_date,
+          team_tricodes: p.team_tricodes,
+        } satisfies PostLinkContent,
+        player_id: null,
+        team_tricode: null,
+      })
+    }
+
+    // Player spotlights from this game (carousel of links)
+    const threeDaysAgo = gameDateClean
+      ? new Date(new Date(gameDateClean + 'T00:00:00Z').getTime() - 3 * 86400000).toISOString().slice(0, 10)
+      : new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10)
+
+    const { data: spotlightPosts } = await supabase
+      .from('feed_posts')
+      .select('id, slug, title, subtitle, post_type, cover_image_url, game_date, team_tricodes')
+      .eq('status', 'published')
+      .eq('post_type', 'player_spotlight')
+      .overlaps('team_tricodes', teams)
+      .gte('published_at', threeDaysAgo)
+      .order('published_at', { ascending: false })
+      .limit(10)
+
+    for (const p of spotlightPosts || []) {
+      sections.push({
+        id: nextSectionId(),
+        section_type: 'post_link',
+        title: '',
+        content: {
+          post_id: p.id,
+          slug: p.slug,
+          title: p.title,
+          subtitle: p.subtitle,
+          preview_text: p.subtitle ?? undefined,
+          post_type: p.post_type as PostType,
+          cover_image_url: p.cover_image_url,
+          context: 'Player Spotlight',
+          game_date: p.game_date,
+          team_tricodes: p.team_tricodes,
+        } satisfies PostLinkContent,
+        player_id: null,
+        team_tricode: null,
+      })
+    }
   }
 
   // Fun score pull quote

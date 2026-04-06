@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500857",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612750,
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "name": "Timberwolves",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 94,
+      "stats": {
+        "fg_pct": 0.434,
+        "ft_pct": 0.737,
+        "fg3_pct": 0.308,
+        "ast": 23,
+        "reb": 41,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612746,
+      "abbreviation": "LAC",
+      "city": "LA",
+      "name": "Clippers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 88,
+      "stats": {
+        "fg_pct": 0.405,
+        "ft_pct": 0.793,
+        "fg3_pct": 0.227,
+        "ast": 21,
+        "reb": 40,
+        "tov": 18
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500857",
+      "LAST_GAME_ID": "0022400500",
+      "LAST_GAME_DATE_EST": "2025-01-06T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612746,
+      "LAST_GAME_HOME_TEAM_CITY": "LA",
+      "LAST_GAME_HOME_TEAM_NAME": "Clippers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAC",
+      "LAST_GAME_HOME_TEAM_POINTS": 106,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612750,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Minnesota",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "MIN",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 108
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500857": {
+      "team_stats": {}
+    }
+  }
+}

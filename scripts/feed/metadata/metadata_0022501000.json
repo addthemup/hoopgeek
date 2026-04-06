@@ -1,0 +1,91 @@
+{
+  "gameId": "0022501000",
+  "gameMetadata": {
+    "date": null,
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612760,
+      "abbreviation": "OKC",
+      "city": "Oklahoma City",
+      "name": "Thunder",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.529,
+        "ft_pct": 0.773,
+        "fg3_pct": 0.4,
+        "ast": 26,
+        "reb": 45,
+        "tov": 17
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 92,
+      "stats": {
+        "fg_pct": 0.367,
+        "ft_pct": 0.742,
+        "fg3_pct": 0.314,
+        "ast": 17,
+        "reb": 41,
+        "tov": 23
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022501000",
+      "LAST_GAME_ID": "0022400840",
+      "LAST_GAME_DATE_EST": "2025-02-26T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612751,
+      "LAST_GAME_HOME_TEAM_CITY": "Brooklyn",
+      "LAST_GAME_HOME_TEAM_NAME": "Nets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BKN",
+      "LAST_GAME_HOME_TEAM_POINTS": 121,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612760,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Oklahoma City",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Thunder",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "OKC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 129
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022501000": {
+      "team_stats": {}
+    }
+  }
+}

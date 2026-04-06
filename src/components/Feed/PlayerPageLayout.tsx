@@ -22,6 +22,7 @@ import {
   Typography,
   Alert,
 } from '@mui/joy';
+import { HiOutlineHome } from 'react-icons/hi';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import Logout from '@mui/icons-material/Logout';
 import Google from '@mui/icons-material/Google';
@@ -36,6 +37,7 @@ import {
   DEFAULT_PLAYER_MODULES,
   PLAYER_MODULE_DEFINITIONS,
 } from '../../hooks/usePlayerModuleVisibility';
+import { CONTENT_MAX_WIDTH, INSET_DRAWER_CONTENT_SX } from '../../constants/layout';
 
 const FEED_HEADER_BAR_HEIGHT = 52;
 
@@ -47,6 +49,7 @@ export interface PlayerDrawerModule {
 interface PlayerPageLayoutProps {
   children: React.ReactNode;
   drawerModules: PlayerDrawerModule[];
+  drawerHeaderContent?: React.ReactNode;
 }
 
 const MODULE_LABELS: Record<string, string> = {
@@ -61,6 +64,7 @@ const MODULE_LABELS: Record<string, string> = {
 export default function PlayerPageLayout({
   children,
   drawerModules,
+  drawerHeaderContent = null,
 }: PlayerPageLayoutProps) {
   const navigate = useNavigate();
   const isMobile = useMediaQuery('(max-width: 900px)');
@@ -108,16 +112,7 @@ export default function PlayerPageLayout({
       slotProps={{
         root: { sx: { zIndex: 1300 } },
         content: {
-          sx: {
-            bgcolor: 'transparent',
-            p: { xs: 0, sm: 0, md: 3 },
-            boxShadow: 'none',
-            '@media (max-width: 900px)': {
-              width: '90vw',
-              maxWidth: '90vw',
-              '--Drawer-horizontalSize': '90vw',
-            },
-          },
+          sx: INSET_DRAWER_CONTENT_SX,
         },
       }}
     >
@@ -136,8 +131,14 @@ export default function PlayerPageLayout({
           [theme.breakpoints.up('md')]: { borderRadius: 'md' },
         })}
       >
-        <DialogTitle>More</DialogTitle>
+        {!drawerHeaderContent && <DialogTitle>Home</DialogTitle>}
         <ModalClose />
+        {drawerHeaderContent && (
+          <>
+            <Box sx={{ flexShrink: 0 }}>{drawerHeaderContent}</Box>
+            <Divider />
+          </>
+        )}
 
         {!user && (
           <Box sx={{ flexShrink: 0 }}>
@@ -257,9 +258,11 @@ export default function PlayerPageLayout({
         sx={{
           width: '100%',
           flex: 1,
+          height: '100vh',
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
         <Box
@@ -268,7 +271,7 @@ export default function PlayerPageLayout({
             top: 0,
             left: 0,
             right: 0,
-            zIndex: 1100,
+            zIndex: 950,
             display: 'flex',
             alignItems: 'center',
             gap: 1.5,
@@ -281,21 +284,37 @@ export default function PlayerPageLayout({
             borderColor: 'divider',
           }}
         >
-          <Box sx={{ flex: 1, minWidth: 0 }} />
-          <PlayerTeamSearchBar
-            compact
-            maxWidth={280}
-            sx={{ width: 280, minWidth: 0, flexShrink: 0 }}
-          />
-          <IconButton
-            variant="outlined"
-            color="neutral"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open drawer"
-            sx={{ flexShrink: 0 }}
+          <Button
+            variant="plain"
+            color="warning"
+            onClick={() => navigate('/feed')}
+            sx={{
+              flexShrink: 0,
+              fontWeight: 800,
+              textTransform: 'lowercase',
+              letterSpacing: '-0.02em',
+              px: 0.75,
+              minHeight: 32,
+            }}
           >
-            <TuneRoundedIcon />
-          </IconButton>
+            geek
+          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0, ml: 'auto' }}>
+            <PlayerTeamSearchBar
+              compact
+              maxWidth={280}
+              sx={{ width: 280, minWidth: 0, flexShrink: 0 }}
+            />
+            <IconButton
+              variant="outlined"
+              color="neutral"
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open drawer"
+              sx={{ flexShrink: 0 }}
+            >
+              <TuneRoundedIcon />
+            </IconButton>
+          </Box>
         </Box>
         <Box
           sx={{
@@ -309,9 +328,11 @@ export default function PlayerPageLayout({
           sx={{
             flex: 1,
             minWidth: 0,
-            overflow: 'auto',
+            overflowX: 'hidden',
+            overflowY: 'auto',
             WebkitOverflowScrolling: 'touch',
             overscrollBehaviorY: 'contain',
+            bgcolor: '#ffffff',
           }}
         >
           {children}
@@ -325,9 +346,11 @@ export default function PlayerPageLayout({
     <Box
       sx={{
         width: '100%',
+        height: '100vh',
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
+        overflow: 'hidden',
       }}
     >
       <Box
@@ -336,8 +359,8 @@ export default function PlayerPageLayout({
           top: 0,
           left: 0,
           right: 0,
-          zIndex: 1100,
-          maxWidth: 1200,
+          zIndex: 950,
+          maxWidth: CONTENT_MAX_WIDTH,
           mx: 'auto',
           display: 'flex',
           alignItems: 'center',
@@ -351,21 +374,37 @@ export default function PlayerPageLayout({
           borderColor: 'divider',
         }}
       >
-        <Box sx={{ flex: 1, minWidth: 0 }} />
-        <PlayerTeamSearchBar
-          compact
-          maxWidth={360}
-          sx={{ width: 360, minWidth: 0, flexShrink: 0 }}
-        />
         <Button
-          variant="outlined"
-          color="neutral"
-          startDecorator={<TuneRoundedIcon />}
-          onClick={() => setDrawerOpen(true)}
-          aria-label="Open drawer"
+          variant="plain"
+          color="warning"
+          onClick={() => navigate('/feed')}
+          sx={{
+            flexShrink: 0,
+            fontWeight: 800,
+            textTransform: 'lowercase',
+            letterSpacing: '-0.02em',
+            px: 0.75,
+            minHeight: 32,
+          }}
         >
-          More
+          geek
         </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, ml: 'auto' }}>
+          <PlayerTeamSearchBar
+            compact
+            maxWidth={360}
+            sx={{ width: 360, minWidth: 0, flexShrink: 0 }}
+          />
+          <Button
+            variant="outlined"
+            color="neutral"
+            startDecorator={<TuneRoundedIcon />}
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open drawer"
+          >
+            More
+          </Button>
+        </Box>
       </Box>
       <Box
         sx={{
@@ -379,12 +418,16 @@ export default function PlayerPageLayout({
         sx={{
           flex: 1,
           minWidth: 0,
-          overflow: 'auto',
+          overflowX: 'hidden',
+          overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
           overscrollBehaviorY: 'contain',
+          bgcolor: '#ffffff',
         }}
       >
-        {children}
+        <Box sx={{ maxWidth: CONTENT_MAX_WIDTH, mx: 'auto', width: '100%' }}>
+          {children}
+        </Box>
       </Box>
       {insetDrawer}
     </Box>

@@ -1,0 +1,77 @@
+{
+  "gameId": "0022500886",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 98,
+      "stats": {
+        "fg_pct": 0.384,
+        "ft_pct": 0.867,
+        "fg3_pct": 0.188,
+        "ast": 24,
+        "reb": 38,
+        "tov": 18
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612748,
+      "abbreviation": "MIA",
+      "city": "Miami",
+      "name": "Heat",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 124,
+      "stats": {
+        "fg_pct": 0.495,
+        "ft_pct": 0.875,
+        "fg3_pct": 0.361,
+        "ast": 28,
+        "reb": 46,
+        "tov": 12
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": null,
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500886": {
+      "team_stats": {}
+    }
+  }
+}

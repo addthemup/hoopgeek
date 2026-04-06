@@ -1,0 +1,20 @@
+{
+  "date": "2026-02-23",
+  "games": [
+    {
+      "game_id": "0022500829",
+      "matchup": "MEM vs. SAC",
+      "date": "2026-02-23"
+    },
+    {
+      "game_id": "0022500830",
+      "matchup": "UTA @ HOU",
+      "date": "2026-02-23"
+    },
+    {
+      "game_id": "0022500828",
+      "matchup": "SAS @ DET",
+      "date": "2026-02-23"
+    }
+  ]
+}

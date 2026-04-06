@@ -31,6 +31,94 @@ interface PropsGame {
   nba_game_id: string | null;
 }
 
+const TEAM_LABEL_TO_TRICODE: Record<string, string> = {
+  'atlanta hawks': 'ATL',
+  hawks: 'ATL',
+  'boston celtics': 'BOS',
+  celtics: 'BOS',
+  'brooklyn nets': 'BKN',
+  nets: 'BKN',
+  'charlotte hornets': 'CHA',
+  hornets: 'CHA',
+  'chicago bulls': 'CHI',
+  bulls: 'CHI',
+  'cleveland cavaliers': 'CLE',
+  cavaliers: 'CLE',
+  cavs: 'CLE',
+  'dallas mavericks': 'DAL',
+  mavericks: 'DAL',
+  mavs: 'DAL',
+  'denver nuggets': 'DEN',
+  nuggets: 'DEN',
+  'detroit pistons': 'DET',
+  pistons: 'DET',
+  'golden state warriors': 'GSW',
+  warriors: 'GSW',
+  'houston rockets': 'HOU',
+  rockets: 'HOU',
+  'indiana pacers': 'IND',
+  pacers: 'IND',
+  'los angeles clippers': 'LAC',
+  clippers: 'LAC',
+  'la clippers': 'LAC',
+  'los angeles lakers': 'LAL',
+  lakers: 'LAL',
+  'la lakers': 'LAL',
+  'memphis grizzlies': 'MEM',
+  grizzlies: 'MEM',
+  'miami heat': 'MIA',
+  heat: 'MIA',
+  'milwaukee bucks': 'MIL',
+  bucks: 'MIL',
+  'minnesota timberwolves': 'MIN',
+  timberwolves: 'MIN',
+  wolves: 'MIN',
+  'new orleans pelicans': 'NOP',
+  pelicans: 'NOP',
+  'new york knicks': 'NYK',
+  knicks: 'NYK',
+  'oklahoma city thunder': 'OKC',
+  thunder: 'OKC',
+  'orlando magic': 'ORL',
+  magic: 'ORL',
+  'philadelphia 76ers': 'PHI',
+  '76ers': 'PHI',
+  sixers: 'PHI',
+  'phoenix suns': 'PHX',
+  suns: 'PHX',
+  'portland trail blazers': 'POR',
+  'trail blazers': 'POR',
+  blazers: 'POR',
+  'sacramento kings': 'SAC',
+  kings: 'SAC',
+  'san antonio spurs': 'SAS',
+  spurs: 'SAS',
+  'toronto raptors': 'TOR',
+  raptors: 'TOR',
+  'utah jazz': 'UTA',
+  jazz: 'UTA',
+  'washington wizards': 'WAS',
+  wizards: 'WAS',
+};
+
+function normalizeTeamLabel(value: string | null | undefined): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function inferTeamTricode(value: string | null | undefined): string | null {
+  const normalized = normalizeTeamLabel(value);
+  if (!normalized) return null;
+  if (TEAM_LABEL_TO_TRICODE[normalized]) return TEAM_LABEL_TO_TRICODE[normalized];
+  for (const [label, tricode] of Object.entries(TEAM_LABEL_TO_TRICODE)) {
+    if (normalized.includes(label) || label.includes(normalized)) return tricode;
+  }
+  return null;
+}
+
 /**
  * Normalize team name for matching (handles variations like "Los Angeles Lakers" vs "Lakers")
  */
@@ -127,9 +215,8 @@ function normalizeToESTDate(dateStr: string): string {
       const date = new Date(dateStr);
       return utcToESTDate(date);
     } else {
-      // Date string only - treat as UTC midnight and convert to EST
-      const utcDate = new Date(dateStr + 'T00:00:00Z');
-      return utcToESTDate(utcDate);
+      // Date-only strings in props tables are already calendar-day identifiers.
+      return dateStr.slice(0, 10);
     }
   } catch (e) {
     console.warn('Error normalizing date:', dateStr, e);
@@ -165,6 +252,8 @@ export function matchPropsGameToNbaGame(
 
   const propsGameDateEST = normalizeToESTDate(propsGame.game_date);
   if (!propsGameDateEST) return null;
+  const homeTricode = propsGame.home_team_tricode ?? inferTeamTricode(propsGame.home_team);
+  const awayTricode = propsGame.away_team_tricode ?? inferTeamTricode(propsGame.away_team);
 
   // Include nba games within ±1 day (props feed often off by one calendar day)
   const candidates = nbaGames
@@ -183,15 +272,15 @@ export function matchPropsGameToNbaGame(
   if (candidates.length === 0) return null;
 
   const tryMatch = (list: NbaGame[]): NbaGame | null => {
-    if (propsGame.home_team_tricode && propsGame.away_team_tricode) {
+    if (homeTricode && awayTricode) {
       const byTricode = list.find(nbaGame => {
         if (!nbaGame.home_team_tricode || !nbaGame.away_team_tricode) return false;
         const m1 =
-          nbaGame.home_team_tricode === propsGame.home_team_tricode &&
-          nbaGame.away_team_tricode === propsGame.away_team_tricode;
+          nbaGame.home_team_tricode === homeTricode &&
+          nbaGame.away_team_tricode === awayTricode;
         const m2 =
-          nbaGame.home_team_tricode === propsGame.away_team_tricode &&
-          nbaGame.away_team_tricode === propsGame.home_team_tricode;
+          nbaGame.home_team_tricode === awayTricode &&
+          nbaGame.away_team_tricode === homeTricode;
         return m1 || m2;
       });
       if (byTricode) return byTricode;

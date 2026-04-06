@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500877",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612740,
+      "abbreviation": "NOP",
+      "city": "New Orleans",
+      "name": "Pelicans",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 117,
+      "stats": {
+        "fg_pct": 0.449,
+        "ft_pct": 0.833,
+        "fg3_pct": 0.364,
+        "ast": 22,
+        "reb": 41,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612746,
+      "abbreviation": "LAC",
+      "city": "LA",
+      "name": "Clippers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 137,
+      "stats": {
+        "fg_pct": 0.539,
+        "ft_pct": 0.828,
+        "fg3_pct": 0.472,
+        "ast": 29,
+        "reb": 38,
+        "tov": 8
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500877",
+      "LAST_GAME_ID": "0022401111",
+      "LAST_GAME_DATE_EST": "2025-04-02T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612746,
+      "LAST_GAME_HOME_TEAM_CITY": "LA",
+      "LAST_GAME_HOME_TEAM_NAME": "Clippers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAC",
+      "LAST_GAME_HOME_TEAM_POINTS": 114,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612740,
+      "LAST_GAME_VISITOR_TEAM_CITY": "New Orleans",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Pelicans",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "NOP",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 98
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500877": {
+      "team_stats": {}
+    }
+  }
+}

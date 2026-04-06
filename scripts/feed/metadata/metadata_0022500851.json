@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500851",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612759,
+      "abbreviation": "SAS",
+      "city": "San Antonio",
+      "name": "Spurs",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.494,
+        "ft_pct": 0.852,
+        "fg3_pct": 0.395,
+        "ast": 36,
+        "reb": 39,
+        "tov": 8
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 110,
+      "stats": {
+        "fg_pct": 0.461,
+        "ft_pct": 0.882,
+        "fg3_pct": 0.382,
+        "ast": 26,
+        "reb": 50,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500851",
+      "LAST_GAME_ID": "0022400888",
+      "LAST_GAME_DATE_EST": "2025-03-04T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612751,
+      "LAST_GAME_HOME_TEAM_CITY": "Brooklyn",
+      "LAST_GAME_HOME_TEAM_NAME": "Nets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BKN",
+      "LAST_GAME_HOME_TEAM_POINTS": 113,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612759,
+      "LAST_GAME_VISITOR_TEAM_CITY": "San Antonio",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Spurs",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 127
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500851": {
+      "team_stats": {}
+    }
+  }
+}

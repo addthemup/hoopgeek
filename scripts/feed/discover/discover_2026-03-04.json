@@ -1,0 +1,35 @@
+{
+  "date": "2026-03-04",
+  "games": [
+    {
+      "game_id": "0022500898",
+      "matchup": "LAC vs. IND",
+      "date": "2026-03-04"
+    },
+    {
+      "game_id": "0022500897",
+      "matchup": "ATL @ MIL",
+      "date": "2026-03-04"
+    },
+    {
+      "game_id": "0022500896",
+      "matchup": "POR @ MEM",
+      "date": "2026-03-04"
+    },
+    {
+      "game_id": "0022500895",
+      "matchup": "PHI vs. UTA",
+      "date": "2026-03-04"
+    },
+    {
+      "game_id": "0022500893",
+      "matchup": "OKC @ NYK",
+      "date": "2026-03-04"
+    },
+    {
+      "game_id": "0022500894",
+      "matchup": "BOS vs. CHA",
+      "date": "2026-03-04"
+    }
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500819",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612761,
+      "abbreviation": "TOR",
+      "city": "Toronto",
+      "name": "Raptors",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 122,
+      "stats": {
+        "fg_pct": 0.468,
+        "ft_pct": 0.783,
+        "fg3_pct": 0.348,
+        "ast": 34,
+        "reb": 45,
+        "tov": 6
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612749,
+      "abbreviation": "MIL",
+      "city": "Milwaukee",
+      "name": "Bucks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 94,
+      "stats": {
+        "fg_pct": 0.412,
+        "ft_pct": 0.789,
+        "fg3_pct": 0.281,
+        "ast": 18,
+        "reb": 46,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500819",
+      "LAST_GAME_ID": "0022400580",
+      "LAST_GAME_DATE_EST": "2025-01-17T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612749,
+      "LAST_GAME_HOME_TEAM_CITY": "Milwaukee",
+      "LAST_GAME_HOME_TEAM_NAME": "Bucks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIL",
+      "LAST_GAME_HOME_TEAM_POINTS": 130,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612761,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Toronto",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Raptors",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "TOR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 112
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500819": {
+      "team_stats": {}
+    }
+  }
+}

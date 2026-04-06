@@ -1,0 +1,35 @@
+{
+  "date": "2026-02-21",
+  "games": [
+    {
+      "game_id": "0022500813",
+      "matchup": "MIA vs. MEM",
+      "date": "2026-02-21"
+    },
+    {
+      "game_id": "0022500815",
+      "matchup": "SAC @ SAS",
+      "date": "2026-02-21"
+    },
+    {
+      "game_id": "0022500816",
+      "matchup": "HOU @ NYK",
+      "date": "2026-02-21"
+    },
+    {
+      "game_id": "0022500814",
+      "matchup": "CHI vs. DET",
+      "date": "2026-02-21"
+    },
+    {
+      "game_id": "0022500812",
+      "matchup": "PHI @ NOP",
+      "date": "2026-02-21"
+    },
+    {
+      "game_id": "0022500811",
+      "matchup": "ORL @ PHX",
+      "date": "2026-02-21"
+    }
+  ]
+}

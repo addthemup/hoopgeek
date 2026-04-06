@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500824",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612755,
+      "abbreviation": "PHI",
+      "city": "Philadelphia",
+      "name": "76ers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 135,
+      "stats": {
+        "fg_pct": 0.515,
+        "ft_pct": 0.667,
+        "fg3_pct": 0.568,
+        "ast": 31,
+        "reb": 39,
+        "tov": 10
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612750,
+      "abbreviation": "MIN",
+      "city": "Minnesota",
+      "name": "Timberwolves",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 108,
+      "stats": {
+        "fg_pct": 0.479,
+        "ft_pct": 0.833,
+        "fg3_pct": 0.303,
+        "ast": 22,
+        "reb": 39,
+        "tov": 20
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500824",
+      "LAST_GAME_ID": "0012500071",
+      "LAST_GAME_DATE_EST": "2025-10-17T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612750,
+      "LAST_GAME_HOME_TEAM_CITY": "Minnesota",
+      "LAST_GAME_HOME_TEAM_NAME": "Timberwolves",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "MIN",
+      "LAST_GAME_HOME_TEAM_POINTS": 110,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612755,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Philadelphia",
+      "LAST_GAME_VISITOR_TEAM_NAME": "76ers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "PHI",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 126
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500824": {
+      "team_stats": {}
+    }
+  }
+}

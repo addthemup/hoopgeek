@@ -9,15 +9,16 @@
 # 5. Import game odds
 # 6. Import NBA standings
 # 7. Import NBA leaders
-# 8. Import NBA team rosters
-# 9. Import/update players (CommonPlayerInfo 2025-26, get/create players, update teams)
-# 10. Scrape NBA Player of the Week (2025-26)
-# 11. Scrape NBA Player of the Month (2025-26)
-# 12. Import player game stats (advanced stats from JSON files)
-# 13. Backfill Team of the Night (nba_totn)
-# 14. Backfill Team of the Week (nba_totw)
-# 15. Scrape draft rankings (tankathon, nbadraft_net, espn, the_athletic → draft_prospects + draft_rankings)
-# 16. Fetch injuries (Supabase Edge Function)
+# 8. Scrape NBA Player of the Week (2025-26)
+# 9. Scrape NBA Player of the Month (2025-26)
+# 10. Backfill Team of the Night (nba_totn) — --days 150
+# 11. Backfill Team of the Week (nba_totw)
+# 12. Scrape draft rankings (draft_prospects + draft_rankings)
+# 13. Fetch injuries (Supabase Edge Function)
+#
+# Optional (commented in body): Import/update players — slow.
+# Team rosters: NOT daily — run weekly: bash scripts/setup/run_import_nba_team_rosters.sh
+# (Import player game stats from JSON was removed — scripts/feed/import_player_game_stats.py not in repo.)
 
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -40,7 +41,7 @@ mkdir -p "$PROJECT_DIR/logs"
 cd "$PROJECT_DIR"
 
 # Initialize counters
-TOTAL_SCRIPTS=16
+TOTAL_SCRIPTS=13
 SUCCESSFUL=0
 FAILED=0
 FAILED_SCRIPTS=()
@@ -168,15 +169,14 @@ run_script "Import Player Props" "scripts/import_player_props.py" 4
 run_script "Import Game Odds" "scripts/setup/import_game_odds.py" 5
 run_script "Import NBA Standings" "scripts/setup/import_nba_standings.py" 6
 run_script "Import NBA Leaders" "scripts/setup/import_nba_leaders.py" 7
-run_script "Import NBA Team Rosters" "scripts/setup/import_nba_team_rosters.py" 8
-run_script "Import/Update Players" "scripts/setup/import_update_players.py" 9
-run_script "Scrape NBA Player of the Week (2025-26)" "scripts/setup/scrape_nba_pow.py" 10
-run_script "Scrape NBA Player of the Month (2025-26)" "scripts/setup/scrape_nba_pom.py" 11
-run_script "Import Player Game Stats" "scripts/feed/import_player_game_stats.py" 12
-run_script "Backfill Team of the Night (nba_totn)" "scripts/setup/backfill_nba_totn.py" 13
-run_script "Backfill Team of the Week (nba_totw)" "scripts/setup/backfill_nba_totw.py" 14
-run_script "Scrape Draft Rankings (draft_prospects + draft_rankings)" "scripts/setup/draft-agg/scrape_draft_rankings.py" 15 "--source all"
-run_fetch_injuries_edge 16
+# run_script "Import/Update Players" "scripts/setup/import_update_players.py" 8  # COMMENTED OUT — slow
+run_script "Scrape NBA Player of the Week (2025-26)" "scripts/setup/scrape_nba_pow.py" 8
+run_script "Scrape NBA Player of the Month (2025-26)" "scripts/setup/scrape_nba_pom.py" 9
+# run_script "Import Player Game Stats" "scripts/feed/import_player_game_stats.py" 10  # script not in repo; re-enable when added
+run_script "Backfill Team of the Night (nba_totn)" "scripts/setup/backfill_nba_totn.py" 10 "--days 150"
+run_script "Backfill Team of the Week (nba_totw)" "scripts/setup/backfill_nba_totw.py" 11
+run_script "Scrape Draft Rankings (draft_prospects + draft_rankings)" "scripts/setup/draft-agg/scrape_draft_rankings.py" 12 "--source all"
+run_fetch_injuries_edge 13
 
 # Print summary
 echo ""

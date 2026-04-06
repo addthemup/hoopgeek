@@ -16,6 +16,10 @@ export interface GameByDate {
   home_team_score: number;
   away_team_score: number;
   game_status_text: string;
+  /** Spread for home team (e.g. -5.5). Away spread is typically the opposite. */
+  home_spread?: number | null;
+  away_spread?: number | null;
+  over_under?: number | null;
 }
 
 /**
@@ -58,7 +62,7 @@ export function useGamesByDate(date: string | null) {
 
       const { data, error } = await supabase
         .from('nba_games')
-        .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_name, away_team_name, home_team_score, away_team_score, game_status_text')
+        .select('game_id, game_date, home_team_tricode, away_team_tricode, home_team_name, away_team_name, home_team_score, away_team_score, game_status_text, home_spread, away_spread, over_under')
         .gte('game_date', startUTC)
         .lte('game_date', endUTC)
         .not('home_team_tricode', 'is', null)

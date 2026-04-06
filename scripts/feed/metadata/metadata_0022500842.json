@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500842",
+  "gameMetadata": {
+    "date": "2026-02-25T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612760,
+      "abbreviation": "OKC",
+      "city": "Oklahoma City",
+      "name": "Thunder",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 116,
+      "stats": {
+        "fg_pct": 0.406,
+        "ft_pct": 0.952,
+        "fg3_pct": 0.367,
+        "ast": 28,
+        "reb": 37,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 124,
+      "stats": {
+        "fg_pct": 0.539,
+        "ft_pct": 0.731,
+        "fg3_pct": 0.333,
+        "ast": 29,
+        "reb": 52,
+        "tov": 15
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500842",
+      "LAST_GAME_ID": "0022401108",
+      "LAST_GAME_DATE_EST": "2025-04-02T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612765,
+      "LAST_GAME_HOME_TEAM_CITY": "Detroit",
+      "LAST_GAME_HOME_TEAM_NAME": "Pistons",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "DET",
+      "LAST_GAME_HOME_TEAM_POINTS": 103,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612760,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Oklahoma City",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Thunder",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "OKC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 119
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500842": {
+      "team_stats": {}
+    }
+  }
+}

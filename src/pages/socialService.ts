@@ -4,10 +4,14 @@
  * Uses the new feed_post_likes / feed_post_comments / feed_post_shares
  * tables. Engagement counters on feed_posts are kept in sync automatically
  * by database triggers — no manual incrementing needed.
+ *
+ * Product naming: "bookmark" in feed_post_bookmarks is the saved-post / favorite-post
+ * action in the story UI. Legacy `feed_comments` (content_id) is separate from
+ * threaded `feed_post_comments` on published posts — do not merge without a migration plan.
  */
 
 import { supabase } from '../utils/supabase'
-import type { FeedPostComment, SharePlatform } from '../types/feed'
+import type { FeedPost, FeedPostComment, SharePlatform } from '../types/feed'
 
 // ─── Likes ──────────────────────────────────────────────────
 
@@ -161,6 +165,25 @@ export async function shareToExternal(
 
 // ─── Bookmarks ──────────────────────────────────────────────
 
+/** Saved posts for the profile hub (newest first). */
+export async function listBookmarkedPosts(userId: string, limit = 50): Promise<FeedPost[]> {
+  const { data, error } = await supabase
+    .from('feed_post_bookmarks')
+    .select(
+      `
+      created_at,
+      feed_posts (*)
+    `
+    )
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) throw error
+  const rows = (data ?? []) as { feed_posts: FeedPost | null }[]
+  return rows.map((r) => r.feed_posts).filter((p): p is FeedPost => p != null)
+}
+
 export async function toggleBookmark(
   postId: string,
   userId: string
@@ -269,4 +292,134 @@ export async function getEngagementStats(
     userLiked,
     userBookmarked,
   }
+}
+
+// ─── Friends + Messaging ────────────────────────────────────
+
+export interface SocialUserRow {
+  user_id: string
+  display_name: string | null
+  username: string | null
+  email: string | null
+  avatar_url: string | null
+  is_friend: boolean
+  has_outgoing_request: boolean
+  has_incoming_request: boolean
+  is_following: boolean
+}
+
+export interface FriendRow {
+  user_id: string
+  display_name: string | null
+  username: string | null
+  email: string | null
+  avatar_url: string | null
+  friendship_created_at: string
+}
+
+export interface FriendRequestRow {
+  id: string
+  requester_id: string
+  addressee_id: string
+  status: 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  created_at: string
+  responded_at: string | null
+}
+
+export async function searchUsersForSocial(query: string, limit = 20): Promise<SocialUserRow[]> {
+  const { data, error } = await supabase.rpc('search_users_for_social', {
+    p_query: query,
+    p_limit: limit,
+  })
+  if (error) throw error
+  return (data ?? []) as SocialUserRow[]
+}
+
+export async function listMyFriends(): Promise<FriendRow[]> {
+  const { data, error } = await supabase.rpc('list_my_friends')
+  if (error) throw error
+  return (data ?? []) as FriendRow[]
+}
+
+export async function listMyFriendRequests(): Promise<FriendRequestRow[]> {
+  const { data, error } = await supabase
+    .from('friend_requests')
+    .select('id, requester_id, addressee_id, status, created_at, responded_at')
+    .eq('status', 'pending')
+    .order('created_at', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as FriendRequestRow[]
+}
+
+export async function sendFriendRequest(targetUserId: string): Promise<string | null> {
+  const { data, error } = await supabase.rpc('send_friend_request', { p_target_user_id: targetUserId })
+  if (error) throw error
+  return (data as string | null) ?? null
+}
+
+export async function respondFriendRequest(requestId: string, accept: boolean): Promise<string> {
+  const { data, error } = await supabase.rpc('respond_friend_request', {
+    p_request_id: requestId,
+    p_accept: accept,
+  })
+  if (error) throw error
+  return String(data ?? requestId)
+}
+
+export async function cancelFriendRequest(requestId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('cancel_friend_request', { p_request_id: requestId })
+  if (error) throw error
+  return String(data ?? requestId)
+}
+
+export async function followUser(targetUserId: string): Promise<void> {
+  const { data: authData } = await supabase.auth.getUser()
+  const me = authData.user?.id
+  if (!me) throw new Error('Must be logged in')
+  const { error } = await supabase
+    .from('user_follows')
+    .upsert({ follower_id: me, followee_id: targetUserId }, { onConflict: 'follower_id,followee_id' })
+  if (error) throw error
+}
+
+export async function unfollowUser(targetUserId: string): Promise<void> {
+  const { data: authData } = await supabase.auth.getUser()
+  const me = authData.user?.id
+  if (!me) throw new Error('Must be logged in')
+  const { error } = await supabase
+    .from('user_follows')
+    .delete()
+    .eq('follower_id', me)
+    .eq('followee_id', targetUserId)
+  if (error) throw error
+}
+
+export async function createOrGetDirectConversation(otherUserId: string): Promise<string> {
+  const { data, error } = await supabase.rpc('create_or_get_direct_conversation', { p_other_user_id: otherUserId })
+  if (error) throw error
+  return String(data)
+}
+
+export async function sendConversationMessage(conversationId: string, body: string): Promise<void> {
+  const trimmed = body.trim()
+  if (!trimmed) return
+  const { data: authData } = await supabase.auth.getUser()
+  const senderId = authData.user?.id
+  if (!senderId) throw new Error('Must be logged in to send messages')
+  const { error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, sender_id: senderId, body: trimmed })
+  if (error) throw error
+  await supabase.from('conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId)
+}
+
+export async function sendSlipToConversation(args: {
+  conversationId: string
+  shareToken: string
+  slipSummary: string
+}): Promise<void> {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const url = origin ? `${origin}/slip/${args.shareToken}` : `/slip/${args.shareToken}`
+  const content = `${args.slipSummary}\n${url}`.trim()
+  await sendConversationMessage(args.conversationId, content)
 }

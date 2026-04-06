@@ -1,6 +1,6 @@
 /**
  * Reusable search bar for players and teams. Used in TopNavigation (desktop)
- * and on the feed page beside the More button.
+ * and on the feed page beside the Home button.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -240,9 +240,13 @@ export default function PlayerTeamSearchBar({
                             ) : result.type === 'prospect' ? (
                               <>
                                 <Avatar
+                                  src={result.image_url ?? undefined}
+                                  alt={result.name}
                                   size="sm"
                                   sx={{ mr: 1.5, bgcolor: 'neutral.700' }}
-                                />
+                                >
+                                  {!result.image_url ? result.name.charAt(0) : null}
+                                </Avatar>
                                 <ListItemContent>
                                   <Typography level="title-sm" sx={{ color: 'text.primary', fontWeight: 600 }}>
                                     {result.name}

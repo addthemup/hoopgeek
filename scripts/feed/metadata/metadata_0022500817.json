@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500817",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612739,
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "name": "Cavaliers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 113,
+      "stats": {
+        "fg_pct": 0.483,
+        "ft_pct": 0.737,
+        "fg3_pct": 0.333,
+        "ast": 28,
+        "reb": 44,
+        "tov": 17
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612760,
+      "abbreviation": "OKC",
+      "city": "Oklahoma City",
+      "name": "Thunder",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 121,
+      "stats": {
+        "fg_pct": 0.488,
+        "ft_pct": 0.64,
+        "fg3_pct": 0.512,
+        "ast": 32,
+        "reb": 44,
+        "tov": 16
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500817",
+      "LAST_GAME_ID": "0022400574",
+      "LAST_GAME_DATE_EST": "2025-01-16T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612760,
+      "LAST_GAME_HOME_TEAM_CITY": "Oklahoma City",
+      "LAST_GAME_HOME_TEAM_NAME": "Thunder",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "OKC",
+      "LAST_GAME_HOME_TEAM_POINTS": 134,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612739,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Cleveland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CLE",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 114
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500817": {
+      "team_stats": {}
+    }
+  }
+}

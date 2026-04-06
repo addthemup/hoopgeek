@@ -1,0 +1,60 @@
+{
+  "date": "2026-03-01",
+  "games": [
+    {
+      "game_id": "0022500871",
+      "matchup": "DEN vs. MIN",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500868",
+      "matchup": "SAS @ NYK",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500873",
+      "matchup": "ATL vs. POR",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500876",
+      "matchup": "DAL vs. OKC",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500870",
+      "matchup": "MIL @ CHI",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500872",
+      "matchup": "MEM @ IND",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500869",
+      "matchup": "BKN vs. CLE",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500875",
+      "matchup": "DET @ ORL",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500878",
+      "matchup": "SAC @ LAL",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500877",
+      "matchup": "LAC vs. NOP",
+      "date": "2026-03-01"
+    },
+    {
+      "game_id": "0022500874",
+      "matchup": "PHI @ BOS",
+      "date": "2026-03-01"
+    }
+  ]
+}

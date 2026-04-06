@@ -13,6 +13,7 @@ export interface ProspectFavorite {
     player_slug: string;
     school_team: string | null;
     position_primary: string | null;
+    image_url: string | null;
   };
 }
 
@@ -35,7 +36,8 @@ export function useProspectFavorites() {
             player_name_full,
             player_slug,
             school_team,
-            position_primary
+            position_primary,
+            image_url
           )
         `
         )

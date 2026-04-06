@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500906",
+  "gameMetadata": {
+    "date": "2026-03-05T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612747,
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "name": "Lakers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612743,
+      "abbreviation": "DEN",
+      "city": "Denver",
+      "name": "Nuggets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 0,
+      "stats": {
+        "fg_pct": 0.0,
+        "ft_pct": 0.0,
+        "fg3_pct": 0.0,
+        "ast": 0,
+        "reb": 0,
+        "tov": 0
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500906",
+      "LAST_GAME_ID": "0022401006",
+      "LAST_GAME_DATE_EST": "2025-03-19T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612743,
+      "LAST_GAME_HOME_TEAM_CITY": "Denver",
+      "LAST_GAME_HOME_TEAM_NAME": "Nuggets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "DEN",
+      "LAST_GAME_HOME_TEAM_POINTS": 108,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612747,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Los Angeles",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Lakers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "LAL",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 120
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500906": {
+      "team_stats": {}
+    }
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500885",
+  "gameMetadata": {
+    "date": "2026-03-03T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612764,
+      "abbreviation": "WAS",
+      "city": "Washington",
+      "name": "Wizards",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 109,
+      "stats": {
+        "fg_pct": 0.467,
+        "ft_pct": 0.64,
+        "fg3_pct": 0.219,
+        "ast": 23,
+        "reb": 42,
+        "tov": 12
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612753,
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "name": "Magic",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 126,
+      "stats": {
+        "fg_pct": 0.553,
+        "ft_pct": 0.865,
+        "fg3_pct": 0.4,
+        "ast": 33,
+        "reb": 38,
+        "tov": 8
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500885",
+      "LAST_GAME_ID": "0022401112",
+      "LAST_GAME_DATE_EST": "2025-04-03T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612753,
+      "LAST_GAME_HOME_TEAM_CITY": "Orlando",
+      "LAST_GAME_HOME_TEAM_NAME": "Magic",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "ORL",
+      "LAST_GAME_HOME_TEAM_POINTS": 109,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612764,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Washington",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Wizards",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "WAS",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 97
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500885": {
+      "team_stats": {}
+    }
+  }
+}

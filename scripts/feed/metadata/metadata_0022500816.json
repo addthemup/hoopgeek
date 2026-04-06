@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500816",
+  "gameMetadata": {
+    "date": "2026-02-21T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612745,
+      "abbreviation": "HOU",
+      "city": "Houston",
+      "name": "Rockets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 106,
+      "stats": {
+        "fg_pct": 0.475,
+        "ft_pct": 0.783,
+        "fg3_pct": 0.387,
+        "ast": 24,
+        "reb": 44,
+        "tov": 19
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612752,
+      "abbreviation": "NYK",
+      "city": "New York",
+      "name": "Knicks",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 108,
+      "stats": {
+        "fg_pct": 0.494,
+        "ft_pct": 0.875,
+        "fg3_pct": 0.385,
+        "ast": 26,
+        "reb": 29,
+        "tov": 11
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500816",
+      "LAST_GAME_ID": "0022400702",
+      "LAST_GAME_DATE_EST": "2025-02-03T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612752,
+      "LAST_GAME_HOME_TEAM_CITY": "New York",
+      "LAST_GAME_HOME_TEAM_NAME": "Knicks",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "NYK",
+      "LAST_GAME_HOME_TEAM_POINTS": 124,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612745,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Houston",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Rockets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "HOU",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 118
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500816": {
+      "team_stats": {}
+    }
+  }
+}

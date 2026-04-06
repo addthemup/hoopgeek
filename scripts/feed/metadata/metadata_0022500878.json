@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500878",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612758,
+      "abbreviation": "SAC",
+      "city": "Sacramento",
+      "name": "Kings",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 104,
+      "stats": {
+        "fg_pct": 0.467,
+        "ft_pct": 0.933,
+        "fg3_pct": 0.231,
+        "ast": 30,
+        "reb": 52,
+        "tov": 20
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612747,
+      "abbreviation": "LAL",
+      "city": "Los Angeles",
+      "name": "Lakers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 128,
+      "stats": {
+        "fg_pct": 0.5,
+        "ft_pct": 0.727,
+        "fg3_pct": 0.462,
+        "ast": 34,
+        "reb": 37,
+        "tov": 9
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500878",
+      "LAST_GAME_ID": "0012500007",
+      "LAST_GAME_DATE_EST": "2025-10-17T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612747,
+      "LAST_GAME_HOME_TEAM_CITY": "Los Angeles",
+      "LAST_GAME_HOME_TEAM_NAME": "Lakers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "LAL",
+      "LAST_GAME_HOME_TEAM_POINTS": 116,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612758,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Sacramento",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Kings",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "SAC",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 117
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500878": {
+      "team_stats": {}
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Typography, Chip, Tooltip, Modal, ModalDialog, ModalClose, DialogTitle, Table } from '@mui/joy';
+import { Box, Typography, Chip, Tooltip, Modal, ModalDialog, ModalClose, DialogTitle, Table, Button } from '@mui/joy';
 import { usePlayerLast10GamesProps } from '../hooks/usePlayerLast10GamesProps';
 import { useOpponentTeamPropsPerformance } from '../hooks/useOpponentTeamPropsPerformance';
 
@@ -20,6 +20,8 @@ interface PropPerformanceCellProps {
   isMobile: boolean;
   american_odds?: string;
   price?: string;
+  compact?: boolean;
+  cellButton?: boolean;
 }
 
 export default function PropPerformanceCell({
@@ -30,6 +32,8 @@ export default function PropPerformanceCell({
   isMobile,
   american_odds,
   price,
+  compact = false,
+  cellButton = false,
 }: PropPerformanceCellProps) {
   const [openModal, setOpenModal] = useState(false);
 
@@ -147,7 +151,109 @@ export default function PropPerformanceCell({
     '&:hover': { opacity: 0.85 },
   };
 
+  const getHitRateOutlineColor = (): string => {
+    const rates = [playerPerformance?.hitRate, opponentPerformance?.hitRate].filter(
+      (value): value is number => typeof value === 'number'
+    );
+    if (rates.length === 0) return 'rgba(148, 163, 184, 0.45)';
+    const avg = rates.reduce((sum, value) => sum + value, 0) / rates.length;
+    if (avg >= 60) return 'rgba(22, 163, 74, 0.7)';
+    if (avg <= 40) return 'rgba(220, 38, 38, 0.7)';
+    return 'rgba(217, 119, 6, 0.7)';
+  };
+
+  if (cellButton) {
+    const playerRateText =
+      playerPerformance && playerPerformance.hitRate !== null
+        ? `${playerPerformance.hits}/${playerPerformance.total} (${playerPerformance.hitRate.toFixed(0)}%)`
+        : 'Last 10: --';
+
+    return (
+      <>
+        <Tooltip title={tooltipContent} arrow placement="top">
+          <Button
+            variant="soft"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenModal(true);
+            }}
+            sx={{
+              width: '100%',
+              minHeight: isMobile ? 84 : 102,
+              borderRadius: 8,
+              px: isMobile ? 0.8 : 1.1,
+              py: isMobile ? 0.65 : 0.9,
+              bgcolor: '#ffffff',
+              border: '2px solid',
+              borderColor: getHitRateOutlineColor(),
+              color: '#0f172a',
+              textTransform: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 0.2,
+              '&:hover': { bgcolor: '#f8fafc' },
+            }}
+          >
+            <Typography sx={{ color: '#0f172a', fontSize: isMobile ? '1.35rem' : '1.8rem', fontWeight: 900, lineHeight: 1 }}>
+              {prop.line || 'N/A'}
+            </Typography>
+            <Typography sx={{ color: '#64748b', fontSize: isMobile ? '0.62rem' : '0.72rem', lineHeight: 1.1 }}>
+              {american_odds || price || ''}
+            </Typography>
+            <Typography sx={{ color: '#334155', fontSize: isMobile ? '0.58rem' : '0.68rem', fontWeight: 700, lineHeight: 1.1 }}>
+              {playerRateText}
+            </Typography>
+          </Button>
+        </Tooltip>
+        {trailingModal}
+      </>
+    );
+  }
+
   if (gameState === 'completed') {
+    if (compact) {
+      return (
+        <>
+          <Box
+            onClick={() => setOpenModal(true)}
+            sx={{
+              ...clickableCellSx,
+              border: '1px solid',
+              borderColor: getHitRateOutlineColor(),
+              borderRadius: 6,
+              px: 0.5,
+              py: 0.25,
+            }}
+          >
+            <Tooltip title={tooltipContent} arrow placement="top">
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Typography sx={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 600 }}>
+                  {prop.line || 'N/A'}
+                </Typography>
+                <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.6rem' : '0.7rem' }}>/</Typography>
+                <Typography sx={{ color: '#FFFFFF', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 'bold' }}>
+                  {propResult ? propResult.actualValue : 'N/A'}
+                </Typography>
+                {propResult && (
+                  <Chip
+                    color={propResult.hit ? 'success' : 'danger'}
+                    variant="soft"
+                    size="sm"
+                    sx={{ fontSize: isMobile ? '0.5rem' : '0.6rem', height: isMobile ? '16px' : '18px' }}
+                  >
+                    {propResult.hit ? 'Hit' : 'Miss'}
+                  </Chip>
+                )}
+              </Box>
+            </Tooltip>
+          </Box>
+          {trailingModal}
+        </>
+      );
+    }
+
     return (
       <>
         <Box onClick={() => setOpenModal(true)} sx={clickableCellSx}>
@@ -195,6 +301,38 @@ export default function PropPerformanceCell({
   }
 
   // For upcoming games, show prop line with performance history
+  if (compact) {
+    return (
+      <>
+        <Box
+          onClick={() => setOpenModal(true)}
+          sx={{
+            ...clickableCellSx,
+            border: '1px solid',
+            borderColor: getHitRateOutlineColor(),
+            borderRadius: 6,
+            px: 0.5,
+            py: 0.25,
+          }}
+        >
+          <Tooltip title={tooltipContent} arrow placement="top">
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography sx={{ color: '#FFC72C', fontSize: isMobile ? '0.65rem' : '0.75rem', fontWeight: 600 }}>
+                {prop.line || 'N/A'}
+              </Typography>
+              {!!(american_odds || price) && (
+                <Typography sx={{ color: '#94a3b8', fontSize: isMobile ? '0.55rem' : '0.65rem' }}>
+                  ({american_odds || price})
+                </Typography>
+              )}
+            </Box>
+          </Tooltip>
+        </Box>
+        {trailingModal}
+      </>
+    );
+  }
+
   return (
     <>
       <Box onClick={() => setOpenModal(true)} sx={clickableCellSx}>

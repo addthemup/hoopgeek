@@ -68,3 +68,9 @@ export function useAdminUser() {
   });
 }
 
+/** Active super admin row in `admin_users` (used for profile drawer Profile/Admin hub). */
+export function useIsSuperAdmin() {
+  const { data: adminUser } = useAdminUser();
+  return adminUser?.role === 'super_admin';
+}
+

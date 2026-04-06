@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500848",
+  "gameMetadata": {
+    "date": "2026-02-26T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612766,
+      "abbreviation": "CHA",
+      "city": "Charlotte",
+      "name": "Hornets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 133,
+      "stats": {
+        "fg_pct": 0.558,
+        "ft_pct": 0.789,
+        "fg3_pct": 0.478,
+        "ast": 35,
+        "reb": 46,
+        "tov": 16
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612754,
+      "abbreviation": "IND",
+      "city": "Indiana",
+      "name": "Pacers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 109,
+      "stats": {
+        "fg_pct": 0.471,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.314,
+        "ast": 28,
+        "reb": 37,
+        "tov": 12
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500848",
+      "LAST_GAME_ID": "0022401104",
+      "LAST_GAME_DATE_EST": "2025-04-02T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612754,
+      "LAST_GAME_HOME_TEAM_CITY": "Indiana",
+      "LAST_GAME_HOME_TEAM_NAME": "Pacers",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "IND",
+      "LAST_GAME_HOME_TEAM_POINTS": 119,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612766,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Charlotte",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Hornets",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CHA",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 105
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500848": {
+      "team_stats": {}
+    }
+  }
+}

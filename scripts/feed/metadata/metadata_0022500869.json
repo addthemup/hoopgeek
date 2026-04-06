@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500869",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612739,
+      "abbreviation": "CLE",
+      "city": "Cleveland",
+      "name": "Cavaliers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 106,
+      "stats": {
+        "fg_pct": 0.486,
+        "ft_pct": 0.676,
+        "fg3_pct": 0.481,
+        "ast": 25,
+        "reb": 38,
+        "tov": 15
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612751,
+      "abbreviation": "BKN",
+      "city": "Brooklyn",
+      "name": "Nets",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 102,
+      "stats": {
+        "fg_pct": 0.507,
+        "ft_pct": 0.75,
+        "fg3_pct": 0.344,
+        "ast": 27,
+        "reb": 32,
+        "tov": 17
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500869",
+      "LAST_GAME_ID": "0022400940",
+      "LAST_GAME_DATE_EST": "2025-03-11T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612751,
+      "LAST_GAME_HOME_TEAM_CITY": "Brooklyn",
+      "LAST_GAME_HOME_TEAM_NAME": "Nets",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "BKN",
+      "LAST_GAME_HOME_TEAM_POINTS": 104,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612739,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Cleveland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Cavaliers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "CLE",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 109
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500869": {
+      "team_stats": {}
+    }
+  }
+}

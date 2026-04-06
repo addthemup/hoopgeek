@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500875",
+  "gameMetadata": {
+    "date": "2026-03-01T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612765,
+      "abbreviation": "DET",
+      "city": "Detroit",
+      "name": "Pistons",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 106,
+      "stats": {
+        "fg_pct": 0.452,
+        "ft_pct": 0.75,
+        "fg3_pct": 0.133,
+        "ast": 24,
+        "reb": 56,
+        "tov": 13
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612753,
+      "abbreviation": "ORL",
+      "city": "Orlando",
+      "name": "Magic",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 92,
+      "stats": {
+        "fg_pct": 0.377,
+        "ft_pct": 0.8,
+        "fg3_pct": 0.278,
+        "ast": 20,
+        "reb": 41,
+        "tov": 19
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500875",
+      "LAST_GAME_ID": "0022400638",
+      "LAST_GAME_DATE_EST": "2025-01-25T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612753,
+      "LAST_GAME_HOME_TEAM_CITY": "Orlando",
+      "LAST_GAME_HOME_TEAM_NAME": "Magic",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "ORL",
+      "LAST_GAME_HOME_TEAM_POINTS": 121,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612765,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Detroit",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Pistons",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "DET",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 113
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500875": {
+      "team_stats": {}
+    }
+  }
+}

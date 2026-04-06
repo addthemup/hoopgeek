@@ -390,3 +390,93 @@ entrypoint = "./functions/daily-maintenance/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/daily-maintenance/*.html" ]
+
+[functions.automate-player-spotlights]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-player-spotlights/deno.json"
+entrypoint = "./functions/automate-player-spotlights/index.ts"
+
+[functions.automate-prop-predictions]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-prop-predictions/deno.json"
+entrypoint = "./functions/automate-prop-predictions/index.ts"
+
+[functions.automate-prop-results]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-prop-results/deno.json"
+entrypoint = "./functions/automate-prop-results/index.ts"
+
+[functions.automate-injury-reports]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-injury-reports/deno.json"
+entrypoint = "./functions/automate-injury-reports/index.ts"
+
+[functions.automate-team-of-night]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-team-of-night/deno.json"
+entrypoint = "./functions/automate-team-of-night/index.ts"
+
+[functions.automate-team-of-week]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-team-of-week/deno.json"
+entrypoint = "./functions/automate-team-of-week/index.ts"
+
+[functions.automate-draft]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-draft/deno.json"
+entrypoint = "./functions/automate-draft/index.ts"
+
+[functions.automate-player-of-week]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-player-of-week/deno.json"
+entrypoint = "./functions/automate-player-of-week/index.ts"
+
+[functions.automate-player-of-month]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-player-of-month/deno.json"
+entrypoint = "./functions/automate-player-of-month/index.ts"
+
+[functions.automate-game-recaps]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-game-recaps/deno.json"
+entrypoint = "./functions/automate-game-recaps/index.ts"
+
+[functions.automate-upcoming]
+enabled = true
+verify_jwt = false
+import_map = "./functions/automate-upcoming/deno.json"
+entrypoint = "./functions/automate-upcoming/index.ts"
+
+[functions.ingest-game-highlights]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ingest-game-highlights/deno.json"
+entrypoint = "./functions/ingest-game-highlights/index.ts"
+
+[functions.import-player-props]
+enabled = true
+verify_jwt = false
+import_map = "./functions/import-player-props/deno.json"
+entrypoint = "./functions/import-player-props/index.ts"
+
+[functions.fetch-injuries]
+enabled = true
+verify_jwt = false
+import_map = "./functions/fetch-injuries/deno.json"
+entrypoint = "./functions/fetch-injuries/index.ts"
+
+[functions.import-boxscores]
+enabled = true
+verify_jwt = false
+import_map = "./functions/import-boxscores/deno.json"
+entrypoint = "./functions/import-boxscores/index.ts"

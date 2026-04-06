@@ -1,0 +1,91 @@
+{
+  "gameId": "0022500826",
+  "gameMetadata": {
+    "date": "2026-02-22T00:00:00",
+    "arena": null,
+    "season": "2025-26",
+    "status": null,
+    "homeTeam": {
+      "team_id": 1610612757,
+      "abbreviation": "POR",
+      "city": "Portland",
+      "name": "Trail Blazers",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 92,
+      "stats": {
+        "fg_pct": 0.469,
+        "ft_pct": 0.545,
+        "fg3_pct": 0.27,
+        "ast": 23,
+        "reb": 47,
+        "tov": 21
+      }
+    },
+    "awayTeam": {
+      "team_id": 1610612756,
+      "abbreviation": "PHX",
+      "city": "Phoenix",
+      "name": "Suns",
+      "record": null,
+      "quarters": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "points": 77,
+      "stats": {
+        "fg_pct": 0.365,
+        "ft_pct": 1.0,
+        "fg3_pct": 0.257,
+        "ast": 16,
+        "reb": 41,
+        "tov": 19
+      }
+    },
+    "teamLeaders": {},
+    "lastMeeting": {
+      "GAME_ID": "0022500826",
+      "LAST_GAME_ID": "0022400709",
+      "LAST_GAME_DATE_EST": "2025-02-03T00:00:00",
+      "LAST_GAME_HOME_TEAM_ID": 1610612756,
+      "LAST_GAME_HOME_TEAM_CITY": "Phoenix",
+      "LAST_GAME_HOME_TEAM_NAME": "Suns",
+      "LAST_GAME_HOME_TEAM_ABBREVIATION": "PHX",
+      "LAST_GAME_HOME_TEAM_POINTS": 119,
+      "LAST_GAME_VISITOR_TEAM_ID": 1610612757,
+      "LAST_GAME_VISITOR_TEAM_CITY": "Portland",
+      "LAST_GAME_VISITOR_TEAM_NAME": "Trail Blazers",
+      "LAST_GAME_VISITOR_TEAM_CITY1": "POR",
+      "LAST_GAME_VISITOR_TEAM_POINTS": 121
+    },
+    "seriesStandings": null
+  },
+  "score": {
+    "0022500826": {
+      "team_stats": {}
+    }
+  }
+}

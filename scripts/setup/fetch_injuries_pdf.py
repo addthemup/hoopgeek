@@ -13,8 +13,9 @@ import os
 import sys
 import requests
 import re
+import json
 from datetime import datetime, date, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import PyPDF2
@@ -23,12 +24,14 @@ from io import BytesIO
 # Load environment variables
 load_dotenv()
 
-def setup_supabase() -> Client:
+def setup_supabase(allow_missing: bool = False) -> Optional[Client]:
     """Initialize Supabase client"""
     supabase_url = os.getenv('VITE_SUPABASE_URL') or os.getenv('SUPABASE_URL')
     supabase_key = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
     
     if not supabase_url or not supabase_key:
+        if allow_missing:
+            return None
         print("❌ Missing Supabase credentials")
         print("Please set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
         sys.exit(1)
@@ -41,10 +44,9 @@ def generate_pdf_urls(target_date: date) -> List[str]:
     date_str = target_date.strftime('%Y-%m-%d')
     base_url = 'https://ak-static.cms.nba.com/referee/injury'
     
-    # Prioritize 5PM (05_00PM) as it's the most comprehensive report
-    # Then try other times as fallback
-    times_new_format = ['05_00PM', '08_00AM', '10_00AM', '12_00PM', '04_00PM', '06_00PM']
-    times_old_format = ['05PM', '08AM', '04PM', '12PM', '10AM', '06PM']
+    # Prioritize the latest likely report first, then older snapshots.
+    times_new_format = ['06_00PM', '05_00PM', '04_00PM', '12_00PM', '10_00AM', '08_00AM']
+    times_old_format = ['06PM', '05PM', '04PM', '12PM', '10AM', '08AM']
     
     # Generate URLs - try new format first (5PM first), then old format
     urls = []
@@ -97,6 +99,35 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
     """Parse injury data from PDF text - handles word-by-word line splitting"""
     injuries = []
     lines = [line.strip() for line in text.split('\n') if line.strip()]
+    name_word_re = re.compile(r"^[A-Z][A-Za-z'’`.-]*$")
+
+    def is_name_word(token: str) -> bool:
+        return bool(name_word_re.match(token))
+
+    def clean_reason(value: str) -> str:
+        value = re.sub(
+            r'Injury Report:\s*\d{2}/\d{2}/\d{2}\s+\d{2}:\d{2}\s+[AP]M\s+Page\s+\d+\s+of\s+\d+',
+            '',
+            value,
+        )
+        return re.sub(r'\s+', ' ', value).strip()
+
+    def looks_like_player_start(idx: int) -> bool:
+        statuses = {'Out', 'Questionable', 'Probable', 'Available'}
+        if idx + 2 >= len(lines):
+            return False
+        a = lines[idx]
+        b = lines[idx + 1]
+        c = lines[idx + 2]
+        if a.endswith(',') and is_name_word(a.rstrip(',')) and is_name_word(b) and c in statuses:
+            return True
+        if idx + 3 < len(lines):
+            d = lines[idx + 3]
+            if a.endswith(',') and is_name_word(a.rstrip(',')) and b in {'Jr.', 'Jr', 'III', 'II', 'IV', 'Sr.', 'Sr'} and is_name_word(c) and d in statuses:
+                return True
+            if a.endswith('-') and b.endswith(',') and is_name_word(c) and d in statuses:
+                return True
+        return False
     
     current_game_date = None
     current_game_time = None
@@ -169,7 +200,7 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                 if (i + 4 < len(lines) and 
                     first_word.endswith('-') and 
                     second_word.endswith(',') and
-                    re.match(r'^[A-Z][a-z]+', third_word) and
+                    is_name_word(third_word) and
                     lines[i + 3] in ['Out', 'Questionable', 'Probable', 'Available']):
                     last_name_part1 = first_word.rstrip('-')
                     last_name_part2 = second_word.rstrip(',')
@@ -182,9 +213,9 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                 # Pattern 2: "Last Jr., First Status" (suffix after last name)
                 # Example: "Pippen Jr., Scotty Out"
                 elif (i + 3 < len(lines) and
-                      re.match(r'^[A-Z][a-z]+$', first_word) and
+                      is_name_word(first_word) and
                       second_word.endswith(',') and second_word in ['Jr.,', 'Jr,', 'III,', 'II,', 'IV,', 'Sr.,', 'Sr,'] and
-                      re.match(r'^[A-Z][a-z]+', third_word) and
+                      is_name_word(third_word) and
                       lines[i + 3] in ['Out', 'Questionable', 'Probable', 'Available']):
                     last_name = first_word
                     suffix = second_word.rstrip(',')
@@ -196,8 +227,8 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                 
                 # Pattern 3: Standard "Last, First Status"
                 elif (first_word.endswith(',') and 
-                      re.match(r'^[A-Z][a-z]+', first_word) and
-                      re.match(r'^[A-Z][a-z]+', second_word) and 
+                      is_name_word(first_word.rstrip(',')) and
+                      is_name_word(second_word) and 
                       not second_word.endswith(',') and
                       third_word in ['Out', 'Questionable', 'Probable', 'Available']):
                     last_name = first_word.rstrip(',')
@@ -216,25 +247,14 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                     
                     # Now collect the reason starting after status
                     reason_parts = []
-                    found_injury_illness = False
                     
                     while j < len(lines) and j < i + 25:  # Reason can be long
                         word = lines[j]
                         
-                        # Start collecting after "Injury/Illness"
-                        if 'Injury/Illness' in word or (word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness'):
-                            found_injury_illness = True
-                            if word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness':
-                                reason_parts.append('Injury/Illness')
-                                j += 2
-                                continue
-                            else:
-                                reason_parts.append(word)
-                                j += 1
-                                continue
-                        
-                        if not found_injury_illness:
-                            j += 1
+                        # Normalize split "Injury Illness" token pair
+                        if word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness':
+                            reason_parts.append('Injury/Illness')
+                            j += 2
                             continue
                         
                         # Stop conditions for reason collection
@@ -246,25 +266,22 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                             
                             # Check if this looks like start of new player
                             # Pattern 1: "Last, First Status"
-                            if (next_word.endswith(',') and 
-                                re.match(r'^[A-Z][a-z]+', next_word) and
-                                re.match(r'^[A-Z][a-z]+', next_next) and
-                                next_next_next in ['Out', 'Questionable', 'Probable', 'Available']):
+                            if looks_like_player_start(j):
                                 break
                             
                             # Pattern 2: "LastPart-, LastPart, First Status"
                             if (next_word.endswith('-') and 
                                 j + 4 < len(lines) and
                                 next_next.endswith(',') and
-                                re.match(r'^[A-Z][a-z]+', lines[j+2]) and
+                                is_name_word(lines[j+2]) and
                                 lines[j+3] in ['Out', 'Questionable', 'Probable', 'Available']):
                                 break
                             
                             # Pattern 3: "Last Jr., First Status"
-                            if (re.match(r'^[A-Z][a-z]+$', next_word) and
+                            if (is_name_word(next_word) and
                                 j + 3 < len(lines) and
                                 next_next.endswith(',') and next_next in ['Jr.,', 'Jr,', 'III,', 'II,', 'IV,', 'Sr.,', 'Sr,'] and
-                                re.match(r'^[A-Z][a-z]+', lines[j+2]) and
+                                is_name_word(lines[j+2]) and
                                 lines[j+3] in ['Out', 'Questionable', 'Probable', 'Available']):
                                 break
                             
@@ -281,15 +298,10 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                             # Might be end, but continue to get more details
                             pass
                     
-                    reason = ' '.join(reason_parts).strip()
+                    reason = clean_reason(' '.join(reason_parts).strip())
                     
                     # Build full player name (Last First format for database matching)
                     player_name = f"{first_name} {last_name}"
-                    
-                    # Skip G League assignments
-                    if 'G League' in reason or 'Two-Way' in reason or 'On Assignment' in reason:
-                        i = j
-                        continue
                     
                     if player_name and len(player_name) > 2:
                         injuries.append({
@@ -307,8 +319,8 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                 
                 # Also handle names without comma (First Last format)
                 # Pattern: "First Last Status" where both are capitalized words
-                elif (re.match(r'^[A-Z][a-z]+$', first_word) and 
-                      re.match(r'^[A-Z][a-z]+', second_word) and
+                elif (is_name_word(first_word) and 
+                      is_name_word(second_word) and
                       third_word in ['Out', 'Questionable', 'Probable', 'Available']):
                     # This might be a player name in "First Last" format
                     first_name = first_word
@@ -332,24 +344,13 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                     
                     # Collect reason
                     reason_parts = []
-                    found_injury_illness = False
                     
                     while j < len(lines) and j < i + 25:
                         word = lines[j]
                         
-                        if 'Injury/Illness' in word or (word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness'):
-                            found_injury_illness = True
-                            if word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness':
-                                reason_parts.append('Injury/Illness')
-                                j += 2
-                                continue
-                            else:
-                                reason_parts.append(word)
-                                j += 1
-                                continue
-                        
-                        if not found_injury_illness:
-                            j += 1
+                        if word == 'Injury' and j + 1 < len(lines) and lines[j+1] == 'Illness':
+                            reason_parts.append('Injury/Illness')
+                            j += 2
                             continue
                         
                         # Stop if next looks like new player
@@ -358,10 +359,7 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                             next_next = lines[j + 1] if j + 1 < len(lines) else ''
                             next_next_next = lines[j + 2] if j + 2 < len(lines) else ''
                             
-                            if (next_word.endswith(',') and 
-                                re.match(r'^[A-Z][a-z]+', next_word) and
-                                re.match(r'^[A-Z][a-z]+', next_next) and
-                                next_next_next in ['Out', 'Questionable', 'Probable', 'Available']):
+                            if looks_like_player_start(j):
                                 break
                             
                             potential_team = ' '.join(lines[j:min(j+4, len(lines))])
@@ -371,13 +369,8 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
                         reason_parts.append(word)
                         j += 1
                     
-                    reason = ' '.join(reason_parts).strip()
+                    reason = clean_reason(' '.join(reason_parts).strip())
                     player_name = ' '.join(player_parts)
-                    
-                    # Skip G League
-                    if 'G League' in reason or 'Two-Way' in reason or 'On Assignment' in reason:
-                        i = j
-                        continue
                     
                     if player_name and len(player_name) > 2:
                         injuries.append({
@@ -395,7 +388,22 @@ def parse_injury_data(text: str, report_date: date) -> List[Dict]:
         
         i += 1
     
-    return injuries
+    # Deduplicate duplicate parser rows that can appear around page breaks
+    deduped = []
+    seen = set()
+    for inj in injuries:
+        key = (
+            inj.get('team', ''),
+            inj.get('player_name', '').lower().strip(),
+            inj.get('status', ''),
+            inj.get('reason', ''),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(inj)
+
+    return deduped
 
 
 def normalize_team_name(team_name: str) -> str:
@@ -436,46 +444,79 @@ def normalize_team_name(team_name: str) -> str:
     return team_map.get(team_name, team_name)
 
 
-def find_player_id(supabase: Client, player_name: str, team_abbreviation: str) -> Optional[int]:
+def normalize_apostrophes(value: str) -> str:
+    return value.replace('’', "'").replace('`', "'")
+
+
+def canonical_name(value: str) -> str:
+    value = normalize_apostrophes(value).lower()
+    value = re.sub(r"[.,]", " ", value)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value
+
+
+def strip_suffixes(value: str) -> str:
+    value = re.sub(r"\b(jr|sr|ii|iii|iv|v)\b\.?", "", value, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def build_search_names(player_name: str) -> List[str]:
+    base = normalize_apostrophes(player_name).strip()
+    parts = [p for p in re.split(r"\s+", base) if p]
+    if len(parts) < 2:
+        return [base]
+
+    flipped = " ".join(reversed(parts))
+    no_suffix = strip_suffixes(base)
+    no_suffix_parts = [p for p in re.split(r"\s+", no_suffix) if p]
+    no_suffix_flipped = " ".join(reversed(no_suffix_parts)) if len(no_suffix_parts) > 1 else no_suffix
+
+    out = []
+    for n in [base, flipped, no_suffix, no_suffix_flipped]:
+        n = re.sub(r"\s+", " ", n).strip()
+        if n and n not in out:
+            out.append(n)
+    return out
+
+
+def find_player_id(supabase: Client, player_name: str, team_abbreviation: str) -> Tuple[Optional[int], str, List[str]]:
     """Find NBA player ID from name and team"""
+    names_to_try = build_search_names(player_name)
     try:
-        # Try exact match first
-        result = supabase.table('nba_players')\
-            .select('nba_player_id, name')\
-            .ilike('name', f'%{player_name}%')\
-            .eq('team_abbreviation', team_abbreviation)\
-            .eq('is_active', True)\
-            .limit(5)\
-            .execute()
-        
-        if result.data and len(result.data) > 0:
-            if len(result.data) == 1:
-                return result.data[0]['nba_player_id']
-            
-            # Try to find best match
-            normalized_search = player_name.lower().replace(',', '').strip()
-            for player in result.data:
-                normalized_name = player['name'].lower().replace(',', '').strip()
-                if normalized_name == normalized_search or normalized_search in normalized_name:
-                    return player['nba_player_id']
-            
-            return result.data[0]['nba_player_id']
-        
-        # Try without team filter
-        result2 = supabase.table('nba_players')\
-            .select('nba_player_id')\
-            .ilike('name', f'%{player_name}%')\
-            .eq('is_active', True)\
-            .limit(1)\
-            .execute()
-        
-        if result2.data and len(result2.data) > 0:
-            return result2.data[0]['nba_player_id']
-        
-        return None
+        for name in names_to_try:
+            result = supabase.table('nba_players')\
+                .select('nba_player_id, name')\
+                .ilike('name', f'%{name}%')\
+                .eq('team_abbreviation', team_abbreviation)\
+                .eq('is_active', True)\
+                .limit(5)\
+                .execute()
+
+            if result.data and len(result.data) > 0:
+                if len(result.data) == 1:
+                    return result.data[0]['nba_player_id'], name, names_to_try
+
+                normalized_search = canonical_name(name)
+                for player in result.data:
+                    normalized_name = canonical_name(player['name'])
+                    if normalized_name == normalized_search or normalized_search in normalized_name:
+                        return player['nba_player_id'], name, names_to_try
+                return result.data[0]['nba_player_id'], name, names_to_try
+
+        for name in names_to_try:
+            result2 = supabase.table('nba_players')\
+                .select('nba_player_id, name')\
+                .ilike('name', f'%{name}%')\
+                .eq('is_active', True)\
+                .limit(1)\
+                .execute()
+            if result2.data and len(result2.data) > 0:
+                return result2.data[0]['nba_player_id'], name, names_to_try
+
+        return None, '', names_to_try
     except Exception as e:
         print(f"   ⚠️  Error finding player {player_name}: {e}")
-        return None
+        return None, '', names_to_try
 
 
 def normalize_injury_status(status: str) -> str:
@@ -531,26 +572,75 @@ def find_game_by_matchup(supabase: Client, matchup: str, game_date: str) -> Opti
         return None
 
 
-def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, report_timestamp: datetime = None):
+def store_injuries(
+    supabase: Optional[Client],
+    injuries: List[Dict],
+    report_date: date,
+    report_timestamp: datetime = None,
+    audit_only: bool = False,
+):
     """Store injuries in database and mark old injuries as not current"""
     if report_timestamp is None:
         report_timestamp = datetime.now()
     
     print(f"\n💾 Processing {len(injuries)} injuries from report dated {report_date}...")
     
-    # Step 1: Mark all existing injuries as not current (they're from older reports)
-    print("   📋 Marking old injuries as not current...")
-    try:
-        update_result = supabase.table('nba_injuries') \
-            .update({'is_current': False}) \
-            .eq('is_current', True) \
-            .execute()
-        print(f"   ✅ Marked existing injuries as not current")
-    except Exception as e:
-        print(f"   ⚠️  Warning: Could not mark old injuries as not current: {e}")
-    
+    # Team-level audit counters
+    team_counts: Dict[str, Dict[str, int]] = {}
+    for injury in injuries:
+        team_abbrev = normalize_team_name(injury['team'])
+        if team_abbrev not in team_counts:
+            team_counts[team_abbrev] = {'parsed': 0, 'matched': 0, 'stored': 0, 'updated': 0, 'unmatched': 0}
+        team_counts[team_abbrev]['parsed'] += 1
+
+    if supabase is None:
+        # Parse-only audit fallback (no DB credentials available)
+        for injury in injuries:
+            team_abbrev = normalize_team_name(injury.get('team', ''))
+            if team_abbrev in team_counts:
+                team_counts[team_abbrev]['unmatched'] += 1
+        return {
+            'stored': 0,
+            'updated': 0,
+            'skipped': 0,
+            'errors': 0,
+            'audit': {
+                'parsed_count': len(injuries),
+                'matched_count': 0,
+                'unmatched_count': len(injuries),
+                'deactivated_count': 0,
+                'parsed_rows': injuries,
+                'unmatched': [
+                    {
+                        'player_name': i.get('player_name'),
+                        'team': i.get('team'),
+                        'team_abbreviation': normalize_team_name(i.get('team', '')),
+                        'status': i.get('status'),
+                        'attempted_names': [],
+                    }
+                    for i in injuries
+                ],
+                'team_counts': team_counts,
+            }
+        }
+
+    # Step 1: Snapshot current players before this run
+    previous_current_player_ids = set()
+    if not audit_only:
+        try:
+            all_current = supabase.table('nba_injuries') \
+                .select('nba_player_id') \
+                .eq('is_current', True) \
+                .execute()
+            if all_current.data:
+                previous_current_player_ids = {row['nba_player_id'] for row in all_current.data}
+            print(f"   📋 Found {len(previous_current_player_ids)} pre-run current injury players")
+        except Exception as e:
+            print(f"   ⚠️  Warning: Could not fetch pre-run current injuries: {e}")
+
     # Step 2: Get list of players on current report (to track who we process)
     current_report_player_ids = set()
+    unmatched = []
     
     # Step 3: Process each injury from the current report
     stored = 0
@@ -561,14 +651,35 @@ def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, re
     for injury in injuries:
         try:
             team_abbreviation = normalize_team_name(injury['team'])
-            nba_player_id = find_player_id(supabase, injury['player_name'], team_abbreviation)
+            nba_player_id, matched_with, attempted_names = find_player_id(
+                supabase, injury['player_name'], team_abbreviation
+            )
             
             if not nba_player_id:
                 print(f"   ⚠️  Could not find player: {injury['player_name']} ({team_abbreviation})")
+                team_counts[team_abbreviation]['unmatched'] += 1
+                unmatched.append({
+                    'player_name': injury['player_name'],
+                    'team': injury['team'],
+                    'team_abbreviation': team_abbreviation,
+                    'status': injury.get('status'),
+                    'attempted_names': attempted_names,
+                })
                 skipped += 1
                 continue
             
             current_report_player_ids.add(nba_player_id)
+            team_counts[team_abbreviation]['matched'] += 1
+
+            if not audit_only:
+                try:
+                    supabase.table('nba_players') \
+                        .update({'team_abbreviation': team_abbreviation}) \
+                        .eq('nba_player_id', nba_player_id) \
+                        .neq('team_abbreviation', team_abbreviation) \
+                        .execute()
+                except Exception:
+                    pass
             
             # Find game_id by matchup
             game_id = None
@@ -606,6 +717,9 @@ def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, re
                 }
             }
             
+            if audit_only:
+                continue
+
             # Check if player already has a current injury record
             existing = supabase.table('nba_injuries') \
                 .select('id') \
@@ -623,6 +737,7 @@ def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, re
                 
                 if result.data:
                     updated += 1
+                    team_counts[team_abbreviation]['updated'] += 1
                     print(f"   ✅ Updated: {injury['player_name']} ({injury['status']})")
                 else:
                     errors += 1
@@ -632,6 +747,7 @@ def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, re
                 
                 if result.data:
                     stored += 1
+                    team_counts[team_abbreviation]['stored'] += 1
                     print(f"   ✅ Stored: {injury['player_name']} ({injury['status']})")
                 else:
                     errors += 1
@@ -640,41 +756,49 @@ def store_injuries(supabase: Client, injuries: List[Dict], report_date: date, re
             print(f"   ❌ Error storing injury for {injury['player_name']}: {e}")
             errors += 1
     
-    # Step 4: For players NOT on the current report, ensure their injuries are marked as not current
-    # (This handles cases where a player was on a previous report but is now healthy)
-    print(f"\n   🏥 Checking players not on current report...")
-    try:
-        # Get all players with current injuries
-        all_current_injuries = supabase.table('nba_injuries') \
-            .select('nba_player_id') \
-            .eq('is_current', True) \
-            .execute()
-        
-        if all_current_injuries.data:
+    deactivated_count = 0
+    if not audit_only:
+        # Step 4: For players NOT on the current report, mark previously-current rows as not current
+        print(f"\n   🏥 Reconciling players not on current report...")
+        try:
             players_to_mark_healthy = [
-                inj['nba_player_id'] 
-                for inj in all_current_injuries.data 
-                if inj['nba_player_id'] not in current_report_player_ids
+                player_id for player_id in previous_current_player_ids
+                if player_id not in current_report_player_ids
             ]
-            
             if players_to_mark_healthy:
-                # Mark these players' injuries as not current (they're no longer on the report)
-                for player_id in players_to_mark_healthy:
-                    supabase.table('nba_injuries') \
-                        .update({'is_current': False}) \
-                        .eq('nba_player_id', player_id) \
-                        .eq('is_current', True) \
-                        .execute()
-                
-                print(f"   ✅ Marked {len(players_to_mark_healthy)} players as no longer on injury report")
-    except Exception as e:
-        print(f"   ⚠️  Warning: Could not check players not on report: {e}")
+                supabase.table('nba_injuries') \
+                    .update({'is_current': False}) \
+                    .in_('nba_player_id', players_to_mark_healthy) \
+                    .eq('is_current', True) \
+                    .execute()
+                deactivated_count = len(players_to_mark_healthy)
+                print(f"   ✅ Marked {deactivated_count} players as no longer on injury report")
+        except Exception as e:
+            print(f"   ⚠️  Warning: Could not reconcile players not on report: {e}")
     
     print(f"\n📊 Storage Summary:")
     print(f"   Stored: {stored}")
     print(f"   Updated: {updated}")
     print(f"   Skipped: {skipped}")
     print(f"   Errors: {errors}")
+    if not audit_only:
+        print(f"   Deactivated: {deactivated_count}")
+
+    return {
+        'stored': stored,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors,
+        'audit': {
+            'parsed_count': len(injuries),
+            'matched_count': len(current_report_player_ids),
+            'unmatched_count': len(unmatched),
+            'deactivated_count': deactivated_count,
+            'parsed_rows': injuries,
+            'unmatched': unmatched,
+            'team_counts': team_counts,
+        }
+    }
 
 
 def main():
@@ -683,6 +807,7 @@ def main():
     
     parser = argparse.ArgumentParser(description='Fetch NBA injury reports from PDF')
     parser.add_argument('--date', type=str, help='Date in YYYY-MM-DD format (default: today)')
+    parser.add_argument('--audit-only', action='store_true', help='Parse and match only, do not write to database')
     args = parser.parse_args()
     
     # Determine target date
@@ -695,8 +820,8 @@ def main():
     print("=" * 80)
     print(f"📅 Target date: {target_date}")
     
-    # Setup
-    supabase = setup_supabase()
+    # Setup (audit-only can run parse-only without DB credentials)
+    supabase = setup_supabase(allow_missing=args.audit_only)
     
     # Fetch PDF
     pdf_bytes = fetch_injury_pdf(target_date)
@@ -723,7 +848,12 @@ def main():
     
     # Store injuries (with current timestamp for report_timestamp)
     report_timestamp = datetime.now()
-    store_injuries(supabase, injuries, target_date, report_timestamp)
+    result = store_injuries(supabase, injuries, target_date, report_timestamp, audit_only=args.audit_only)
+    if args.audit_only:
+        if supabase is None:
+            print("\n⚠️  Running parse-only audit (no Supabase credentials found).")
+        print("\n🧪 Audit Summary:")
+        print(json.dumps(result['audit'], indent=2))
     
     print("\n✅ Injury fetch complete!")
 
